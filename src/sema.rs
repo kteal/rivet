@@ -83,6 +83,21 @@ impl Checker {
                 self.check_expr(value)?;
             }
             Statement::Block(body) => self.check_block(body)?,
+            Statement::If {
+                cond,
+                then_branch,
+                else_branch,
+            } => {
+                self.check_expr(cond)?;
+                self.check_statement(then_branch)?;
+                if let Some(else_statement) = else_branch {
+                    self.check_statement(else_statement)?;
+                }
+            }
+            Statement::While { cond, body } => {
+                self.check_expr(cond)?;
+                self.check_statement(body)?;
+            }
         }
         Ok(())
     }
@@ -327,5 +342,77 @@ mod tests {
         let err = check(&program).expect_err("semantic check should fail");
 
         assert_eq!(err.message, "duplicate local variable 'x'");
+    }
+
+    #[test]
+    fn accepts_if_else_with_locals_in_branches() {
+        let program = main_program(vec![
+            Statement::VarDecl {
+                name: "x".to_string(),
+                init: Expr::IntLiteral(1),
+            },
+            Statement::If {
+                cond: Expr::Binary {
+                    op: BinaryOp::Less,
+                    left: Box::new(Expr::Variable("x".to_string())),
+                    right: Box::new(Expr::IntLiteral(2)),
+                },
+                then_branch: Box::new(Statement::Block(vec![
+                    Statement::VarDecl {
+                        name: "y".to_string(),
+                        init: Expr::Variable("x".to_string()),
+                    },
+                    Statement::Return(Expr::Variable("y".to_string())),
+                ])),
+                else_branch: Some(Box::new(Statement::Block(vec![
+                    Statement::VarDecl {
+                        name: "z".to_string(),
+                        init: Expr::Variable("x".to_string()),
+                    },
+                    Statement::Return(Expr::Variable("z".to_string())),
+                ]))),
+            },
+        ]);
+
+        check(&program).expect("semantic check should succeed");
+    }
+
+    #[test]
+    fn accepts_while_with_local_condition_and_body() {
+        let program = main_program(vec![
+            Statement::VarDecl {
+                name: "x".to_string(),
+                init: Expr::IntLiteral(3),
+            },
+            Statement::While {
+                cond: Expr::Variable("x".to_string()),
+                body: Box::new(Statement::Block(vec![Statement::Assign {
+                    name: "x".to_string(),
+                    value: Expr::Binary {
+                        op: BinaryOp::Subtract,
+                        left: Box::new(Expr::Variable("x".to_string())),
+                        right: Box::new(Expr::IntLiteral(1)),
+                    },
+                }])),
+            },
+            Statement::Return(Expr::Variable("x".to_string())),
+        ]);
+
+        check(&program).expect("semantic check should succeed");
+    }
+
+    #[test]
+    fn rejects_while_condition_using_undeclared_local() {
+        let program = main_program(vec![
+            Statement::While {
+                cond: Expr::Variable("x".to_string()),
+                body: Box::new(Statement::Return(Expr::IntLiteral(0))),
+            },
+            Statement::Return(Expr::IntLiteral(0)),
+        ]);
+
+        let err = check(&program).expect_err("semantic check should fail");
+
+        assert_eq!(err.message, "undeclared local variable 'x'");
     }
 }

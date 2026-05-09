@@ -23,6 +23,9 @@ target
 *.md
 !README.md
 
+tests/*
+!test/*.rs
+
 # Added by cargo
 
 /target

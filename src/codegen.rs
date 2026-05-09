@@ -13,14 +13,30 @@ struct FrameLayout {
 }
 
 impl FrameLayout {
+    fn count_locals_in_statement(statement: &Statement) -> i32 {
+        match statement {
+            Statement::VarDecl { .. } => 1,
+            Statement::Block(body) => FrameLayout::count_locals_in_statements(body),
+            Statement::If {
+                cond: _,
+                then_branch,
+                else_branch,
+            } => {
+                let mut sum = FrameLayout::count_locals_in_statement(then_branch);
+                if let Some(else_statement) = else_branch {
+                    sum += FrameLayout::count_locals_in_statement(else_statement);
+                }
+                sum
+            }
+            Statement::While { cond: _, body } => FrameLayout::count_locals_in_statement(body),
+            _ => 0,
+        }
+    }
+
     fn count_locals_in_statements(statements: &[Statement]) -> i32 {
         let mut sum = 0;
         for statement in statements {
-            match statement {
-                Statement::VarDecl { .. } => sum += 1,
-                Statement::Block(body) => sum += FrameLayout::count_locals_in_statements(body),
-                _ => (),
-            }
+            sum += FrameLayout::count_locals_in_statement(statement);
         }
         sum
     }
@@ -40,6 +56,7 @@ struct Codegen {
     frame: FrameLayout,
     scopes: Vec<HashMap<String, i32>>,
     next_local_offset: i32,
+    label_counter: usize,
     #[allow(dead_code)]
     target: CodegenTarget,
 }
@@ -51,8 +68,15 @@ impl Codegen {
             frame: FrameLayout::default(),
             scopes: vec![HashMap::new()],
             next_local_offset: -12,
+            label_counter: 0,
             target,
         }
+    }
+
+    fn new_label(&mut self, prefix: &str) -> String {
+        let label = format!("{}_{}", prefix, self.label_counter);
+        self.label_counter += 1;
+        label
     }
 
     fn enter_scope(&mut self) {
@@ -91,31 +115,83 @@ impl Codegen {
         self.emit(format_args!("    {args}\n"));
     }
 
+    fn emit_label(&mut self, args: fmt::Arguments) {
+        self.emit(format_args!("{args}:\n"));
+    }
+
+    fn emit_statement(&mut self, statement: &Statement) {
+        match statement {
+            Statement::Return(expr) => {
+                self.emit_expr(expr);
+                self.emit_line(format_args!("j main_end"));
+            }
+            Statement::VarDecl { name, init: value } => {
+                // After this, value is in a0
+                self.emit_expr(value);
+
+                let offset = self.declare_local(name);
+                self.emit_line(format_args!("sw a0, {offset}(s0)"));
+            }
+            Statement::Assign { name, value } => {
+                self.emit_expr(value);
+
+                let offset = self
+                    .resolve_local(name)
+                    .expect("assignment to undefined variable");
+                self.emit_line(format_args!("sw a0, {offset}(s0)"));
+            }
+            Statement::Block(body) => {
+                self.emit_block(body);
+            }
+            Statement::If {
+                cond,
+                then_branch,
+                else_branch,
+            } => self.emit_if_statement(cond, then_branch, else_branch.as_deref()),
+            Statement::While { cond, body } => self.emit_while_statement(cond, body),
+        }
+    }
+
+    fn emit_while_statement(&mut self, cond: &Expr, body: &Statement) {
+        let start_label = self.new_label("while_start");
+        let end_label = self.new_label("while_end");
+
+        self.emit_label(format_args!("{start_label}"));
+        self.emit_expr(cond);
+        self.emit_line(format_args!("beqz a0, {end_label}"));
+        self.emit_statement(body);
+        self.emit_line(format_args!("j {start_label}"));
+        self.emit_label(format_args!("{end_label}"));
+    }
+
+    fn emit_if_statement(
+        &mut self,
+        cond: &Expr,
+        then_branch: &Statement,
+        else_branch: Option<&Statement>,
+    ) {
+        self.emit_expr(cond);
+        let end_label = self.new_label("if_end");
+        if let Some(else_statement) = else_branch {
+            let else_label = self.new_label("if_else");
+            self.emit_line(format_args!("beqz a0, {else_label}"));
+
+            self.emit_statement(then_branch);
+
+            self.emit_line(format_args!("j {end_label}"));
+            self.emit_label(format_args!("{else_label}"));
+            self.emit_statement(else_statement);
+        } else {
+            self.emit_line(format_args!("beqz a0, {end_label}"));
+
+            self.emit_statement(then_branch);
+        };
+        self.emit_label(format_args!("{end_label}"));
+    }
+
     fn emit_statements(&mut self, statements: &[Statement]) {
         for statement in statements {
-            match statement {
-                Statement::Return(expr) => {
-                    self.emit_expr(expr);
-                }
-                Statement::VarDecl { name, init: value } => {
-                    // After this, value is in a0
-                    self.emit_expr(value);
-
-                    let offset = self.declare_local(name);
-                    self.emit_line(format_args!("sw a0, {offset}(s0)"));
-                }
-                Statement::Assign { name, value } => {
-                    self.emit_expr(value);
-
-                    let offset = self
-                        .resolve_local(name)
-                        .expect("assignment to undefined variable");
-                    self.emit_line(format_args!("sw a0, {offset}(s0)"));
-                }
-                Statement::Block(body) => {
-                    self.emit_block(body);
-                }
-            }
+            self.emit_statement(statement);
         }
     }
 
@@ -139,7 +215,7 @@ impl Codegen {
     fn emit_prologue(&mut self, name: &str) {
         let frame_size = self.frame.size;
         self.emit(format_args!(".globl {name}\n"));
-        self.emit(format_args!("{name}:\n"));
+        self.emit_label(format_args!("{name}"));
         self.emit_line(format_args!("addi sp, sp, -{frame_size}"));
         self.emit_line(format_args!("sw ra, {}(sp)", frame_size - 4));
         self.emit_line(format_args!("sw s0, {}(sp)", frame_size - 8));
@@ -148,6 +224,7 @@ impl Codegen {
 
     fn emit_epilogue(&mut self) {
         let frame_size = self.frame.size;
+        self.emit_label(format_args!("main_end"));
         self.emit_line(format_args!("lw ra, {}(sp)", frame_size - 4));
         self.emit_line(format_args!("lw s0, {}(sp)", frame_size - 8));
         self.emit_line(format_args!("addi sp, sp, {frame_size}"));
@@ -226,9 +303,27 @@ mod tests {
     use super::*;
     use crate::ast::Function;
 
-    fn generate_with_codegen(program: &Program) -> String {
+    fn generate_raw_with_codegen(program: &Program) -> String {
         let mut codegen = Codegen::new(CodegenTarget::Rv32);
         codegen.emit_program(program)
+    }
+
+    fn generate_with_codegen(program: &Program) -> String {
+        generate_raw_with_codegen(program).replace("    j main_end\nmain_end:\n", "")
+    }
+
+    #[test]
+    fn generates_return_jump_to_shared_epilogue() {
+        let program = Program {
+            function: Function {
+                name: "main".to_string(),
+                body: vec![Statement::Return(Expr::IntLiteral(42))],
+            },
+        };
+
+        let asm = generate_raw_with_codegen(&program);
+
+        assert!(asm.contains("    j main_end\nmain_end:\n"));
     }
 
     #[test]
@@ -653,5 +748,131 @@ mod tests {
             asm,
             ".globl main\nmain:\n    addi sp, sp, -16\n    sw ra, 12(sp)\n    sw s0, 8(sp)\n    addi s0, sp, 16\n    li a0, 1\n    sw a0, -12(s0)\n    li a0, 2\n    sw a0, -16(s0)\n    lw a0, -16(s0)\n    lw ra, 12(sp)\n    lw s0, 8(sp)\n    addi sp, sp, 16\n    ret\n"
         );
+    }
+
+    #[test]
+    fn generates_if_without_else() {
+        let program = Program {
+            function: Function {
+                name: "main".to_string(),
+                body: vec![
+                    Statement::If {
+                        cond: Expr::IntLiteral(1),
+                        then_branch: Box::new(Statement::Return(Expr::IntLiteral(2))),
+                        else_branch: None,
+                    },
+                    Statement::Return(Expr::IntLiteral(3)),
+                ],
+            },
+        };
+
+        let asm = generate_with_codegen(&program);
+
+        assert!(asm.contains("li a0, 1"));
+        assert!(asm.contains("li a0, 2"));
+        assert!(asm.contains("li a0, 3"));
+        assert!(asm.contains("beqz a0,"));
+    }
+
+    #[test]
+    fn generates_if_else() {
+        let program = Program {
+            function: Function {
+                name: "main".to_string(),
+                body: vec![Statement::If {
+                    cond: Expr::IntLiteral(0),
+                    then_branch: Box::new(Statement::Return(Expr::IntLiteral(2))),
+                    else_branch: Some(Box::new(Statement::Return(Expr::IntLiteral(3)))),
+                }],
+            },
+        };
+
+        let asm = generate_with_codegen(&program);
+
+        assert!(asm.contains("li a0, 0"));
+        assert!(asm.contains("li a0, 2"));
+        assert!(asm.contains("li a0, 3"));
+        assert!(asm.contains("beqz a0,"));
+        assert!(asm.contains("j "));
+    }
+
+    #[test]
+    fn generates_while_loop() {
+        let program = Program {
+            function: Function {
+                name: "main".to_string(),
+                body: vec![
+                    Statement::VarDecl {
+                        name: "x".to_string(),
+                        init: Expr::IntLiteral(3),
+                    },
+                    Statement::While {
+                        cond: Expr::Variable("x".to_string()),
+                        body: Box::new(Statement::Block(vec![Statement::Assign {
+                            name: "x".to_string(),
+                            value: Expr::Binary {
+                                op: BinaryOp::Subtract,
+                                left: Box::new(Expr::Variable("x".to_string())),
+                                right: Box::new(Expr::IntLiteral(1)),
+                            },
+                        }])),
+                    },
+                    Statement::Return(Expr::Variable("x".to_string())),
+                ],
+            },
+        };
+
+        let asm = generate_raw_with_codegen(&program);
+
+        assert!(asm.contains("while_start_"));
+        assert!(asm.contains("while_end_"));
+        assert!(asm.contains("beqz a0, while_end_"));
+        assert!(asm.contains("j while_start_"));
+    }
+
+    #[test]
+    fn counts_locals_inside_while_body_for_frame_size() {
+        let program = Program {
+            function: Function {
+                name: "main".to_string(),
+                body: vec![
+                    Statement::VarDecl {
+                        name: "x".to_string(),
+                        init: Expr::IntLiteral(1),
+                    },
+                    Statement::While {
+                        cond: Expr::Variable("x".to_string()),
+                        body: Box::new(Statement::Block(vec![
+                            Statement::VarDecl {
+                                name: "a".to_string(),
+                                init: Expr::IntLiteral(1),
+                            },
+                            Statement::VarDecl {
+                                name: "b".to_string(),
+                                init: Expr::IntLiteral(2),
+                            },
+                            Statement::VarDecl {
+                                name: "c".to_string(),
+                                init: Expr::IntLiteral(3),
+                            },
+                            Statement::Return(Expr::Binary {
+                                op: BinaryOp::Add,
+                                left: Box::new(Expr::Binary {
+                                    op: BinaryOp::Add,
+                                    left: Box::new(Expr::Variable("a".to_string())),
+                                    right: Box::new(Expr::Variable("b".to_string())),
+                                }),
+                                right: Box::new(Expr::Variable("c".to_string())),
+                            }),
+                        ])),
+                    },
+                    Statement::Return(Expr::IntLiteral(0)),
+                ],
+            },
+        };
+
+        let asm = generate_raw_with_codegen(&program);
+
+        assert!(asm.contains("addi sp, sp, -32"));
     }
 }

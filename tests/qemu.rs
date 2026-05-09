@@ -237,6 +237,56 @@ fn qemu_block_scope_programs_return_expected_values() {
 }
 
 #[test]
+#[ignore = "requires qemu-riscv32 and riscv64-linux-gnu binutils"]
+fn qemu_if_else_programs_return_expected_values() {
+    run_qemu_case(
+        "if-true",
+        "int main() {\n    if (1) return 2;\n    return 3;\n}\n",
+        2,
+    );
+    run_qemu_case(
+        "if-false",
+        "int main() {\n    if (0) return 2;\n    return 3;\n}\n",
+        3,
+    );
+    run_qemu_case(
+        "if-else-then",
+        "int main() {\n    if (1) return 2; else return 3;\n}\n",
+        2,
+    );
+    run_qemu_case(
+        "if-else-else",
+        "int main() {\n    if (0) return 2; else return 3;\n}\n",
+        3,
+    );
+    run_qemu_case(
+        "if-else-with-blocks",
+        "int main() {\n    int x = 1;\n    if (x < 2) {\n        return x + 1;\n    } else {\n        return x + 2;\n    }\n}\n",
+        2,
+    );
+}
+
+#[test]
+#[ignore = "requires qemu-riscv32 and riscv64-linux-gnu binutils"]
+fn qemu_while_programs_return_expected_values() {
+    run_qemu_case(
+        "while-countdown",
+        "int main() {\n    int x = 3;\n    while (x) {\n        x = x - 1;\n    }\n    return x;\n}\n",
+        0,
+    );
+    run_qemu_case(
+        "while-sum",
+        "int main() {\n    int x = 3;\n    int sum = 0;\n    while (x) {\n        sum = sum + x;\n        x = x - 1;\n    }\n    return sum;\n}\n",
+        6,
+    );
+    run_qemu_case(
+        "while-body-locals-counted-in-frame",
+        "int main() {\n    int x = 1;\n    while (x) {\n        int a = 1;\n        int b = 2;\n        int c = 3;\n        x = x - 1;\n        return a + b + c;\n    }\n    return 0;\n}\n",
+        6,
+    );
+}
+
+#[test]
 #[ignore = "requires cargo"]
 fn qemu_semantic_errors_are_reported_before_codegen() {
     run_compile_error_case(

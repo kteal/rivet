@@ -227,6 +227,36 @@ impl Parser {
         Ok(())
     }
 
+    fn parse_if_statement(&mut self) -> Result<Statement, ParseError> {
+        self.expect(Token::KwIf)?;
+        self.expect(Token::LParen)?;
+        let cond = self.parse_expr()?;
+        self.expect(Token::RParen)?;
+        let then_statement = self.parse_statement()?;
+        let else_statement = if *self.peek() == Token::KwElse {
+            self.expect(Token::KwElse)?;
+            Some(Box::new(self.parse_statement()?))
+        } else {
+            None
+        };
+
+        Ok(Statement::If {
+            cond,
+            then_branch: Box::new(then_statement),
+            else_branch: else_statement,
+        })
+    }
+
+    fn parse_while_statement(&mut self) -> Result<Statement, ParseError> {
+        self.expect(Token::KwWhile)?;
+        self.expect(Token::LParen)?;
+        let cond = self.parse_expr()?;
+        self.expect(Token::RParen)?;
+        let body = Box::new(self.parse_statement()?);
+
+        Ok(Statement::While { cond, body })
+    }
+
     fn parse_statement(&mut self) -> Result<Statement, ParseError> {
         match self.peek() {
             Token::KwReturn => {
@@ -251,6 +281,8 @@ impl Parser {
                 self.parse_through_rbrace(&mut body)?;
                 Ok(Statement::Block(body))
             }
+            Token::KwIf => self.parse_if_statement(),
+            Token::KwWhile => self.parse_while_statement(),
             found => Err(ParseError {
                 message: format!("got unexpected keyword {found:?}"),
             }),
@@ -724,6 +756,78 @@ mod tests {
                 },
             }
         )
+    }
+
+    #[test]
+    fn rejects_if_without_parentheses() {
+        let tokens = vec![
+            Token::KwIf,
+            Token::Ident("x".to_string()),
+            Token::KwReturn,
+            Token::IntLiteral(1),
+            Token::Semicolon,
+        ];
+
+        let mut parser = Parser::new(tokens);
+
+        assert!(
+            parser.parse_statement().is_err(),
+            "if statements should require parentheses around the condition"
+        );
+    }
+
+    #[test]
+    fn parses_while_statement() {
+        let tokens = vec![
+            Token::KwWhile,
+            Token::LParen,
+            Token::Ident("x".to_string()),
+            Token::RParen,
+            Token::Ident("x".to_string()),
+            Token::Equal,
+            Token::Ident("x".to_string()),
+            Token::Minus,
+            Token::IntLiteral(1),
+            Token::Semicolon,
+        ];
+
+        let mut parser = Parser::new(tokens);
+
+        let statement = parser.parse_statement().expect("parsing should succeed");
+
+        assert_eq!(
+            statement,
+            Statement::While {
+                cond: Expr::Variable("x".to_string()),
+                body: Box::new(Statement::Assign {
+                    name: "x".to_string(),
+                    value: Expr::Binary {
+                        op: BinaryOp::Subtract,
+                        left: Box::new(Expr::Variable("x".to_string())),
+                        right: Box::new(Expr::IntLiteral(1)),
+                    },
+                }),
+            }
+        );
+    }
+
+    #[test]
+    fn rejects_while_without_parentheses() {
+        let tokens = vec![
+            Token::KwWhile,
+            Token::Ident("x".to_string()),
+            Token::Ident("x".to_string()),
+            Token::Equal,
+            Token::IntLiteral(0),
+            Token::Semicolon,
+        ];
+
+        let mut parser = Parser::new(tokens);
+
+        assert!(
+            parser.parse_statement().is_err(),
+            "while statements should require parentheses around the condition"
+        );
     }
 
     #[test]

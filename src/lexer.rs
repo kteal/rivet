@@ -30,6 +30,9 @@ pub enum Token {
     Pipe,
     LessLess,
     GreaterGreater,
+    KwIf,
+    KwElse,
+    KwWhile,
     Eof,
 }
 
@@ -160,6 +163,9 @@ impl<'a> Lexer<'a> {
         match text.as_str() {
             "int" => Token::KwInt,
             "return" => Token::KwReturn,
+            "if" => Token::KwIf,
+            "else" => Token::KwElse,
+            "while" => Token::KwWhile,
             _ => Token::Ident(text),
         }
     }
@@ -410,6 +416,25 @@ mod tests {
                 Token::Ident("f".to_string()),
                 Token::GreaterGreater,
                 Token::Ident("g".to_string()),
+                Token::Semicolon,
+                Token::Eof,
+            ]
+        );
+    }
+
+    #[test]
+    fn lexes_while_keyword() {
+        let tokens = lex_with_struct("while (x) return x;").expect("lexing should succeed");
+
+        assert_eq!(
+            tokens,
+            vec![
+                Token::KwWhile,
+                Token::LParen,
+                Token::Ident("x".to_string()),
+                Token::RParen,
+                Token::KwReturn,
+                Token::Ident("x".to_string()),
                 Token::Semicolon,
                 Token::Eof,
             ]

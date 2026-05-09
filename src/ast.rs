@@ -11,10 +11,25 @@ pub struct Function {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Statement {
-    VarDecl { name: String, init: Expr },
-    Assign { name: String, value: Expr },
+    VarDecl {
+        name: String,
+        init: Expr,
+    },
+    Assign {
+        name: String,
+        value: Expr,
+    },
     Return(Expr),
     Block(Vec<Statement>),
+    If {
+        cond: Expr,
+        then_branch: Box<Statement>,
+        else_branch: Option<Box<Statement>>,
+    },
+    While {
+        cond: Expr,
+        body: Box<Statement>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
