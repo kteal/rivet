@@ -15,6 +15,12 @@ pub enum Token {
     Slash,
     Percent,
     Equal,
+    EqualEqual,
+    BangEqual,
+    Less,
+    LessEqual,
+    Greater,
+    GreaterEqual,
     Eof,
 }
 
@@ -68,7 +74,29 @@ pub fn lex(source: &str) -> Result<Vec<Token>, LexError> {
             }
             '/' => {
                 chars.next();
-                tokens.push(Token::Slash)
+                if chars.peek().copied() == Some('/') {
+                    while let Some(next_char) = chars.next() {
+                        if next_char == '\n' {
+                            break;
+                        }
+                    }
+                } else if chars.peek().copied() == Some('*') {
+                    chars.next();
+                    while let Some(next_char) = chars.next() {
+                        if next_char == '*' {
+                            if Some('/') == chars.next() {
+                                break;
+                            }
+                        }
+                    }
+                    if chars.peek().is_none() {
+                        return Err(LexError {
+                            message: format!("unterminated block comment"),
+                        });
+                    }
+                } else {
+                    tokens.push(Token::Slash)
+                }
             }
             '%' => {
                 chars.next();
@@ -76,7 +104,41 @@ pub fn lex(source: &str) -> Result<Vec<Token>, LexError> {
             }
             '=' => {
                 chars.next();
-                tokens.push(Token::Equal);
+                if chars.peek().copied() == Some('=') {
+                    chars.next();
+                    tokens.push(Token::EqualEqual);
+                } else {
+                    tokens.push(Token::Equal);
+                }
+            }
+            '!' => {
+                chars.next();
+                if chars.peek().copied() == Some('=') {
+                    chars.next();
+                    tokens.push(Token::BangEqual);
+                } else {
+                    return Err(LexError {
+                        message: format!("unexpected character '!'"),
+                    });
+                }
+            }
+            '<' => {
+                chars.next();
+                if chars.peek().copied() == Some('=') {
+                    chars.next();
+                    tokens.push(Token::LessEqual);
+                } else {
+                    tokens.push(Token::Less);
+                }
+            }
+            '>' => {
+                chars.next();
+                if chars.peek().copied() == Some('=') {
+                    chars.next();
+                    tokens.push(Token::GreaterEqual);
+                } else {
+                    tokens.push(Token::Greater);
+                }
             }
             _ => {
                 return Err(LexError {
@@ -206,6 +268,109 @@ mod tests {
                 Token::Eof,
             ]
         );
+    }
+
+    #[test]
+    fn lexes_comparison_operators() {
+        let tokens = lex("return 1 == 2 != 3 < 4 <= 5 > 6 >= 7;").expect("lexing should succeed");
+
+        assert_eq!(
+            tokens,
+            vec![
+                Token::KwReturn,
+                Token::IntLiteral(1),
+                Token::EqualEqual,
+                Token::IntLiteral(2),
+                Token::BangEqual,
+                Token::IntLiteral(3),
+                Token::Less,
+                Token::IntLiteral(4),
+                Token::LessEqual,
+                Token::IntLiteral(5),
+                Token::Greater,
+                Token::IntLiteral(6),
+                Token::GreaterEqual,
+                Token::IntLiteral(7),
+                Token::Semicolon,
+                Token::Eof,
+            ]
+        );
+    }
+
+    #[test]
+    fn lexes_division_after_comment_handling() {
+        let tokens = lex("return 6 / 2;").expect("lexing should succeed");
+
+        assert_eq!(
+            tokens,
+            vec![
+                Token::KwReturn,
+                Token::IntLiteral(6),
+                Token::Slash,
+                Token::IntLiteral(2),
+                Token::Semicolon,
+                Token::Eof,
+            ]
+        );
+    }
+
+    #[test]
+    fn skips_line_comments() {
+        let tokens = lex("return 1; // comment").expect("lexing should succeed");
+
+        assert_eq!(
+            tokens,
+            vec![
+                Token::KwReturn,
+                Token::IntLiteral(1),
+                Token::Semicolon,
+                Token::Eof,
+            ]
+        );
+    }
+
+    #[test]
+    fn skips_block_comments() {
+        let tokens = lex("return /* comment */ 1;").expect("lexing should succeed");
+
+        assert_eq!(
+            tokens,
+            vec![
+                Token::KwReturn,
+                Token::IntLiteral(1),
+                Token::Semicolon,
+                Token::Eof,
+            ]
+        );
+    }
+
+    #[test]
+    fn skips_empty_block_comments() {
+        let tokens = lex("return /**/ 1;").expect("lexing should succeed");
+
+        assert_eq!(
+            tokens,
+            vec![
+                Token::KwReturn,
+                Token::IntLiteral(1),
+                Token::Semicolon,
+                Token::Eof,
+            ]
+        );
+    }
+
+    #[test]
+    fn rejects_unterminated_block_comment() {
+        let err = lex("return /* unterminated").expect_err("lexing should fail");
+
+        assert_eq!(err.message, "unterminated block comment");
+    }
+
+    #[test]
+    fn rejects_lone_bang() {
+        let err = lex("return !1;").expect_err("lexing should fail");
+
+        assert_eq!(err.message, "unexpected character '!'");
     }
 
     #[test]

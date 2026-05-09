@@ -112,10 +112,10 @@ sudo apt install qemu-user binutils-riscv64-linux-gnu
 - [x] `return`
 - [x] arithmetic: `+ - * / %`
 - [x] operator precedence and left associativity
-- [ ] parenthesized expressions
+- [x] parenthesized expressions
 - [ ] unary operators: `- ! ~`
 - [ ] bitwise operators: `& | ^ << >>`
-- [ ] comparisons: `== != < <= > >=`
+- [x] comparisons: `== != < <= > >=`
 - [ ] blocks
 - [ ] nested blocks and scope
 - [ ] `if` / `else`
@@ -123,6 +123,6 @@ sudo apt install qemu-user binutils-riscv64-linux-gnu
 - [ ] function definitions beyond `main`
 - [ ] function parameters
 - [ ] function calls
-- [ ] comments
+- [x] comments
 - [ ] semantic errors for undeclared and duplicate locals
 - [ ] argument passing and call ABI handling

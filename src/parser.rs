@@ -46,6 +46,11 @@ impl Parser {
         match self.advance() {
             Token::IntLiteral(value) => Ok(Expr::IntLiteral(value)),
             Token::Ident(name) => Ok(Expr::Variable(name)),
+            Token::LParen => {
+                let expr = self.parse_expr()?;
+                self.expect(Token::RParen)?;
+                Ok(expr)
+            }
             found => {
                 return Err(ParseError {
                     message: format!("expected expression, found {found:?}"),
@@ -116,8 +121,53 @@ impl Parser {
         Ok(left)
     }
 
+    fn parse_comparison_op(&mut self) -> Option<BinaryOp> {
+        match self.peek() {
+            Token::EqualEqual => {
+                self.advance();
+                Some(BinaryOp::Equal)
+            }
+            Token::BangEqual => {
+                self.advance();
+                Some(BinaryOp::NotEqual)
+            }
+            Token::Less => {
+                self.advance();
+                Some(BinaryOp::Less)
+            }
+            Token::LessEqual => {
+                self.advance();
+                Some(BinaryOp::LessEqual)
+            }
+            Token::Greater => {
+                self.advance();
+                Some(BinaryOp::Greater)
+            }
+            Token::GreaterEqual => {
+                self.advance();
+                Some(BinaryOp::GreaterEqual)
+            }
+            _ => None,
+        }
+    }
+
+    fn parse_comparison(&mut self) -> Result<Expr, ParseError> {
+        let mut left = self.parse_additive()?;
+
+        if let Some(op) = self.parse_comparison_op() {
+            let right = self.parse_additive()?;
+            left = Expr::Binary {
+                op,
+                left: Box::new(left),
+                right: Box::new(right),
+            }
+        }
+
+        Ok(left)
+    }
+
     fn parse_expr(&mut self) -> Result<Expr, ParseError> {
-        self.parse_additive()
+        self.parse_comparison()
     }
 
     fn parse_var_decl(&mut self) -> Result<Statement, ParseError> {
@@ -194,7 +244,7 @@ impl Parser {
 
         let mut body = vec![];
 
-        while self.peek() != &Token::RBrace {
+        while *self.peek() != Token::RBrace {
             body.push(self.parse_statement()?);
         }
         self.expect(Token::RBrace)?;
@@ -487,6 +537,188 @@ mod tests {
                 },
             }
         )
+    }
+
+    #[test]
+    fn parses_parenthesized_expression_precedence() {
+        let tokens = vec![
+            Token::KwInt,
+            Token::Ident("main".to_string()),
+            Token::LParen,
+            Token::RParen,
+            Token::LBrace,
+            Token::KwReturn,
+            Token::LParen,
+            Token::IntLiteral(1),
+            Token::Plus,
+            Token::IntLiteral(2),
+            Token::RParen,
+            Token::Star,
+            Token::IntLiteral(3),
+            Token::Semicolon,
+            Token::RBrace,
+            Token::Eof,
+        ];
+
+        let program = parse(tokens).expect("parsing should succeed");
+
+        assert_eq!(
+            program,
+            Program {
+                function: Function {
+                    name: "main".to_string(),
+                    body: vec![Statement::Return(Expr::Binary {
+                        op: BinaryOp::Multiply,
+                        left: Box::new(Expr::Binary {
+                            op: BinaryOp::Add,
+                            left: Box::new(Expr::IntLiteral(1)),
+                            right: Box::new(Expr::IntLiteral(2)),
+                        }),
+                        right: Box::new(Expr::IntLiteral(3)),
+                    })],
+                },
+            }
+        )
+    }
+
+    #[test]
+    fn parses_less_than_with_additive_operands() {
+        let tokens = vec![
+            Token::KwInt,
+            Token::Ident("main".to_string()),
+            Token::LParen,
+            Token::RParen,
+            Token::LBrace,
+            Token::KwReturn,
+            Token::IntLiteral(1),
+            Token::Plus,
+            Token::IntLiteral(2),
+            Token::Less,
+            Token::IntLiteral(4),
+            Token::Semicolon,
+            Token::RBrace,
+            Token::Eof,
+        ];
+
+        let program = parse(tokens).expect("parsing should succeed");
+
+        assert_eq!(
+            program,
+            Program {
+                function: Function {
+                    name: "main".to_string(),
+                    body: vec![Statement::Return(Expr::Binary {
+                        op: BinaryOp::Less,
+                        left: Box::new(Expr::Binary {
+                            op: BinaryOp::Add,
+                            left: Box::new(Expr::IntLiteral(1)),
+                            right: Box::new(Expr::IntLiteral(2)),
+                        }),
+                        right: Box::new(Expr::IntLiteral(4)),
+                    })],
+                },
+            }
+        )
+    }
+
+    #[test]
+    fn parses_equality_with_parenthesized_expression() {
+        let tokens = vec![
+            Token::KwInt,
+            Token::Ident("main".to_string()),
+            Token::LParen,
+            Token::RParen,
+            Token::LBrace,
+            Token::KwReturn,
+            Token::LParen,
+            Token::IntLiteral(1),
+            Token::Plus,
+            Token::IntLiteral(2),
+            Token::RParen,
+            Token::EqualEqual,
+            Token::IntLiteral(3),
+            Token::Semicolon,
+            Token::RBrace,
+            Token::Eof,
+        ];
+
+        let program = parse(tokens).expect("parsing should succeed");
+
+        assert_eq!(
+            program,
+            Program {
+                function: Function {
+                    name: "main".to_string(),
+                    body: vec![Statement::Return(Expr::Binary {
+                        op: BinaryOp::Equal,
+                        left: Box::new(Expr::Binary {
+                            op: BinaryOp::Add,
+                            left: Box::new(Expr::IntLiteral(1)),
+                            right: Box::new(Expr::IntLiteral(2)),
+                        }),
+                        right: Box::new(Expr::IntLiteral(3)),
+                    })],
+                },
+            }
+        )
+    }
+
+    #[test]
+    fn parses_greater_equal() {
+        let tokens = vec![
+            Token::KwInt,
+            Token::Ident("main".to_string()),
+            Token::LParen,
+            Token::RParen,
+            Token::LBrace,
+            Token::KwReturn,
+            Token::Ident("x".to_string()),
+            Token::GreaterEqual,
+            Token::IntLiteral(10),
+            Token::Semicolon,
+            Token::RBrace,
+            Token::Eof,
+        ];
+
+        let program = parse(tokens).expect("parsing should succeed");
+
+        assert_eq!(
+            program,
+            Program {
+                function: Function {
+                    name: "main".to_string(),
+                    body: vec![Statement::Return(Expr::Binary {
+                        op: BinaryOp::GreaterEqual,
+                        left: Box::new(Expr::Variable("x".to_string())),
+                        right: Box::new(Expr::IntLiteral(10)),
+                    })],
+                },
+            }
+        )
+    }
+
+    #[test]
+    fn rejects_chained_comparisons() {
+        let tokens = vec![
+            Token::KwInt,
+            Token::Ident("main".to_string()),
+            Token::LParen,
+            Token::RParen,
+            Token::LBrace,
+            Token::KwReturn,
+            Token::IntLiteral(1),
+            Token::Less,
+            Token::IntLiteral(2),
+            Token::Less,
+            Token::IntLiteral(3),
+            Token::Semicolon,
+            Token::RBrace,
+            Token::Eof,
+        ];
+
+        let err = parse(tokens).expect_err("parsing should fail");
+
+        assert_eq!(err.message, "expected Semicolon, found Less");
     }
 
     #[test]

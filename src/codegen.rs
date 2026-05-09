@@ -118,14 +118,31 @@ impl Codegen {
                 self.emit_line(format_args!("lw t0, 0(sp)"));
                 self.emit_line(format_args!("addi sp, sp, 4"));
 
-                let op_asm = match op {
-                    BinaryOp::Add => "add",
-                    BinaryOp::Subtract => "sub",
-                    BinaryOp::Multiply => "mul",
-                    BinaryOp::Divide => "div",
-                    BinaryOp::Remainder => "rem",
+                match op {
+                    BinaryOp::Add => self.emit_line(format_args!("add a0, t0, a0")),
+                    BinaryOp::Subtract => self.emit_line(format_args!("sub a0, t0, a0")),
+                    BinaryOp::Multiply => self.emit_line(format_args!("mul a0, t0, a0")),
+                    BinaryOp::Divide => self.emit_line(format_args!("div a0, t0, a0")),
+                    BinaryOp::Remainder => self.emit_line(format_args!("rem a0, t0, a0")),
+                    BinaryOp::Equal => {
+                        self.emit_line(format_args!("xor a0, t0, a0"));
+                        self.emit_line(format_args!("seqz a0, a0"));
+                    }
+                    BinaryOp::NotEqual => {
+                        self.emit_line(format_args!("xor a0, t0, a0"));
+                        self.emit_line(format_args!("snez a0, a0"));
+                    }
+                    BinaryOp::Less => self.emit_line(format_args!("slt a0, t0, a0")),
+                    BinaryOp::LessEqual => {
+                        self.emit_line(format_args!("slt a0, a0, t0"));
+                        self.emit_line(format_args!("xori a0, a0, 1"));
+                    }
+                    BinaryOp::Greater => self.emit_line(format_args!("slt a0, a0, t0")),
+                    BinaryOp::GreaterEqual => {
+                        self.emit_line(format_args!("slt a0, t0, a0"));
+                        self.emit_line(format_args!("xori a0, a0, 1"));
+                    }
                 };
-                self.emit_line(format_args!("{op_asm} a0, t0, a0"));
             }
             Expr::Variable(name) => {
                 let offset = self.frame.lookup(name);
@@ -269,6 +286,132 @@ mod tests {
         assert_eq!(
             asm,
             ".globl main\nmain:\n    addi sp, sp, -16\n    sw ra, 12(sp)\n    sw s0, 8(sp)\n    addi s0, sp, 16\n    li a0, 8\n    addi sp, sp, -4\n    sw a0, 0(sp)\n    li a0, 3\n    lw t0, 0(sp)\n    addi sp, sp, 4\n    rem a0, t0, a0\n    lw ra, 12(sp)\n    lw s0, 8(sp)\n    addi sp, sp, 16\n    ret\n"
+        );
+    }
+
+    #[test]
+    fn generates_binary_equal() {
+        let program = Program {
+            function: Function {
+                name: "main".to_string(),
+                body: vec![Statement::Return(Expr::Binary {
+                    op: BinaryOp::Equal,
+                    left: Box::new(Expr::IntLiteral(5)),
+                    right: Box::new(Expr::IntLiteral(5)),
+                })],
+            },
+        };
+
+        let asm = generate_with_codegen(&program);
+
+        assert_eq!(
+            asm,
+            ".globl main\nmain:\n    addi sp, sp, -16\n    sw ra, 12(sp)\n    sw s0, 8(sp)\n    addi s0, sp, 16\n    li a0, 5\n    addi sp, sp, -4\n    sw a0, 0(sp)\n    li a0, 5\n    lw t0, 0(sp)\n    addi sp, sp, 4\n    xor a0, t0, a0\n    seqz a0, a0\n    lw ra, 12(sp)\n    lw s0, 8(sp)\n    addi sp, sp, 16\n    ret\n"
+        );
+    }
+
+    #[test]
+    fn generates_binary_not_equal() {
+        let program = Program {
+            function: Function {
+                name: "main".to_string(),
+                body: vec![Statement::Return(Expr::Binary {
+                    op: BinaryOp::NotEqual,
+                    left: Box::new(Expr::IntLiteral(5)),
+                    right: Box::new(Expr::IntLiteral(3)),
+                })],
+            },
+        };
+
+        let asm = generate_with_codegen(&program);
+
+        assert_eq!(
+            asm,
+            ".globl main\nmain:\n    addi sp, sp, -16\n    sw ra, 12(sp)\n    sw s0, 8(sp)\n    addi s0, sp, 16\n    li a0, 5\n    addi sp, sp, -4\n    sw a0, 0(sp)\n    li a0, 3\n    lw t0, 0(sp)\n    addi sp, sp, 4\n    xor a0, t0, a0\n    snez a0, a0\n    lw ra, 12(sp)\n    lw s0, 8(sp)\n    addi sp, sp, 16\n    ret\n"
+        );
+    }
+
+    #[test]
+    fn generates_binary_less() {
+        let program = Program {
+            function: Function {
+                name: "main".to_string(),
+                body: vec![Statement::Return(Expr::Binary {
+                    op: BinaryOp::Less,
+                    left: Box::new(Expr::IntLiteral(2)),
+                    right: Box::new(Expr::IntLiteral(5)),
+                })],
+            },
+        };
+
+        let asm = generate_with_codegen(&program);
+
+        assert_eq!(
+            asm,
+            ".globl main\nmain:\n    addi sp, sp, -16\n    sw ra, 12(sp)\n    sw s0, 8(sp)\n    addi s0, sp, 16\n    li a0, 2\n    addi sp, sp, -4\n    sw a0, 0(sp)\n    li a0, 5\n    lw t0, 0(sp)\n    addi sp, sp, 4\n    slt a0, t0, a0\n    lw ra, 12(sp)\n    lw s0, 8(sp)\n    addi sp, sp, 16\n    ret\n"
+        );
+    }
+
+    #[test]
+    fn generates_binary_less_equal() {
+        let program = Program {
+            function: Function {
+                name: "main".to_string(),
+                body: vec![Statement::Return(Expr::Binary {
+                    op: BinaryOp::LessEqual,
+                    left: Box::new(Expr::IntLiteral(5)),
+                    right: Box::new(Expr::IntLiteral(5)),
+                })],
+            },
+        };
+
+        let asm = generate_with_codegen(&program);
+
+        assert_eq!(
+            asm,
+            ".globl main\nmain:\n    addi sp, sp, -16\n    sw ra, 12(sp)\n    sw s0, 8(sp)\n    addi s0, sp, 16\n    li a0, 5\n    addi sp, sp, -4\n    sw a0, 0(sp)\n    li a0, 5\n    lw t0, 0(sp)\n    addi sp, sp, 4\n    slt a0, a0, t0\n    xori a0, a0, 1\n    lw ra, 12(sp)\n    lw s0, 8(sp)\n    addi sp, sp, 16\n    ret\n"
+        );
+    }
+
+    #[test]
+    fn generates_binary_greater() {
+        let program = Program {
+            function: Function {
+                name: "main".to_string(),
+                body: vec![Statement::Return(Expr::Binary {
+                    op: BinaryOp::Greater,
+                    left: Box::new(Expr::IntLiteral(5)),
+                    right: Box::new(Expr::IntLiteral(2)),
+                })],
+            },
+        };
+
+        let asm = generate_with_codegen(&program);
+
+        assert_eq!(
+            asm,
+            ".globl main\nmain:\n    addi sp, sp, -16\n    sw ra, 12(sp)\n    sw s0, 8(sp)\n    addi s0, sp, 16\n    li a0, 5\n    addi sp, sp, -4\n    sw a0, 0(sp)\n    li a0, 2\n    lw t0, 0(sp)\n    addi sp, sp, 4\n    slt a0, a0, t0\n    lw ra, 12(sp)\n    lw s0, 8(sp)\n    addi sp, sp, 16\n    ret\n"
+        );
+    }
+
+    #[test]
+    fn generates_binary_greater_equal() {
+        let program = Program {
+            function: Function {
+                name: "main".to_string(),
+                body: vec![Statement::Return(Expr::Binary {
+                    op: BinaryOp::GreaterEqual,
+                    left: Box::new(Expr::IntLiteral(5)),
+                    right: Box::new(Expr::IntLiteral(5)),
+                })],
+            },
+        };
+
+        let asm = generate_with_codegen(&program);
+
+        assert_eq!(
+            asm,
+            ".globl main\nmain:\n    addi sp, sp, -16\n    sw ra, 12(sp)\n    sw s0, 8(sp)\n    addi s0, sp, 16\n    li a0, 5\n    addi sp, sp, -4\n    sw a0, 0(sp)\n    li a0, 5\n    lw t0, 0(sp)\n    addi sp, sp, 4\n    slt a0, t0, a0\n    xori a0, a0, 1\n    lw ra, 12(sp)\n    lw s0, 8(sp)\n    addi sp, sp, 16\n    ret\n"
         );
     }
 

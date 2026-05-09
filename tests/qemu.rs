@@ -29,6 +29,48 @@ fn run_qemu_case(name: &str, source: &str, expected: i32) {
 fn qemu_arithmetic_programs_return_expected_values() {
     run_qemu_case("return-42", "int main() {\n    return 42;\n}\n", 42);
     run_qemu_case("precedence", "int main() {\n    return 1 + 2 * 3;\n}\n", 7);
+    run_qemu_case(
+        "parentheses",
+        "int main() {\n    return (1 + 2) * 3;\n}\n",
+        9,
+    );
+    run_qemu_case("equal-true", "int main() {\n    return 5 == 5;\n}\n", 1);
+    run_qemu_case("equal-false", "int main() {\n    return 5 == 3;\n}\n", 0);
+    run_qemu_case("not-equal-true", "int main() {\n    return 5 != 3;\n}\n", 1);
+    run_qemu_case(
+        "not-equal-false",
+        "int main() {\n    return 5 != 5;\n}\n",
+        0,
+    );
+    run_qemu_case("less-true", "int main() {\n    return 2 < 5;\n}\n", 1);
+    run_qemu_case("less-false", "int main() {\n    return 5 < 2;\n}\n", 0);
+    run_qemu_case(
+        "less-equal-true",
+        "int main() {\n    return 5 <= 5;\n}\n",
+        1,
+    );
+    run_qemu_case(
+        "less-equal-false",
+        "int main() {\n    return 6 <= 5;\n}\n",
+        0,
+    );
+    run_qemu_case("greater-true", "int main() {\n    return 5 > 2;\n}\n", 1);
+    run_qemu_case("greater-false", "int main() {\n    return 2 > 5;\n}\n", 0);
+    run_qemu_case(
+        "greater-equal-true",
+        "int main() {\n    return 5 >= 5;\n}\n",
+        1,
+    );
+    run_qemu_case(
+        "greater-equal-false",
+        "int main() {\n    return 2 >= 5;\n}\n",
+        0,
+    );
+    run_qemu_case(
+        "comparison-precedence",
+        "int main() {\n    return 1 + 2 < 4;\n}\n",
+        1,
+    );
     run_qemu_case("div-rem", "int main() {\n    return 8 / 2 + 8 % 3;\n}\n", 6);
     run_qemu_case(
         "local-return",
