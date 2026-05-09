@@ -212,6 +212,31 @@ fn qemu_local_variable_programs_return_expected_values() {
 }
 
 #[test]
+#[ignore = "requires qemu-riscv32 and riscv64-linux-gnu binutils"]
+fn qemu_block_scope_programs_return_expected_values() {
+    run_qemu_case(
+        "block-uses-outer-local",
+        "int main() {\n    int x = 5;\n    {\n        return x;\n    }\n}\n",
+        5,
+    );
+    run_qemu_case(
+        "inner-shadowing",
+        "int main() {\n    int x = 1;\n    {\n        int x = 2;\n        return x;\n    }\n}\n",
+        2,
+    );
+    run_qemu_case(
+        "outer-local-after-block",
+        "int main() {\n    int x = 1;\n    {\n        int y = 2;\n    }\n    return x;\n}\n",
+        1,
+    );
+    run_qemu_case(
+        "nested-blocks",
+        "int main() {\n    int x = 1;\n    {\n        int y = 2;\n        {\n            int z = 3;\n            return x + y + z;\n        }\n    }\n}\n",
+        6,
+    );
+}
+
+#[test]
 #[ignore = "requires cargo"]
 fn qemu_semantic_errors_are_reported_before_codegen() {
     run_compile_error_case(
@@ -232,6 +257,11 @@ fn qemu_semantic_errors_are_reported_before_codegen() {
     run_compile_error_case(
         "semantic-later-local",
         "int main() {\n    int y = x;\n    int x = 1;\n    return y;\n}\n",
+        "semantic analysis error: undeclared local variable 'x'",
+    );
+    run_compile_error_case(
+        "semantic-block-local-after-scope",
+        "int main() {\n    {\n        int x = 1;\n    }\n    return x;\n}\n",
         "semantic analysis error: undeclared local variable 'x'",
     );
 }

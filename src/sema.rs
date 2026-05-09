@@ -8,32 +8,55 @@ pub struct SemanticError {
 }
 
 struct Checker {
-    locals: HashSet<String>,
+    scopes: Vec<HashSet<String>>,
 }
 
 impl Checker {
     fn new() -> Self {
         Self {
-            locals: HashSet::new(),
+            scopes: vec![HashSet::new()],
         }
     }
 
-    fn check_local_declared(&mut self, name: &str) -> Result<(), SemanticError> {
-        if !self.locals.contains(name) {
-            return Err(SemanticError {
-                message: format!("undeclared local variable '{name}'"),
-            });
-        }
-        Ok(())
+    fn enter_scope(&mut self) {
+        self.scopes.push(HashSet::new());
     }
 
-    fn check_local_not_declared(&mut self, name: &str) -> Result<(), SemanticError> {
-        if self.locals.contains(name) {
+    fn exit_scope(&mut self) {
+        self.scopes.pop();
+    }
+
+    fn current_scope(&self) -> &HashSet<String> {
+        self.scopes
+            .last()
+            .expect("semantic checker should have an active scope")
+    }
+
+    fn current_scope_mut(&mut self) -> &mut HashSet<String> {
+        self.scopes
+            .last_mut()
+            .expect("semantic checker should have an active scope")
+    }
+
+    fn declare_local(&mut self, name: &str) -> Result<(), SemanticError> {
+        if self.current_scope().contains(name) {
             return Err(SemanticError {
                 message: format!("duplicate local variable '{name}'"),
             });
         }
+        self.current_scope_mut().insert(name.to_string());
         Ok(())
+    }
+
+    fn check_local_declared(&mut self, name: &str) -> Result<(), SemanticError> {
+        for scope in self.scopes.iter().rev() {
+            if scope.contains(name) {
+                return Ok(());
+            }
+        }
+        return Err(SemanticError {
+            message: format!("undeclared local variable '{name}'"),
+        });
     }
 
     fn check_expr(&mut self, expr: &Expr) -> Result<(), SemanticError> {
@@ -48,23 +71,40 @@ impl Checker {
         }
     }
 
+    fn check_statement(&mut self, statement: &Statement) -> Result<(), SemanticError> {
+        match statement {
+            Statement::Return(expr) => self.check_expr(expr)?,
+            Statement::VarDecl { name, init } => {
+                self.declare_local(name)?;
+                self.check_expr(init)?;
+            }
+            Statement::Assign { name, value } => {
+                self.check_local_declared(name)?;
+                self.check_expr(value)?;
+            }
+            Statement::Block(body) => self.check_block(body)?,
+        }
+        Ok(())
+    }
+
+    fn check_statements(&mut self, statements: &[Statement]) -> Result<(), SemanticError> {
+        for statement in statements {
+            self.check_statement(statement)?
+        }
+        Ok(())
+    }
+
+    fn check_block(&mut self, body: &[Statement]) -> Result<(), SemanticError> {
+        self.enter_scope();
+        let res = self.check_statements(body);
+        self.exit_scope();
+        res
+    }
+
     fn check_program(&mut self, program: &Program) -> Result<(), SemanticError> {
         let function = &program.function;
 
-        for statement in &function.body {
-            match statement {
-                Statement::Return(expr) => self.check_expr(expr)?,
-                Statement::VarDecl { name, init } => {
-                    self.check_local_not_declared(name)?;
-                    self.locals.insert(name.clone());
-                    self.check_expr(init)?;
-                }
-                Statement::Assign { name, value } => {
-                    self.check_local_declared(name)?;
-                    self.check_expr(value)?;
-                }
-            }
-        }
+        self.check_statements(&function.body)?;
 
         Ok(())
     }
@@ -219,5 +259,73 @@ mod tests {
         let err = check(&program).expect_err("semantic check should fail");
 
         assert_eq!(err.message, "undeclared local variable 'y'");
+    }
+
+    #[test]
+    fn accepts_block_using_outer_local() {
+        let program = main_program(vec![
+            Statement::VarDecl {
+                name: "x".to_string(),
+                init: Expr::IntLiteral(1),
+            },
+            Statement::Block(vec![Statement::Return(Expr::Variable("x".to_string()))]),
+        ]);
+
+        check(&program).expect("semantic check should succeed");
+    }
+
+    #[test]
+    fn rejects_use_of_local_after_block_scope_ends() {
+        let program = main_program(vec![
+            Statement::Block(vec![Statement::VarDecl {
+                name: "x".to_string(),
+                init: Expr::IntLiteral(1),
+            }]),
+            Statement::Return(Expr::Variable("x".to_string())),
+        ]);
+
+        let err = check(&program).expect_err("semantic check should fail");
+
+        assert_eq!(err.message, "undeclared local variable 'x'");
+    }
+
+    #[test]
+    fn accepts_shadowing_in_inner_block() {
+        let program = main_program(vec![
+            Statement::VarDecl {
+                name: "x".to_string(),
+                init: Expr::IntLiteral(1),
+            },
+            Statement::Block(vec![
+                Statement::VarDecl {
+                    name: "x".to_string(),
+                    init: Expr::IntLiteral(2),
+                },
+                Statement::Return(Expr::Variable("x".to_string())),
+            ]),
+        ]);
+
+        check(&program).expect("semantic check should succeed");
+    }
+
+    #[test]
+    fn rejects_duplicate_local_in_same_block() {
+        let program = main_program(vec![
+            Statement::Block(vec![
+                Statement::VarDecl {
+                    name: "x".to_string(),
+                    init: Expr::IntLiteral(1),
+                },
+                Statement::VarDecl {
+                    name: "x".to_string(),
+                    init: Expr::IntLiteral(2),
+                },
+            ]),
+            Statement::Return(Expr::IntLiteral(0)),
+        ]);
+
+        let err = check(&program).expect_err("semantic check should fail");
+
+        assert_eq!(err.message, "duplicate local variable 'x'");
     }
 }

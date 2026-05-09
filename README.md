@@ -2,7 +2,7 @@
 
 `rivet` is a C compiler written in Rust that targets RV32IM assembly. It implements a small subset of the C23 standard.
 
-It is currently a small expression-and-local-variable subset: integer literals, local variables, assignments, return statements, comments, arithmetic, unary, comparison, and bitwise operators with C-like precedence.
+It is currently a small expression-and-local-variable subset: integer literals, local variables, assignments, blocks, return statements, comments, arithmetic, unary, comparison, and bitwise operators with C-like precedence.
 
 The current language subset supports programs shaped like:
 
@@ -113,8 +113,8 @@ sudo apt install qemu-user binutils-riscv64-linux-gnu
 - [x] C-style left-associative chained comparisons
 - [x] comments
 - [x] semantic errors for undeclared and duplicate locals
-- [ ] blocks
-- [ ] nested blocks and scope
+- [x] blocks
+- [x] nested blocks and scope
 - [ ] `if` / `else`
 - [ ] `while`
 - [ ] function definitions beyond `main`

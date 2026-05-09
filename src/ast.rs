@@ -14,6 +14,7 @@ pub enum Statement {
     VarDecl { name: String, init: Expr },
     Assign { name: String, value: Expr },
     Return(Expr),
+    Block(Vec<Statement>),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

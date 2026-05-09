@@ -219,6 +219,14 @@ impl Parser {
         Ok(Statement::Assign { name, value })
     }
 
+    fn parse_through_rbrace(&mut self, vec: &mut Vec<Statement>) -> Result<(), ParseError> {
+        while *self.peek() != Token::RBrace {
+            vec.push(self.parse_statement()?);
+        }
+        self.expect(Token::RBrace)?;
+        Ok(())
+    }
+
     fn parse_statement(&mut self) -> Result<Statement, ParseError> {
         match self.peek() {
             Token::KwReturn => {
@@ -237,6 +245,12 @@ impl Parser {
                     message: "reached end of tokens".to_string(),
                 }),
             },
+            Token::LBrace => {
+                self.expect(Token::LBrace)?;
+                let mut body = vec![];
+                self.parse_through_rbrace(&mut body)?;
+                Ok(Statement::Block(body))
+            }
             found => Err(ParseError {
                 message: format!("got unexpected keyword {found:?}"),
             }),
@@ -260,11 +274,7 @@ impl Parser {
         self.expect(Token::LBrace)?;
 
         let mut body = vec![];
-
-        while *self.peek() != Token::RBrace {
-            body.push(self.parse_statement()?);
-        }
-        self.expect(Token::RBrace)?;
+        self.parse_through_rbrace(&mut body)?;
 
         Ok(Function { name, body })
     }
@@ -645,6 +655,72 @@ mod tests {
                         },
                         Statement::Return(Expr::Variable("x".to_string())),
                     ],
+                },
+            }
+        )
+    }
+
+    #[test]
+    fn parses_block_statement() {
+        let tokens = vec![
+            Token::KwInt,
+            Token::Ident("main".to_string()),
+            Token::LParen,
+            Token::RParen,
+            Token::LBrace,
+            Token::LBrace,
+            Token::KwReturn,
+            Token::IntLiteral(1),
+            Token::Semicolon,
+            Token::RBrace,
+            Token::RBrace,
+            Token::Eof,
+        ];
+
+        let program = parse(tokens).expect("parsing should succeed");
+
+        assert_eq!(
+            program,
+            Program {
+                function: Function {
+                    name: "main".to_string(),
+                    body: vec![Statement::Block(vec![Statement::Return(Expr::IntLiteral(
+                        1
+                    ))])],
+                },
+            }
+        )
+    }
+
+    #[test]
+    fn parses_nested_block_statements() {
+        let tokens = vec![
+            Token::KwInt,
+            Token::Ident("main".to_string()),
+            Token::LParen,
+            Token::RParen,
+            Token::LBrace,
+            Token::LBrace,
+            Token::LBrace,
+            Token::KwReturn,
+            Token::IntLiteral(1),
+            Token::Semicolon,
+            Token::RBrace,
+            Token::RBrace,
+            Token::RBrace,
+            Token::Eof,
+        ];
+
+        let program = parse(tokens).expect("parsing should succeed");
+
+        assert_eq!(
+            program,
+            Program {
+                function: Function {
+                    name: "main".to_string(),
+                    body: vec![Statement::Block(vec![Statement::Block(vec![
+                        Statement::Return(Expr::IntLiteral(1))
+                    ])])],
                 },
             }
         )

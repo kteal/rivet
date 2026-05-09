@@ -7,45 +7,39 @@ pub enum CodegenTarget {
     Rv32,
 }
 
+#[derive(Debug, Default, Clone)]
 struct FrameLayout {
     size: i32,
-    locals: HashMap<String, i32>,
 }
 
 impl FrameLayout {
-    fn new() -> Self {
-        Self {
-            size: 8,
-            locals: HashMap::new(),
+    fn count_locals_in_statements(statements: &[Statement]) -> i32 {
+        let mut sum = 0;
+        for statement in statements {
+            match statement {
+                Statement::VarDecl { .. } => sum += 1,
+                Statement::Block(body) => sum += FrameLayout::count_locals_in_statements(body),
+                _ => (),
+            }
         }
+        sum
     }
 
     fn for_function(function: &Function) -> Self {
-        let mut locals = HashMap::new();
-        let mut offset = -12;
-        let mut size = 8;
-
-        for statement in &function.body {
-            if let Statement::VarDecl { name, init: _ } = statement {
-                locals.insert(name.to_string(), offset);
-                size += 4;
-                offset -= 4;
-            }
-        }
-
+        let num_locals = FrameLayout::count_locals_in_statements(&function.body);
+        let mut size = (num_locals * 4) + 8;
+        // Round up to nearest 16 for stack alignment
         size = (size + 15) / 16 * 16;
 
-        Self { size, locals }
-    }
-
-    fn lookup(&self, name: &str) -> i32 {
-        *self.locals.get(name).expect("undeclared variable")
+        Self { size }
     }
 }
 
 struct Codegen {
     out: String,
     frame: FrameLayout,
+    scopes: Vec<HashMap<String, i32>>,
+    next_local_offset: i32,
     #[allow(dead_code)]
     target: CodegenTarget,
 }
@@ -54,9 +48,39 @@ impl Codegen {
     fn new(target: CodegenTarget) -> Self {
         Self {
             out: String::new(),
-            frame: FrameLayout::new(),
+            frame: FrameLayout::default(),
+            scopes: vec![HashMap::new()],
+            next_local_offset: -12,
             target,
         }
+    }
+
+    fn enter_scope(&mut self) {
+        self.scopes.push(HashMap::new());
+    }
+
+    fn exit_scope(&mut self) {
+        self.scopes.pop();
+    }
+
+    fn current_scope_mut(&mut self) -> &mut HashMap<String, i32> {
+        self.scopes
+            .last_mut()
+            .expect("codegen should have an active scope")
+    }
+
+    fn resolve_local(&mut self, name: &str) -> Option<i32> {
+        self.scopes
+            .iter()
+            .rev()
+            .find_map(|scope| scope.get(name).copied())
+    }
+
+    fn declare_local(&mut self, name: &str) -> i32 {
+        let offset = self.next_local_offset;
+        self.current_scope_mut().insert(name.to_string(), offset);
+        self.next_local_offset -= 4;
+        offset
     }
 
     fn emit(&mut self, args: fmt::Arguments) {
@@ -67,32 +91,49 @@ impl Codegen {
         self.emit(format_args!("    {args}\n"));
     }
 
+    fn emit_statements(&mut self, statements: &[Statement]) {
+        for statement in statements {
+            match statement {
+                Statement::Return(expr) => {
+                    self.emit_expr(expr);
+                }
+                Statement::VarDecl { name, init: value } => {
+                    // After this, value is in a0
+                    self.emit_expr(value);
+
+                    let offset = self.declare_local(name);
+                    self.emit_line(format_args!("sw a0, {offset}(s0)"));
+                }
+                Statement::Assign { name, value } => {
+                    self.emit_expr(value);
+
+                    let offset = self
+                        .resolve_local(name)
+                        .expect("assignment to undefined variable");
+                    self.emit_line(format_args!("sw a0, {offset}(s0)"));
+                }
+                Statement::Block(body) => {
+                    self.emit_block(body);
+                }
+            }
+        }
+    }
+
+    fn emit_block(&mut self, body: &[Statement]) {
+        self.enter_scope();
+        self.emit_statements(body);
+        self.exit_scope();
+    }
+
     fn emit_program(&mut self, program: &Program) -> String {
         let function = &program.function;
 
         self.frame = FrameLayout::for_function(&function);
         self.emit_prologue(&function.name);
-        self.emit_body(&function);
+        self.emit_statements(&function.body);
         self.emit_epilogue();
 
         std::mem::take(&mut self.out)
-    }
-
-    fn emit_body(&mut self, function: &Function) {
-        for statement in &function.body {
-            match statement {
-                Statement::Return(expr) => {
-                    self.emit_expr(expr);
-                }
-                Statement::VarDecl { name, init: value } | Statement::Assign { name, value } => {
-                    // After this, value is in a0
-                    self.emit_expr(value);
-
-                    let offset = self.frame.lookup(name);
-                    self.emit_line(format_args!("sw a0, {offset}(s0)"));
-                }
-            }
-        }
     }
 
     fn emit_prologue(&mut self, name: &str) {
@@ -158,7 +199,9 @@ impl Codegen {
                 };
             }
             Expr::Variable(name) => {
-                let offset = self.frame.lookup(name);
+                let offset = self
+                    .resolve_local(name)
+                    .expect("usage of undefined variable");
                 self.emit_line(format_args!("lw a0, {offset}(s0)"));
             }
             Expr::Unary { op, expr } => {
@@ -541,6 +584,74 @@ mod tests {
         assert_eq!(
             asm,
             ".globl main\nmain:\n    addi sp, sp, -16\n    sw ra, 12(sp)\n    sw s0, 8(sp)\n    addi s0, sp, 16\n    li a0, 5\n    sw a0, -12(s0)\n    lw a0, -12(s0)\n    lw ra, 12(sp)\n    lw s0, 8(sp)\n    addi sp, sp, 16\n    ret\n"
+        );
+    }
+
+    #[test]
+    fn generates_multiple_local_variables() {
+        let program = Program {
+            function: Function {
+                name: "main".to_string(),
+                body: vec![
+                    Statement::VarDecl {
+                        name: "x".to_string(),
+                        init: Expr::IntLiteral(1),
+                    },
+                    Statement::VarDecl {
+                        name: "y".to_string(),
+                        init: Expr::Binary {
+                            op: BinaryOp::Add,
+                            left: Box::new(Expr::Variable("x".to_string())),
+                            right: Box::new(Expr::IntLiteral(2)),
+                        },
+                    },
+                    Statement::VarDecl {
+                        name: "z".to_string(),
+                        init: Expr::Binary {
+                            op: BinaryOp::Add,
+                            left: Box::new(Expr::Variable("x".to_string())),
+                            right: Box::new(Expr::Variable("y".to_string())),
+                        },
+                    },
+                    Statement::Return(Expr::Variable("z".to_string())),
+                ],
+            },
+        };
+
+        let asm = generate_with_codegen(&program);
+
+        assert_eq!(
+            asm,
+            ".globl main\nmain:\n    addi sp, sp, -32\n    sw ra, 28(sp)\n    sw s0, 24(sp)\n    addi s0, sp, 32\n    li a0, 1\n    sw a0, -12(s0)\n    lw a0, -12(s0)\n    addi sp, sp, -4\n    sw a0, 0(sp)\n    li a0, 2\n    lw t0, 0(sp)\n    addi sp, sp, 4\n    add a0, t0, a0\n    sw a0, -16(s0)\n    lw a0, -12(s0)\n    addi sp, sp, -4\n    sw a0, 0(sp)\n    lw a0, -16(s0)\n    lw t0, 0(sp)\n    addi sp, sp, 4\n    add a0, t0, a0\n    sw a0, -20(s0)\n    lw a0, -20(s0)\n    lw ra, 28(sp)\n    lw s0, 24(sp)\n    addi sp, sp, 32\n    ret\n"
+        );
+    }
+
+    #[test]
+    fn generates_shadowed_local_in_nested_block() {
+        let program = Program {
+            function: Function {
+                name: "main".to_string(),
+                body: vec![
+                    Statement::VarDecl {
+                        name: "x".to_string(),
+                        init: Expr::IntLiteral(1),
+                    },
+                    Statement::Block(vec![
+                        Statement::VarDecl {
+                            name: "x".to_string(),
+                            init: Expr::IntLiteral(2),
+                        },
+                        Statement::Return(Expr::Variable("x".to_string())),
+                    ]),
+                ],
+            },
+        };
+
+        let asm = generate_with_codegen(&program);
+
+        assert_eq!(
+            asm,
+            ".globl main\nmain:\n    addi sp, sp, -16\n    sw ra, 12(sp)\n    sw s0, 8(sp)\n    addi s0, sp, 16\n    li a0, 1\n    sw a0, -12(s0)\n    li a0, 2\n    sw a0, -16(s0)\n    lw a0, -16(s0)\n    lw ra, 12(sp)\n    lw s0, 8(sp)\n    addi sp, sp, 16\n    ret\n"
         );
     }
 }
