@@ -1,0 +1,37 @@
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Program {
+    pub function: Function,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Function {
+    pub name: String,
+    pub body: Vec<Statement>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Statement {
+    VarDecl { name: String, init: Expr },
+    Assign { name: String, value: Expr },
+    Return(Expr),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Expr {
+    IntLiteral(i32),
+    Variable(String),
+    Binary {
+        op: BinaryOp,
+        left: Box<Expr>,
+        right: Box<Expr>,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum BinaryOp {
+    Add,
+    Subtract,
+    Multiply,
+    Divide,
+    Remainder,
+}

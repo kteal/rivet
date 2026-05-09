@@ -1,0 +1,322 @@
+use crate::ast::{BinaryOp, Expr, Function, Program, Statement};
+use std::collections::HashMap;
+use std::fmt::{self, Write};
+
+struct FrameLayout {
+    size: i32,
+    locals: HashMap<String, i32>,
+}
+
+impl FrameLayout {
+    fn new() -> Self {
+        Self {
+            size: 8,
+            locals: HashMap::new(),
+        }
+    }
+
+    fn for_function(function: &Function) -> Self {
+        let mut locals = HashMap::new();
+        let mut offset = -12;
+        let mut size = 8;
+
+        for statement in &function.body {
+            if let Statement::VarDecl { name, init: _ } = statement {
+                locals.insert(name.to_string(), offset);
+                size += 4;
+                offset -= 4;
+            }
+        }
+
+        size = (size + 15) / 16 * 16;
+
+        Self { size, locals }
+    }
+
+    fn lookup(&self, name: &str) -> i32 {
+        *self.locals.get(name).expect("undeclared variable")
+    }
+}
+
+struct Codegen {
+    out: String,
+    frame: FrameLayout,
+}
+
+impl Codegen {
+    fn new() -> Self {
+        Self {
+            out: String::new(),
+            frame: FrameLayout::new(),
+        }
+    }
+
+    fn emit(&mut self, args: fmt::Arguments) {
+        self.out.write_fmt(args).unwrap();
+    }
+
+    fn emit_line(&mut self, args: fmt::Arguments) {
+        self.emit(format_args!("    {args}\n"));
+    }
+
+    fn emit_program(&mut self, program: &Program) -> String {
+        let function = &program.function;
+
+        self.frame = FrameLayout::for_function(&function);
+        self.emit_prologue(&function.name);
+        self.emit_body(&function);
+        self.emit_epilogue();
+
+        std::mem::take(&mut self.out)
+    }
+
+    fn emit_body(&mut self, function: &Function) {
+        for statement in &function.body {
+            match statement {
+                Statement::Return(expr) => {
+                    self.emit_expr(expr);
+                }
+                Statement::VarDecl { name, init: value } | Statement::Assign { name, value } => {
+                    // After this, value is in a0
+                    self.emit_expr(value);
+
+                    let offset = self.frame.lookup(name);
+                    self.emit_line(format_args!("sw a0, {offset}(s0)"));
+                }
+            }
+        }
+    }
+
+    fn emit_prologue(&mut self, name: &str) {
+        let frame_size = self.frame.size;
+        self.emit(format_args!(".globl {name}\n"));
+        self.emit(format_args!("{name}:\n"));
+        self.emit_line(format_args!("addi sp, sp, -{frame_size}"));
+        self.emit_line(format_args!("sw ra, {}(sp)", frame_size - 4));
+        self.emit_line(format_args!("sw s0, {}(sp)", frame_size - 8));
+        self.emit_line(format_args!("addi s0, sp, {frame_size}"));
+    }
+
+    fn emit_epilogue(&mut self) {
+        let frame_size = self.frame.size;
+        self.emit_line(format_args!("lw ra, {}(sp)", frame_size - 4));
+        self.emit_line(format_args!("lw s0, {}(sp)", frame_size - 8));
+        self.emit_line(format_args!("addi sp, sp, {frame_size}"));
+        self.emit_line(format_args!("ret"));
+    }
+
+    fn emit_expr(&mut self, expr: &Expr) {
+        match expr {
+            Expr::IntLiteral(value) => {
+                self.emit_line(format_args!("li a0, {value}"));
+            }
+            Expr::Binary { op, left, right } => {
+                self.emit_expr(left);
+                self.emit_line(format_args!("addi sp, sp, -4"));
+                self.emit_line(format_args!("sw a0, 0(sp)"));
+                self.emit_expr(right);
+                self.emit_line(format_args!("lw t0, 0(sp)"));
+                self.emit_line(format_args!("addi sp, sp, 4"));
+
+                let op_asm = match op {
+                    BinaryOp::Add => "add",
+                    BinaryOp::Subtract => "sub",
+                    BinaryOp::Multiply => "mul",
+                    BinaryOp::Divide => "div",
+                    BinaryOp::Remainder => "rem",
+                };
+                self.emit_line(format_args!("{op_asm} a0, t0, a0"));
+            }
+            Expr::Variable(name) => {
+                let offset = self.frame.lookup(name);
+                self.emit_line(format_args!("lw a0, {offset}(s0)"));
+            }
+        }
+    }
+}
+
+pub fn generate(program: &Program) -> String {
+    let mut codegen = Codegen::new();
+    codegen.emit_program(program)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ast::Function;
+
+    fn generate_with_codegen(program: &Program) -> String {
+        let mut codegen = Codegen::new();
+        codegen.emit_program(program)
+    }
+
+    #[test]
+    fn basic_codegen() {
+        let program = Program {
+            function: Function {
+                name: "main".to_string(),
+                body: vec![Statement::Return(Expr::IntLiteral(42))],
+            },
+        };
+
+        let asm = generate_with_codegen(&program);
+
+        assert_eq!(
+            asm,
+            ".globl main\nmain:\n    addi sp, sp, -16\n    sw ra, 12(sp)\n    sw s0, 8(sp)\n    addi s0, sp, 16\n    li a0, 42\n    lw ra, 12(sp)\n    lw s0, 8(sp)\n    addi sp, sp, 16\n    ret\n"
+        );
+    }
+
+    #[test]
+    fn generates_binary_add() {
+        let program = Program {
+            function: Function {
+                name: "main".to_string(),
+                body: vec![Statement::Return(Expr::Binary {
+                    op: BinaryOp::Add,
+                    left: Box::new(Expr::IntLiteral(1)),
+                    right: Box::new(Expr::IntLiteral(2)),
+                })],
+            },
+        };
+
+        let asm = generate_with_codegen(&program);
+
+        assert_eq!(
+            asm,
+            ".globl main\nmain:\n    addi sp, sp, -16\n    sw ra, 12(sp)\n    sw s0, 8(sp)\n    addi s0, sp, 16\n    li a0, 1\n    addi sp, sp, -4\n    sw a0, 0(sp)\n    li a0, 2\n    lw t0, 0(sp)\n    addi sp, sp, 4\n    add a0, t0, a0\n    lw ra, 12(sp)\n    lw s0, 8(sp)\n    addi sp, sp, 16\n    ret\n"
+        );
+    }
+
+    #[test]
+    fn generates_binary_subtract() {
+        let program = Program {
+            function: Function {
+                name: "main".to_string(),
+                body: vec![Statement::Return(Expr::Binary {
+                    op: BinaryOp::Subtract,
+                    left: Box::new(Expr::IntLiteral(5)),
+                    right: Box::new(Expr::IntLiteral(2)),
+                })],
+            },
+        };
+
+        let asm = generate_with_codegen(&program);
+
+        assert_eq!(
+            asm,
+            ".globl main\nmain:\n    addi sp, sp, -16\n    sw ra, 12(sp)\n    sw s0, 8(sp)\n    addi s0, sp, 16\n    li a0, 5\n    addi sp, sp, -4\n    sw a0, 0(sp)\n    li a0, 2\n    lw t0, 0(sp)\n    addi sp, sp, 4\n    sub a0, t0, a0\n    lw ra, 12(sp)\n    lw s0, 8(sp)\n    addi sp, sp, 16\n    ret\n"
+        );
+    }
+
+    #[test]
+    fn generates_binary_multiply() {
+        let program = Program {
+            function: Function {
+                name: "main".to_string(),
+                body: vec![Statement::Return(Expr::Binary {
+                    op: BinaryOp::Multiply,
+                    left: Box::new(Expr::IntLiteral(2)),
+                    right: Box::new(Expr::IntLiteral(3)),
+                })],
+            },
+        };
+
+        let asm = generate_with_codegen(&program);
+
+        assert_eq!(
+            asm,
+            ".globl main\nmain:\n    addi sp, sp, -16\n    sw ra, 12(sp)\n    sw s0, 8(sp)\n    addi s0, sp, 16\n    li a0, 2\n    addi sp, sp, -4\n    sw a0, 0(sp)\n    li a0, 3\n    lw t0, 0(sp)\n    addi sp, sp, 4\n    mul a0, t0, a0\n    lw ra, 12(sp)\n    lw s0, 8(sp)\n    addi sp, sp, 16\n    ret\n"
+        );
+    }
+
+    #[test]
+    fn generates_binary_divide() {
+        let program = Program {
+            function: Function {
+                name: "main".to_string(),
+                body: vec![Statement::Return(Expr::Binary {
+                    op: BinaryOp::Divide,
+                    left: Box::new(Expr::IntLiteral(8)),
+                    right: Box::new(Expr::IntLiteral(2)),
+                })],
+            },
+        };
+
+        let asm = generate_with_codegen(&program);
+
+        assert_eq!(
+            asm,
+            ".globl main\nmain:\n    addi sp, sp, -16\n    sw ra, 12(sp)\n    sw s0, 8(sp)\n    addi s0, sp, 16\n    li a0, 8\n    addi sp, sp, -4\n    sw a0, 0(sp)\n    li a0, 2\n    lw t0, 0(sp)\n    addi sp, sp, 4\n    div a0, t0, a0\n    lw ra, 12(sp)\n    lw s0, 8(sp)\n    addi sp, sp, 16\n    ret\n"
+        );
+    }
+
+    #[test]
+    fn generates_binary_remainder() {
+        let program = Program {
+            function: Function {
+                name: "main".to_string(),
+                body: vec![Statement::Return(Expr::Binary {
+                    op: BinaryOp::Remainder,
+                    left: Box::new(Expr::IntLiteral(8)),
+                    right: Box::new(Expr::IntLiteral(3)),
+                })],
+            },
+        };
+
+        let asm = generate_with_codegen(&program);
+
+        assert_eq!(
+            asm,
+            ".globl main\nmain:\n    addi sp, sp, -16\n    sw ra, 12(sp)\n    sw s0, 8(sp)\n    addi s0, sp, 16\n    li a0, 8\n    addi sp, sp, -4\n    sw a0, 0(sp)\n    li a0, 3\n    lw t0, 0(sp)\n    addi sp, sp, 4\n    rem a0, t0, a0\n    lw ra, 12(sp)\n    lw s0, 8(sp)\n    addi sp, sp, 16\n    ret\n"
+        );
+    }
+
+    #[test]
+    fn generates_nested_expression_with_stack_temporaries() {
+        let program = Program {
+            function: Function {
+                name: "main".to_string(),
+                body: vec![Statement::Return(Expr::Binary {
+                    op: BinaryOp::Add,
+                    left: Box::new(Expr::IntLiteral(1)),
+                    right: Box::new(Expr::Binary {
+                        op: BinaryOp::Multiply,
+                        left: Box::new(Expr::IntLiteral(2)),
+                        right: Box::new(Expr::IntLiteral(3)),
+                    }),
+                })],
+            },
+        };
+
+        let asm = generate_with_codegen(&program);
+
+        assert_eq!(
+            asm,
+            ".globl main\nmain:\n    addi sp, sp, -16\n    sw ra, 12(sp)\n    sw s0, 8(sp)\n    addi s0, sp, 16\n    li a0, 1\n    addi sp, sp, -4\n    sw a0, 0(sp)\n    li a0, 2\n    addi sp, sp, -4\n    sw a0, 0(sp)\n    li a0, 3\n    lw t0, 0(sp)\n    addi sp, sp, 4\n    mul a0, t0, a0\n    lw t0, 0(sp)\n    addi sp, sp, 4\n    add a0, t0, a0\n    lw ra, 12(sp)\n    lw s0, 8(sp)\n    addi sp, sp, 16\n    ret\n"
+        );
+    }
+
+    #[test]
+    fn generates_single_local_variable() {
+        let program = Program {
+            function: Function {
+                name: "main".to_string(),
+                body: vec![
+                    Statement::VarDecl {
+                        name: "x".to_string(),
+                        init: Expr::IntLiteral(5),
+                    },
+                    Statement::Return(Expr::Variable("x".to_string())),
+                ],
+            },
+        };
+
+        let asm = generate_with_codegen(&program);
+
+        assert_eq!(
+            asm,
+            ".globl main\nmain:\n    addi sp, sp, -16\n    sw ra, 12(sp)\n    sw s0, 8(sp)\n    addi s0, sp, 16\n    li a0, 5\n    sw a0, -12(s0)\n    lw a0, -12(s0)\n    lw ra, 12(sp)\n    lw s0, 8(sp)\n    addi sp, sp, 16\n    ret\n"
+        );
+    }
+}
