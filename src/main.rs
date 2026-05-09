@@ -5,6 +5,7 @@ use std::process;
 use rivet::codegen::{CodegenTarget, generate};
 use rivet::lexer::lex;
 use rivet::parser::parse;
+use rivet::sema::check;
 
 fn main() {
     let mut args = env::args();
@@ -34,6 +35,11 @@ fn main() {
         eprintln!("parse error: {}", err.message);
         process::exit(1);
     });
+
+    if let Err(err) = check(&program) {
+        eprintln!("semantic analysis error: {}", err.message);
+        process::exit(1);
+    }
 
     print!("{}", generate(&program, CodegenTarget::Rv32));
 }
