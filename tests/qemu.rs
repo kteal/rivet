@@ -1,14 +1,9 @@
 use std::fs;
 use std::process::Command;
-use std::time::{SystemTime, UNIX_EPOCH};
 
 fn run_qemu_case(name: &str, source: &str, expected: i32) {
-    let mut path = std::env::temp_dir();
-    let unique = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("system clock should be after Unix epoch")
-        .as_nanos();
-    path.push(format!("rivet-{name}-{unique}.c"));
+    let tempdir = tempfile::tempdir().expect("failed to create temporary directory");
+    let path = tempdir.path().join(format!("{name}.c"));
 
     fs::write(&path, source).expect("failed to write temporary source file");
 
@@ -18,8 +13,6 @@ fn run_qemu_case(name: &str, source: &str, expected: i32) {
         .arg(&path)
         .status()
         .expect("failed to run scripts/run-rv32.sh");
-
-    fs::remove_file(&path).expect("failed to remove temporary source file");
 
     assert!(status.success(), "qemu runner failed for {name}");
 }
