@@ -2,7 +2,7 @@ use std::env;
 use std::fs;
 use std::process;
 
-use rivet::codegen::generate;
+use rivet::codegen::{CodegenTarget, generate};
 use rivet::lexer::lex;
 use rivet::parser::parse;
 
@@ -35,5 +35,5 @@ fn main() {
         process::exit(1);
     });
 
-    print!("{}", generate(&program));
+    print!("{}", generate(&program, CodegenTarget::Rv32));
 }

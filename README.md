@@ -2,14 +2,7 @@
 
 `rivet` is a C compiler written in Rust that targets RV32IM assembly.
 
-It currently supports:
-
-- integer literals
-- local variable declarations
-- assignments
-- `return`
-- arithmetic: `+ - * / %`
-- operator precedence and left associativity
+It currently supports a small expression-and-local-variable subset of C: integer literals, local variables, assignments, return statements, comments, arithmetic, unary, comparison, and bitwise operators with C-like precedence.
 
 The current language subset supports programs shaped like:
 
@@ -20,7 +13,8 @@ int main() {
     int z = x + y;
     x = z * 2;
     y = x - 1;
-    z = y % 4;
+    z = (y & 7) << 1;
+    z = z == 10;
     return z;
 }
 ```
@@ -113,9 +107,12 @@ sudo apt install qemu-user binutils-riscv64-linux-gnu
 - [x] arithmetic: `+ - * / %`
 - [x] operator precedence and left associativity
 - [x] parenthesized expressions
-- [ ] unary operators: `- ! ~`
-- [ ] bitwise operators: `& | ^ << >>`
+- [x] unary operators: `- ! ~`
+- [x] bitwise operators: `& | ^ << >>`
 - [x] comparisons: `== != < <= > >=`
+- [x] C-style left-associative chained comparisons
+- [x] comments
+- [ ] semantic errors for undeclared and duplicate locals
 - [ ] blocks
 - [ ] nested blocks and scope
 - [ ] `if` / `else`
@@ -123,6 +120,12 @@ sudo apt install qemu-user binutils-riscv64-linux-gnu
 - [ ] function definitions beyond `main`
 - [ ] function parameters
 - [ ] function calls
-- [x] comments
-- [ ] semantic errors for undeclared and duplicate locals
 - [ ] argument passing and call ABI handling
+- [ ] type checking and implicit conversions
+- [ ] signedness: `signed`, `unsigned`
+- [ ] non-`int` scalar types: `char`, `short`, `long`
+- [ ] pointers
+- [ ] arrays
+- [ ] globals
+- [ ] string literals
+- [ ] RV64 target support

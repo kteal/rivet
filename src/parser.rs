@@ -1,5 +1,37 @@
-use crate::ast::{BinaryOp, Expr, Function, Program, Statement};
+use crate::ast::{BinaryOp, Expr, Function, Program, Statement, UnaryOp};
 use crate::lexer::Token;
+
+const MULTIPLICATIVE_OPS: &[(Token, BinaryOp)] = &[
+    (Token::Star, BinaryOp::Multiply),
+    (Token::Slash, BinaryOp::Divide),
+    (Token::Percent, BinaryOp::Remainder),
+];
+
+const ADDITIVE_OPS: &[(Token, BinaryOp)] = &[
+    (Token::Plus, BinaryOp::Add),
+    (Token::Minus, BinaryOp::Subtract),
+];
+
+const SHIFT_OPS: &[(Token, BinaryOp)] = &[
+    (Token::LessLess, BinaryOp::ShiftLeft),
+    (Token::GreaterGreater, BinaryOp::ShiftRight),
+];
+
+const RELATIONAL_OPS: &[(Token, BinaryOp)] = &[
+    (Token::Less, BinaryOp::Less),
+    (Token::LessEqual, BinaryOp::LessEqual),
+    (Token::Greater, BinaryOp::Greater),
+    (Token::GreaterEqual, BinaryOp::GreaterEqual),
+];
+
+const EQUALITY_OPS: &[(Token, BinaryOp)] = &[
+    (Token::EqualEqual, BinaryOp::Equal),
+    (Token::BangEqual, BinaryOp::NotEqual),
+];
+
+const BITWISE_AND_OPS: &[(Token, BinaryOp)] = &[(Token::Ampersand, BinaryOp::BitAnd)];
+const BITWISE_XOR_OPS: &[(Token, BinaryOp)] = &[(Token::Caret, BinaryOp::BitXor)];
+const BITWISE_OR_OPS: &[(Token, BinaryOp)] = &[(Token::Pipe, BinaryOp::BitOr)];
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ParseError {
@@ -42,6 +74,36 @@ impl Parser {
         }
     }
 
+    fn parse_left_assoc(
+        &mut self,
+        parse_operand: fn(&mut Self) -> Result<Expr, ParseError>,
+        ops: &[(Token, BinaryOp)],
+    ) -> Result<Expr, ParseError> {
+        let mut left = parse_operand(self)?;
+
+        while let Some(op) = self.parse_binary_op_from(ops) {
+            let right = parse_operand(self)?;
+            left = Expr::Binary {
+                op,
+                left: Box::new(left),
+                right: Box::new(right),
+            }
+        }
+
+        Ok(left)
+    }
+
+    fn parse_binary_op_from(&mut self, ops: &[(Token, BinaryOp)]) -> Option<BinaryOp> {
+        for (token, op) in ops {
+            if self.peek() == token {
+                self.advance();
+                return Some(*op);
+            }
+        }
+
+        None
+    }
+
     fn parse_primary(&mut self) -> Result<Expr, ParseError> {
         match self.advance() {
             Token::IntLiteral(value) => Ok(Expr::IntLiteral(value)),
@@ -59,115 +121,70 @@ impl Parser {
         }
     }
 
-    fn parse_multiplicative_op(&mut self) -> Option<BinaryOp> {
+    fn parse_unary_op(&mut self) -> Option<UnaryOp> {
         match self.peek() {
-            Token::Star => {
+            Token::Minus => {
                 self.advance();
-                Some(BinaryOp::Multiply)
+                Some(UnaryOp::Negate)
             }
-            Token::Slash => {
+            Token::Bang => {
                 self.advance();
-                Some(BinaryOp::Divide)
+                Some(UnaryOp::LogicalNot)
             }
-            Token::Percent => {
+            Token::Tilde => {
                 self.advance();
-                Some(BinaryOp::Remainder)
+                Some(UnaryOp::BitwiseNot)
             }
             _ => None,
         }
+    }
+
+    fn parse_unary(&mut self) -> Result<Expr, ParseError> {
+        if let Some(op) = self.parse_unary_op() {
+            let right = self.parse_unary()?;
+            return Ok(Expr::Unary {
+                op,
+                expr: Box::new(right),
+            });
+        }
+
+        self.parse_primary()
     }
 
     fn parse_multiplicative(&mut self) -> Result<Expr, ParseError> {
-        let mut left = self.parse_primary()?;
-
-        while let Some(op) = self.parse_multiplicative_op() {
-            let right = self.parse_primary()?;
-            left = Expr::Binary {
-                op,
-                left: Box::new(left),
-                right: Box::new(right),
-            }
-        }
-
-        Ok(left)
-    }
-
-    fn parse_additive_op(&mut self) -> Option<BinaryOp> {
-        match self.peek() {
-            Token::Plus => {
-                self.advance();
-                Some(BinaryOp::Add)
-            }
-            Token::Minus => {
-                self.advance();
-                Some(BinaryOp::Subtract)
-            }
-            _ => None,
-        }
+        self.parse_left_assoc(Self::parse_unary, MULTIPLICATIVE_OPS)
     }
 
     fn parse_additive(&mut self) -> Result<Expr, ParseError> {
-        let mut left = self.parse_multiplicative()?;
-
-        while let Some(op) = self.parse_additive_op() {
-            let right = self.parse_multiplicative()?;
-            left = Expr::Binary {
-                op,
-                left: Box::new(left),
-                right: Box::new(right),
-            }
-        }
-
-        Ok(left)
+        self.parse_left_assoc(Self::parse_multiplicative, ADDITIVE_OPS)
     }
 
-    fn parse_comparison_op(&mut self) -> Option<BinaryOp> {
-        match self.peek() {
-            Token::EqualEqual => {
-                self.advance();
-                Some(BinaryOp::Equal)
-            }
-            Token::BangEqual => {
-                self.advance();
-                Some(BinaryOp::NotEqual)
-            }
-            Token::Less => {
-                self.advance();
-                Some(BinaryOp::Less)
-            }
-            Token::LessEqual => {
-                self.advance();
-                Some(BinaryOp::LessEqual)
-            }
-            Token::Greater => {
-                self.advance();
-                Some(BinaryOp::Greater)
-            }
-            Token::GreaterEqual => {
-                self.advance();
-                Some(BinaryOp::GreaterEqual)
-            }
-            _ => None,
-        }
+    fn parse_shift(&mut self) -> Result<Expr, ParseError> {
+        self.parse_left_assoc(Self::parse_additive, SHIFT_OPS)
     }
 
-    fn parse_comparison(&mut self) -> Result<Expr, ParseError> {
-        let mut left = self.parse_additive()?;
+    fn parse_relational(&mut self) -> Result<Expr, ParseError> {
+        self.parse_left_assoc(Self::parse_shift, RELATIONAL_OPS)
+    }
 
-        if let Some(op) = self.parse_comparison_op() {
-            let right = self.parse_additive()?;
-            left = Expr::Binary {
-                op,
-                left: Box::new(left),
-                right: Box::new(right),
-            }
-        }
+    fn parse_equality(&mut self) -> Result<Expr, ParseError> {
+        self.parse_left_assoc(Self::parse_relational, EQUALITY_OPS)
+    }
 
-        Ok(left)
+    fn parse_bitwise_and(&mut self) -> Result<Expr, ParseError> {
+        self.parse_left_assoc(Self::parse_equality, BITWISE_AND_OPS)
+    }
+
+    fn parse_bitwise_xor(&mut self) -> Result<Expr, ParseError> {
+        self.parse_left_assoc(Self::parse_bitwise_and, BITWISE_XOR_OPS)
+    }
+
+    fn parse_bitwise_or(&mut self) -> Result<Expr, ParseError> {
+        self.parse_left_assoc(Self::parse_bitwise_xor, BITWISE_OR_OPS)
     }
 
     fn parse_expr(&mut self) -> Result<Expr, ParseError> {
-        self.parse_comparison()
+        self.parse_bitwise_or()
     }
 
     fn parse_var_decl(&mut self) -> Result<Statement, ParseError> {
@@ -464,6 +481,100 @@ mod tests {
     }
 
     #[test]
+    fn parses_unary_negation() {
+        let tokens = vec![
+            Token::KwReturn,
+            Token::Minus,
+            Token::IntLiteral(5),
+            Token::Semicolon,
+        ];
+
+        let mut parser = Parser::new(tokens);
+
+        let statement = parser.parse_statement().expect("parsing should succeed");
+
+        assert_eq!(
+            statement,
+            Statement::Return(Expr::Unary {
+                op: UnaryOp::Negate,
+                expr: Box::new(Expr::IntLiteral(5)),
+            })
+        )
+    }
+
+    #[test]
+    fn parses_logical_not() {
+        let tokens = vec![
+            Token::KwReturn,
+            Token::Bang,
+            Token::IntLiteral(0),
+            Token::Semicolon,
+        ];
+
+        let mut parser = Parser::new(tokens);
+
+        let statement = parser.parse_statement().expect("parsing should succeed");
+
+        assert_eq!(
+            statement,
+            Statement::Return(Expr::Unary {
+                op: UnaryOp::LogicalNot,
+                expr: Box::new(Expr::IntLiteral(0)),
+            })
+        )
+    }
+
+    #[test]
+    fn parses_bitwise_not() {
+        let tokens = vec![
+            Token::KwReturn,
+            Token::Tilde,
+            Token::IntLiteral(1),
+            Token::Semicolon,
+        ];
+
+        let mut parser = Parser::new(tokens);
+
+        let statement = parser.parse_statement().expect("parsing should succeed");
+
+        assert_eq!(
+            statement,
+            Statement::Return(Expr::Unary {
+                op: UnaryOp::BitwiseNot,
+                expr: Box::new(Expr::IntLiteral(1)),
+            })
+        )
+    }
+
+    #[test]
+    fn parses_unary_before_multiplication() {
+        let tokens = vec![
+            Token::KwReturn,
+            Token::Minus,
+            Token::Ident("x".to_string()),
+            Token::Star,
+            Token::IntLiteral(2),
+            Token::Semicolon,
+        ];
+
+        let mut parser = Parser::new(tokens);
+
+        let statement = parser.parse_statement().expect("parsing should succeed");
+
+        assert_eq!(
+            statement,
+            Statement::Return(Expr::Binary {
+                op: BinaryOp::Multiply,
+                left: Box::new(Expr::Unary {
+                    op: UnaryOp::Negate,
+                    expr: Box::new(Expr::Variable("x".to_string())),
+                }),
+                right: Box::new(Expr::IntLiteral(2)),
+            })
+        )
+    }
+
+    #[test]
     fn parses_variable_declaration() {
         let tokens = vec![
             Token::KwInt,
@@ -622,6 +733,156 @@ mod tests {
     }
 
     #[test]
+    fn parses_shift_after_additive() {
+        let tokens = vec![
+            Token::KwReturn,
+            Token::IntLiteral(1),
+            Token::Plus,
+            Token::IntLiteral(2),
+            Token::LessLess,
+            Token::IntLiteral(3),
+            Token::Semicolon,
+        ];
+
+        let mut parser = Parser::new(tokens);
+
+        let statement = parser.parse_statement().expect("parsing should succeed");
+
+        assert_eq!(
+            statement,
+            Statement::Return(Expr::Binary {
+                op: BinaryOp::ShiftLeft,
+                left: Box::new(Expr::Binary {
+                    op: BinaryOp::Add,
+                    left: Box::new(Expr::IntLiteral(1)),
+                    right: Box::new(Expr::IntLiteral(2)),
+                }),
+                right: Box::new(Expr::IntLiteral(3)),
+            })
+        )
+    }
+
+    #[test]
+    fn parses_relational_after_shift() {
+        let tokens = vec![
+            Token::KwReturn,
+            Token::IntLiteral(1),
+            Token::LessLess,
+            Token::IntLiteral(2),
+            Token::Less,
+            Token::IntLiteral(8),
+            Token::Semicolon,
+        ];
+
+        let mut parser = Parser::new(tokens);
+
+        let statement = parser.parse_statement().expect("parsing should succeed");
+
+        assert_eq!(
+            statement,
+            Statement::Return(Expr::Binary {
+                op: BinaryOp::Less,
+                left: Box::new(Expr::Binary {
+                    op: BinaryOp::ShiftLeft,
+                    left: Box::new(Expr::IntLiteral(1)),
+                    right: Box::new(Expr::IntLiteral(2)),
+                }),
+                right: Box::new(Expr::IntLiteral(8)),
+            })
+        )
+    }
+
+    #[test]
+    fn parses_equality_before_bitwise_and() {
+        let tokens = vec![
+            Token::KwReturn,
+            Token::Ident("a".to_string()),
+            Token::Ampersand,
+            Token::Ident("b".to_string()),
+            Token::EqualEqual,
+            Token::Ident("c".to_string()),
+            Token::Semicolon,
+        ];
+
+        let mut parser = Parser::new(tokens);
+
+        let statement = parser.parse_statement().expect("parsing should succeed");
+
+        assert_eq!(
+            statement,
+            Statement::Return(Expr::Binary {
+                op: BinaryOp::BitAnd,
+                left: Box::new(Expr::Variable("a".to_string())),
+                right: Box::new(Expr::Binary {
+                    op: BinaryOp::Equal,
+                    left: Box::new(Expr::Variable("b".to_string())),
+                    right: Box::new(Expr::Variable("c".to_string())),
+                }),
+            })
+        )
+    }
+
+    #[test]
+    fn parses_bitwise_and_before_xor() {
+        let tokens = vec![
+            Token::KwReturn,
+            Token::Ident("a".to_string()),
+            Token::Caret,
+            Token::Ident("b".to_string()),
+            Token::Ampersand,
+            Token::Ident("c".to_string()),
+            Token::Semicolon,
+        ];
+
+        let mut parser = Parser::new(tokens);
+
+        let statement = parser.parse_statement().expect("parsing should succeed");
+
+        assert_eq!(
+            statement,
+            Statement::Return(Expr::Binary {
+                op: BinaryOp::BitXor,
+                left: Box::new(Expr::Variable("a".to_string())),
+                right: Box::new(Expr::Binary {
+                    op: BinaryOp::BitAnd,
+                    left: Box::new(Expr::Variable("b".to_string())),
+                    right: Box::new(Expr::Variable("c".to_string())),
+                }),
+            })
+        )
+    }
+
+    #[test]
+    fn parses_bitwise_xor_before_or() {
+        let tokens = vec![
+            Token::KwReturn,
+            Token::Ident("a".to_string()),
+            Token::Pipe,
+            Token::Ident("b".to_string()),
+            Token::Caret,
+            Token::Ident("c".to_string()),
+            Token::Semicolon,
+        ];
+
+        let mut parser = Parser::new(tokens);
+
+        let statement = parser.parse_statement().expect("parsing should succeed");
+
+        assert_eq!(
+            statement,
+            Statement::Return(Expr::Binary {
+                op: BinaryOp::BitOr,
+                left: Box::new(Expr::Variable("a".to_string())),
+                right: Box::new(Expr::Binary {
+                    op: BinaryOp::BitXor,
+                    left: Box::new(Expr::Variable("b".to_string())),
+                    right: Box::new(Expr::Variable("c".to_string())),
+                }),
+            })
+        )
+    }
+
+    #[test]
     fn parses_equality_with_parenthesized_expression() {
         let tokens = vec![
             Token::KwInt,
@@ -698,7 +959,7 @@ mod tests {
     }
 
     #[test]
-    fn rejects_chained_comparisons() {
+    fn parses_chained_comparisons_left_associative() {
         let tokens = vec![
             Token::KwInt,
             Token::Ident("main".to_string()),
@@ -716,9 +977,25 @@ mod tests {
             Token::Eof,
         ];
 
-        let err = parse(tokens).expect_err("parsing should fail");
+        let program = parse(tokens).expect("parsing should succeed");
 
-        assert_eq!(err.message, "expected Semicolon, found Less");
+        assert_eq!(
+            program,
+            Program {
+                function: Function {
+                    name: "main".to_string(),
+                    body: vec![Statement::Return(Expr::Binary {
+                        op: BinaryOp::Less,
+                        left: Box::new(Expr::Binary {
+                            op: BinaryOp::Less,
+                            left: Box::new(Expr::IntLiteral(1)),
+                            right: Box::new(Expr::IntLiteral(2)),
+                        }),
+                        right: Box::new(Expr::IntLiteral(3)),
+                    })],
+                },
+            }
+        );
     }
 
     #[test]

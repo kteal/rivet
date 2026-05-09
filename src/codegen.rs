@@ -1,6 +1,11 @@
-use crate::ast::{BinaryOp, Expr, Function, Program, Statement};
+use crate::ast::{BinaryOp, Expr, Function, Program, Statement, UnaryOp};
 use std::collections::HashMap;
 use std::fmt::{self, Write};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CodegenTarget {
+    Rv32,
+}
 
 struct FrameLayout {
     size: i32,
@@ -41,13 +46,16 @@ impl FrameLayout {
 struct Codegen {
     out: String,
     frame: FrameLayout,
+    #[allow(dead_code)]
+    target: CodegenTarget,
 }
 
 impl Codegen {
-    fn new() -> Self {
+    fn new(target: CodegenTarget) -> Self {
         Self {
             out: String::new(),
             frame: FrameLayout::new(),
+            target,
         }
     }
 
@@ -142,18 +150,31 @@ impl Codegen {
                         self.emit_line(format_args!("slt a0, t0, a0"));
                         self.emit_line(format_args!("xori a0, a0, 1"));
                     }
+                    BinaryOp::BitAnd => self.emit_line(format_args!("and a0, a0, t0")),
+                    BinaryOp::BitXor => self.emit_line(format_args!("xor a0, a0, t0")),
+                    BinaryOp::BitOr => self.emit_line(format_args!("or a0, a0, t0")),
+                    BinaryOp::ShiftLeft => self.emit_line(format_args!("sll a0, t0, a0")),
+                    BinaryOp::ShiftRight => self.emit_line(format_args!("sra a0, t0, a0")),
                 };
             }
             Expr::Variable(name) => {
                 let offset = self.frame.lookup(name);
                 self.emit_line(format_args!("lw a0, {offset}(s0)"));
             }
+            Expr::Unary { op, expr } => {
+                self.emit_expr(expr);
+                match op {
+                    UnaryOp::Negate => self.emit_line(format_args!("neg a0, a0")),
+                    UnaryOp::LogicalNot => self.emit_line(format_args!("seqz a0, a0")),
+                    UnaryOp::BitwiseNot => self.emit_line(format_args!("not a0, a0")),
+                }
+            }
         }
     }
 }
 
-pub fn generate(program: &Program) -> String {
-    let mut codegen = Codegen::new();
+pub fn generate(program: &Program, target: CodegenTarget) -> String {
+    let mut codegen = Codegen::new(target);
     codegen.emit_program(program)
 }
 
@@ -163,7 +184,7 @@ mod tests {
     use crate::ast::Function;
 
     fn generate_with_codegen(program: &Program) -> String {
-        let mut codegen = Codegen::new();
+        let mut codegen = Codegen::new(CodegenTarget::Rv32);
         codegen.emit_program(program)
     }
 
@@ -412,6 +433,66 @@ mod tests {
         assert_eq!(
             asm,
             ".globl main\nmain:\n    addi sp, sp, -16\n    sw ra, 12(sp)\n    sw s0, 8(sp)\n    addi s0, sp, 16\n    li a0, 5\n    addi sp, sp, -4\n    sw a0, 0(sp)\n    li a0, 5\n    lw t0, 0(sp)\n    addi sp, sp, 4\n    slt a0, t0, a0\n    xori a0, a0, 1\n    lw ra, 12(sp)\n    lw s0, 8(sp)\n    addi sp, sp, 16\n    ret\n"
+        );
+    }
+
+    #[test]
+    fn generates_unary_negation() {
+        let program = Program {
+            function: Function {
+                name: "main".to_string(),
+                body: vec![Statement::Return(Expr::Unary {
+                    op: UnaryOp::Negate,
+                    expr: Box::new(Expr::IntLiteral(5)),
+                })],
+            },
+        };
+
+        let asm = generate_with_codegen(&program);
+
+        assert_eq!(
+            asm,
+            ".globl main\nmain:\n    addi sp, sp, -16\n    sw ra, 12(sp)\n    sw s0, 8(sp)\n    addi s0, sp, 16\n    li a0, 5\n    neg a0, a0\n    lw ra, 12(sp)\n    lw s0, 8(sp)\n    addi sp, sp, 16\n    ret\n"
+        );
+    }
+
+    #[test]
+    fn generates_logical_not() {
+        let program = Program {
+            function: Function {
+                name: "main".to_string(),
+                body: vec![Statement::Return(Expr::Unary {
+                    op: UnaryOp::LogicalNot,
+                    expr: Box::new(Expr::IntLiteral(0)),
+                })],
+            },
+        };
+
+        let asm = generate_with_codegen(&program);
+
+        assert_eq!(
+            asm,
+            ".globl main\nmain:\n    addi sp, sp, -16\n    sw ra, 12(sp)\n    sw s0, 8(sp)\n    addi s0, sp, 16\n    li a0, 0\n    seqz a0, a0\n    lw ra, 12(sp)\n    lw s0, 8(sp)\n    addi sp, sp, 16\n    ret\n"
+        );
+    }
+
+    #[test]
+    fn generates_bitwise_not() {
+        let program = Program {
+            function: Function {
+                name: "main".to_string(),
+                body: vec![Statement::Return(Expr::Unary {
+                    op: UnaryOp::BitwiseNot,
+                    expr: Box::new(Expr::IntLiteral(0)),
+                })],
+            },
+        };
+
+        let asm = generate_with_codegen(&program);
+
+        assert_eq!(
+            asm,
+            ".globl main\nmain:\n    addi sp, sp, -16\n    sw ra, 12(sp)\n    sw s0, 8(sp)\n    addi s0, sp, 16\n    li a0, 0\n    not a0, a0\n    lw ra, 12(sp)\n    lw s0, 8(sp)\n    addi sp, sp, 16\n    ret\n"
         );
     }
 

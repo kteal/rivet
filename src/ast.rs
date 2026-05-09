@@ -25,9 +25,13 @@ pub enum Expr {
         left: Box<Expr>,
         right: Box<Expr>,
     },
+    Unary {
+        op: UnaryOp,
+        expr: Box<Expr>,
+    },
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BinaryOp {
     Add,
     Subtract,
@@ -40,4 +44,16 @@ pub enum BinaryOp {
     LessEqual,
     Greater,
     GreaterEqual,
+    BitAnd,
+    BitXor,
+    BitOr,
+    ShiftLeft,
+    ShiftRight,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum UnaryOp {
+    Negate,
+    LogicalNot,
+    BitwiseNot,
 }
