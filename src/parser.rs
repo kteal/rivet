@@ -104,26 +104,51 @@ impl Parser {
         None
     }
 
+    fn parse_comma_separated_until_rparen<T>(
+        &mut self,
+        parse_item: fn(&mut Self) -> Result<T, ParseError>,
+    ) -> Result<Vec<T>, ParseError> {
+        let mut items = vec![];
+
+        while *self.peek() != Token::RParen {
+            items.push(parse_item(self)?);
+
+            if *self.peek() == Token::Comma {
+                self.expect(Token::Comma)?;
+
+                if *self.peek() == Token::RParen {
+                    return Err(ParseError {
+                        message: "trailing comma".to_string(),
+                    });
+                }
+            }
+        }
+
+        Ok(items)
+    }
+
+    fn parse_call_arg(&mut self) -> Result<Expr, ParseError> {
+        self.parse_expr()
+    }
+
+    fn parse_param(&mut self) -> Result<String, ParseError> {
+        self.expect(Token::KwInt)?;
+
+        match self.advance() {
+            Token::Ident(name) => Ok(name),
+            found => Err(ParseError {
+                message: format!("expected identifier for parameter, found {found:?}"),
+            }),
+        }
+    }
+
     fn parse_primary(&mut self) -> Result<Expr, ParseError> {
         match self.advance() {
             Token::IntLiteral(value) => Ok(Expr::IntLiteral(value)),
             Token::Ident(name) => {
                 if *self.peek() == Token::LParen {
                     self.expect(Token::LParen)?;
-
-                    let mut args = vec![];
-
-                    while *self.peek() != Token::RParen {
-                        args.push(self.parse_expr()?);
-                        if *self.peek() == Token::Comma {
-                            self.expect(Token::Comma)?;
-                            if *self.peek() == Token::RParen {
-                                return Err(ParseError {
-                                    message: format!("trailing ',' in function call '{name}'"),
-                                });
-                            }
-                        }
-                    }
+                    let args = self.parse_comma_separated_until_rparen(Self::parse_call_arg)?;
                     self.expect(Token::RParen)?;
                     Ok(Expr::Call { name, args })
                 } else {
@@ -285,6 +310,18 @@ impl Parser {
         Ok(Statement::ExprStatement(expr))
     }
 
+    fn is_expr_start(token: &Token) -> bool {
+        matches!(
+            token,
+            Token::Ident(_)
+                | Token::IntLiteral(_)
+                | Token::LParen
+                | Token::Minus
+                | Token::Bang
+                | Token::Tilde
+        )
+    }
+
     fn parse_statement(&mut self) -> Result<Statement, ParseError> {
         match self.peek() {
             // Control flow
@@ -296,19 +333,18 @@ impl Parser {
             }
             Token::KwIf => self.parse_if_statement(),
             Token::KwWhile => self.parse_while_statement(),
+            Token::KwBreak => {
+                self.expect(Token::KwBreak)?;
+                self.expect(Token::Semicolon)?;
+                Ok(Statement::Break)
+            }
+            Token::KwContinue => {
+                self.expect(Token::KwContinue)?;
+                self.expect(Token::Semicolon)?;
+                Ok(Statement::Continue)
+            }
             // Variable declaration
             Token::KwInt => self.parse_var_decl(),
-            Token::Ident(_) => match self.lookahead(1) {
-                Some(Token::Equal) => self.parse_assignment(),
-                Some(_) => {
-                    let expr = self.parse_expr()?;
-                    self.expect(Token::Semicolon)?;
-                    Ok(Statement::ExprStatement(expr))
-                }
-                None => Err(ParseError {
-                    message: "reached end of tokens".to_string(),
-                }),
-            },
             // Block
             Token::LBrace => {
                 self.expect(Token::LBrace)?;
@@ -322,20 +358,15 @@ impl Parser {
                 Ok(Statement::Empty)
             }
             // Expression-start tokens
-            Token::IntLiteral(_) => self.parse_expr_statement(),
-            Token::LParen => self.parse_expr_statement(),
-            Token::Minus => self.parse_expr_statement(),
-            Token::Bang => self.parse_expr_statement(),
-            Token::Tilde => self.parse_expr_statement(),
-            Token::KwBreak => {
-                self.expect(Token::KwBreak)?;
-                self.expect(Token::Semicolon)?;
-                Ok(Statement::Break)
-            }
-            Token::KwContinue => {
-                self.expect(Token::KwContinue)?;
-                self.expect(Token::Semicolon)?;
-                Ok(Statement::Continue)
+            token if Self::is_expr_start(token) => {
+                if matches!(self.peek(), Token::Ident(_))
+                    && matches!(self.lookahead(1), Some(Token::Equal))
+                {
+                    // x = ...
+                    self.parse_assignment()
+                } else {
+                    self.parse_expr_statement()
+                }
             }
             found => Err(ParseError {
                 message: format!("got unexpected keyword {found:?}"),
@@ -357,26 +388,7 @@ impl Parser {
 
         self.expect(Token::LParen)?;
 
-        let mut params = vec![];
-
-        while *self.peek() != Token::RParen {
-            self.expect(Token::KwInt)?;
-            if let Token::Ident(name) = self.advance() {
-                params.push(name.to_string());
-            } else {
-                return Err(ParseError {
-                    message: format!("expected identifier for parameter"),
-                });
-            }
-            if *self.peek() == Token::Comma {
-                self.expect(Token::Comma)?;
-                if *self.peek() == Token::RParen {
-                    return Err(ParseError {
-                        message: format!("trailing ',' in function call '{name}'"),
-                    });
-                }
-            }
-        }
+        let params = self.parse_comma_separated_until_rparen(Self::parse_param)?;
         self.expect(Token::RParen)?;
 
         self.expect(Token::LBrace)?;
@@ -1186,10 +1198,7 @@ mod tests {
         let statement = parser.parse_statement().expect("parsing should succeed");
 
         assert_eq!(statement, Statement::Continue);
-        assert_eq!(
-            parser.pos, 2,
-            "continue statement should consume semicolon"
-        );
+        assert_eq!(parser.pos, 2, "continue statement should consume semicolon");
     }
 
     #[test]

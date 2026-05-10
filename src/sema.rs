@@ -226,16 +226,6 @@ impl Checker {
     }
 
     fn check_function(&mut self, function: &Function) -> Result<(), SemanticError> {
-        // For now, limit to 8 args (no stack-passed arguments)
-        if function.params.len() > 8 {
-            return Err(SemanticError {
-                message: format!(
-                    "too many parameters in function {}, got {}, max 8",
-                    function.name,
-                    function.params.len()
-                ),
-            });
-        }
         self.enter_scope();
         for param in function.params.clone() {
             self.declare_local(&param)?;
