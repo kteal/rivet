@@ -324,6 +324,21 @@ fn qemu_function_calls_return_expected_values() {
         "int helper() {\n    return 3;\n}\n\nint main() {\n    return helper() + 2;\n}\n",
         5,
     );
+    run_qemu_case(
+        "single-argument-call",
+        "int id(int x) {\n    return x;\n}\n\nint main() {\n    return id(7);\n}\n",
+        7,
+    );
+    run_qemu_case(
+        "two-argument-call",
+        "int add(int x, int y) {\n    return x + y;\n}\n\nint main() {\n    return add(2, 3);\n}\n",
+        5,
+    );
+    run_qemu_case(
+        "expression-argument-call",
+        "int add(int x, int y) {\n    return x + y;\n}\n\nint main() {\n    return add(1 + 2, 3 + 4);\n}\n",
+        10,
+    );
 }
 
 #[test]

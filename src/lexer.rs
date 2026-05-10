@@ -33,6 +33,7 @@ pub enum Token {
     KwIf,
     KwElse,
     KwWhile,
+    Comma,
     Eof,
 }
 
@@ -60,6 +61,7 @@ impl<'a> Lexer<'a> {
                 ' ' | '\n' | '\r' | '\t' => {
                     self.advance();
                 }
+                ',' => self.advance_and_push(Token::Comma),
                 '(' => self.advance_and_push(Token::LParen),
                 ')' => self.advance_and_push(Token::RParen),
                 '{' => self.advance_and_push(Token::LBrace),
@@ -313,6 +315,38 @@ mod tests {
                 Token::Equal,
                 Token::IntLiteral(5),
                 Token::Semicolon,
+                Token::Eof,
+            ]
+        );
+    }
+
+    #[test]
+    fn lexes_commas_in_parameter_and_argument_lists() {
+        let tokens = lex_with_struct("int add(int x, int y) { return add(x, y); }")
+            .expect("lexing should succeed");
+
+        assert_eq!(
+            tokens,
+            vec![
+                Token::KwInt,
+                Token::Ident("add".to_string()),
+                Token::LParen,
+                Token::KwInt,
+                Token::Ident("x".to_string()),
+                Token::Comma,
+                Token::KwInt,
+                Token::Ident("y".to_string()),
+                Token::RParen,
+                Token::LBrace,
+                Token::KwReturn,
+                Token::Ident("add".to_string()),
+                Token::LParen,
+                Token::Ident("x".to_string()),
+                Token::Comma,
+                Token::Ident("y".to_string()),
+                Token::RParen,
+                Token::Semicolon,
+                Token::RBrace,
                 Token::Eof,
             ]
         );

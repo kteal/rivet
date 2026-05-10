@@ -1,14 +1,13 @@
 # rivet
 
-`rivet` is a C compiler written in Rust that targets RV32IM assembly. It implements a small subset of the C23 standard.
+`rivet` is a C compiler written in Rust that targets RV32IM assembly. It is working toward a C23 implementation and currently implements a small C23 subset.
 
-It is currently a small expression-and-local-variable subset: integer literals, local variables, assignments, blocks, `if` / `else`, `while`, return statements, comments, arithmetic, unary, comparison, and bitwise operators with C-like precedence. It also supports multiple zero-argument function definitions and zero-argument function calls.
+It currently supports integer literals, local variables, assignments, blocks, `if` / `else`, `while`, return statements, comments, arithmetic, unary, comparison, and bitwise operators with C-like precedence. It also supports multiple `int` functions, parameters, and calls with up to 8 `int` arguments passed in RISC-V argument registers.
 
 The current language subset supports programs shaped like:
 
 ```c
-int triangular() {
-    int x = 3;
+int triangular(int x) {
     int sum = 0;
 
     while (x) {
@@ -19,14 +18,17 @@ int triangular() {
     return sum;
 }
 
-int main() {
-    int sum = triangular();
-
-    if ((sum & 7) == 6) {
-        return sum;
+int adjust(int value, int mask) {
+    if ((value & mask) == 6) {
+        return value;
     } else {
         return 0;
     }
+}
+
+int main() {
+    int sum = triangular(3);
+    return adjust(sum, 7);
 }
 ```
 
@@ -118,7 +120,7 @@ Program structure and declarations:
 - [x] `return`
 - [x] blocks
 - [x] nested blocks and scope
-- [x] multiple zero-argument function definitions
+- [x] function definitions beyond `main`
 - [ ] declarations without initializers
 - [ ] declaration lists mixed with statements
 - [ ] multiple translation-unit-level declarations
@@ -174,9 +176,11 @@ Functions:
 
 - [x] function definitions beyond `main`
 - [x] zero-argument function calls
-- [ ] function parameters
-- [ ] function calls with arguments
-- [ ] argument passing and call ABI handling
+- [x] function parameters
+- [x] function calls with up to 8 `int` arguments
+- [x] register argument passing with `a0`-`a7`
+- [ ] stack-passed function arguments beyond 8
+- [ ] full call ABI handling
 
 Objects, aggregate types, and declarators:
 

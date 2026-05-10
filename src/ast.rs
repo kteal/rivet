@@ -6,6 +6,7 @@ pub struct Program {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Function {
     pub name: String,
+    pub params: Vec<String>,
     pub body: Vec<Statement>,
 }
 

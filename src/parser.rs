@@ -110,8 +110,22 @@ impl Parser {
             Token::Ident(name) => {
                 if *self.peek() == Token::LParen {
                     self.expect(Token::LParen)?;
+
+                    let mut args = vec![];
+
+                    while *self.peek() != Token::RParen {
+                        args.push(self.parse_expr()?);
+                        if *self.peek() == Token::Comma {
+                            self.expect(Token::Comma)?;
+                            if *self.peek() == Token::RParen {
+                                return Err(ParseError {
+                                    message: format!("trailing ',' in function call '{name}'"),
+                                });
+                            }
+                        }
+                    }
                     self.expect(Token::RParen)?;
-                    Ok(Expr::Call { name, args: vec![] })
+                    Ok(Expr::Call { name, args })
                 } else {
                     Ok(Expr::Variable(name))
                 }
@@ -310,13 +324,35 @@ impl Parser {
         };
 
         self.expect(Token::LParen)?;
+
+        let mut params = vec![];
+
+        while *self.peek() != Token::RParen {
+            self.expect(Token::KwInt)?;
+            if let Token::Ident(name) = self.advance() {
+                params.push(name.to_string());
+            } else {
+                return Err(ParseError {
+                    message: format!("expected identifier for parameter"),
+                });
+            }
+            if *self.peek() == Token::Comma {
+                self.expect(Token::Comma)?;
+                if *self.peek() == Token::RParen {
+                    return Err(ParseError {
+                        message: format!("trailing ',' in function call '{name}'"),
+                    });
+                }
+            }
+        }
         self.expect(Token::RParen)?;
+
         self.expect(Token::LBrace)?;
 
         let mut body = vec![];
         self.parse_through_rbrace(&mut body)?;
 
-        Ok(Function { name, body })
+        Ok(Function { name, params, body })
     }
 
     fn parse_program(&mut self) -> Result<Program, ParseError> {
@@ -362,6 +398,7 @@ mod tests {
             Program {
                 functions: vec![Function {
                     name: "main".to_string(),
+                    params: vec![],
                     body: vec![Statement::Return(Expr::IntLiteral(42))],
                 }],
             }
@@ -416,6 +453,7 @@ mod tests {
             Program {
                 functions: vec![Function {
                     name: "main".to_string(),
+                    params: vec![],
                     body: vec![Statement::Return(Expr::Binary {
                         op: BinaryOp::Add,
                         left: Box::new(Expr::IntLiteral(1)),
@@ -475,6 +513,125 @@ mod tests {
                 }),
                 right: Box::new(Expr::IntLiteral(2)),
             })
+        );
+    }
+
+    #[test]
+    fn parses_function_parameters() {
+        let tokens = vec![
+            Token::KwInt,
+            Token::Ident("add".to_string()),
+            Token::LParen,
+            Token::KwInt,
+            Token::Ident("x".to_string()),
+            Token::Comma,
+            Token::KwInt,
+            Token::Ident("y".to_string()),
+            Token::RParen,
+            Token::LBrace,
+            Token::KwReturn,
+            Token::Ident("x".to_string()),
+            Token::Plus,
+            Token::Ident("y".to_string()),
+            Token::Semicolon,
+            Token::RBrace,
+            Token::Eof,
+        ];
+
+        let program = parse(tokens).expect("parsing should succeed");
+
+        assert_eq!(
+            program,
+            Program {
+                functions: vec![Function {
+                    name: "add".to_string(),
+                    params: vec!["x".to_string(), "y".to_string()],
+                    body: vec![Statement::Return(Expr::Binary {
+                        op: BinaryOp::Add,
+                        left: Box::new(Expr::Variable("x".to_string())),
+                        right: Box::new(Expr::Variable("y".to_string())),
+                    })],
+                }],
+            }
+        );
+    }
+
+    #[test]
+    fn parses_function_call_arguments() {
+        let tokens = vec![
+            Token::KwReturn,
+            Token::Ident("add".to_string()),
+            Token::LParen,
+            Token::IntLiteral(1),
+            Token::Comma,
+            Token::IntLiteral(2),
+            Token::Plus,
+            Token::IntLiteral(3),
+            Token::RParen,
+            Token::Semicolon,
+        ];
+
+        let mut parser = Parser::new(tokens);
+
+        let statement = parser.parse_statement().expect("parsing should succeed");
+
+        assert_eq!(
+            statement,
+            Statement::Return(Expr::Call {
+                name: "add".to_string(),
+                args: vec![
+                    Expr::IntLiteral(1),
+                    Expr::Binary {
+                        op: BinaryOp::Add,
+                        left: Box::new(Expr::IntLiteral(2)),
+                        right: Box::new(Expr::IntLiteral(3)),
+                    },
+                ],
+            })
+        );
+    }
+
+    #[test]
+    fn rejects_trailing_comma_in_function_call() {
+        let tokens = vec![
+            Token::KwReturn,
+            Token::Ident("add".to_string()),
+            Token::LParen,
+            Token::IntLiteral(1),
+            Token::Comma,
+            Token::RParen,
+            Token::Semicolon,
+        ];
+
+        let mut parser = Parser::new(tokens);
+
+        assert!(
+            parser.parse_statement().is_err(),
+            "function calls should reject trailing commas"
+        );
+    }
+
+    #[test]
+    fn rejects_trailing_comma_in_function_parameters() {
+        let tokens = vec![
+            Token::KwInt,
+            Token::Ident("add".to_string()),
+            Token::LParen,
+            Token::KwInt,
+            Token::Ident("x".to_string()),
+            Token::Comma,
+            Token::RParen,
+            Token::LBrace,
+            Token::KwReturn,
+            Token::Ident("x".to_string()),
+            Token::Semicolon,
+            Token::RBrace,
+            Token::Eof,
+        ];
+
+        assert!(
+            parse(tokens).is_err(),
+            "function parameter lists should reject trailing commas"
         );
     }
 
@@ -736,6 +893,7 @@ mod tests {
             Program {
                 functions: vec![Function {
                     name: "main".to_string(),
+                    params: vec![],
                     body: vec![
                         Statement::VarDecl {
                             name: "x".to_string(),
@@ -780,6 +938,7 @@ mod tests {
             Program {
                 functions: vec![Function {
                     name: "main".to_string(),
+                    params: vec![],
                     body: vec![Statement::Block(vec![Statement::Return(Expr::IntLiteral(
                         1
                     ))])],
@@ -814,6 +973,7 @@ mod tests {
             Program {
                 functions: vec![Function {
                     name: "main".to_string(),
+                    params: vec![],
                     body: vec![Statement::Block(vec![Statement::Block(vec![
                         Statement::Return(Expr::IntLiteral(1))
                     ])])],
@@ -922,6 +1082,7 @@ mod tests {
             Program {
                 functions: vec![Function {
                     name: "main".to_string(),
+                    params: vec![],
                     body: vec![Statement::Return(Expr::Binary {
                         op: BinaryOp::Multiply,
                         left: Box::new(Expr::Binary {
@@ -962,6 +1123,7 @@ mod tests {
             Program {
                 functions: vec![Function {
                     name: "main".to_string(),
+                    params: vec![],
                     body: vec![Statement::Return(Expr::Binary {
                         op: BinaryOp::Less,
                         left: Box::new(Expr::Binary {
@@ -1154,6 +1316,7 @@ mod tests {
             Program {
                 functions: vec![Function {
                     name: "main".to_string(),
+                    params: vec![],
                     body: vec![Statement::Return(Expr::Binary {
                         op: BinaryOp::Equal,
                         left: Box::new(Expr::Binary {
@@ -1192,6 +1355,7 @@ mod tests {
             Program {
                 functions: vec![Function {
                     name: "main".to_string(),
+                    params: vec![],
                     body: vec![Statement::Return(Expr::Binary {
                         op: BinaryOp::GreaterEqual,
                         left: Box::new(Expr::Variable("x".to_string())),
@@ -1228,6 +1392,7 @@ mod tests {
             Program {
                 functions: vec![Function {
                     name: "main".to_string(),
+                    params: vec![],
                     body: vec![Statement::Return(Expr::Binary {
                         op: BinaryOp::Less,
                         left: Box::new(Expr::Binary {
@@ -1269,6 +1434,7 @@ mod tests {
             Program {
                 functions: vec![Function {
                     name: "main".to_string(),
+                    params: vec![],
                     body: vec![
                         Statement::VarDecl {
                             name: "x".to_string(),
@@ -1308,6 +1474,7 @@ mod tests {
             Program {
                 functions: vec![Function {
                     name: "main".to_string(),
+                    params: vec![],
                     body: vec![
                         Statement::VarDecl {
                             name: "x".to_string(),
