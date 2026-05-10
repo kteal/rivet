@@ -129,7 +129,7 @@ Program structure and declarations:
 - [x] blocks
 - [x] nested blocks and scope
 - [x] function definitions beyond `main`
-- [ ] declarations without initializers
+- [x] declarations without initializers
 - [ ] declaration lists mixed with statements
 - [ ] multiple translation-unit-level declarations
 - [ ] globals
@@ -179,6 +179,8 @@ Control flow:
 - [x] `break` and `continue`
 - [x] `for`
 - [ ] `do` / `while`
+- [ ] `switch`, `case`, and `default`
+- [ ] `goto` and labels
 
 Functions:
 
