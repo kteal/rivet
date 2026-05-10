@@ -295,6 +295,14 @@ impl Codegen {
                 }
                 self.emit_line(format_args!("call {name}"));
             }
+            Expr::Assign { name, value } => {
+                self.emit_expr(value);
+
+                let offset = self
+                    .resolve_local(name)
+                    .expect("assignment to undefined variable");
+                self.emit_line(format_args!("sw a0, {offset}(s0)"));
+            }
         }
     }
 
@@ -343,7 +351,7 @@ impl Codegen {
         &mut self,
         init: Option<&Statement>,
         cond: Option<&Expr>,
-        post: Option<&Statement>,
+        post: Option<&Expr>,
         body: &Statement,
     ) {
         let start_label = self.new_label("for_start");
@@ -368,8 +376,8 @@ impl Codegen {
 
         // Post + Jump back
         self.emit_label(&continue_label);
-        if let Some(post_statement) = post {
-            self.emit_statement(post_statement);
+        if let Some(post_expr) = post {
+            self.emit_expr(post_expr);
         }
         self.emit_line(format_args!("j {start_label}"));
 
@@ -397,14 +405,6 @@ impl Codegen {
                     self.emit_line(format_args!("sw a0, {offset}(s0)"));
                 }
             }
-            Statement::Assign { name, value } => {
-                self.emit_expr(value);
-
-                let offset = self
-                    .resolve_local(name)
-                    .expect("assignment to undefined variable");
-                self.emit_line(format_args!("sw a0, {offset}(s0)"));
-            }
             Statement::Block(body) => {
                 self.emit_block(body);
             }
@@ -431,7 +431,7 @@ impl Codegen {
                 cond,
                 post,
                 body,
-            } => self.emit_for_statement(init.as_deref(), cond.as_ref(), post.as_deref(), body),
+            } => self.emit_for_statement(init.as_deref(), cond.as_ref(), post.as_ref(), body),
         }
     }
 
@@ -1172,7 +1172,8 @@ mod tests {
         assert!(asm.contains("    bnez a0, logical_or_true_"));
         assert!(asm.contains("    snez a0, a0"));
         assert!(
-            asm.find("    bnez a0, logical_or_true_").unwrap() < asm.find("    call right").unwrap(),
+            asm.find("    bnez a0, logical_or_true_").unwrap()
+                < asm.find("    call right").unwrap(),
             "logical || should branch before emitting the right operand"
         );
     }
@@ -1259,10 +1260,10 @@ mod tests {
                         name: "x".to_string(),
                         init: None,
                     },
-                    Statement::Assign {
+                    Statement::ExprStatement(Expr::Assign {
                         name: "x".to_string(),
-                        value: Expr::IntLiteral(3),
-                    },
+                        value: Box::new(Expr::IntLiteral(3)),
+                    }),
                     Statement::Return(Expr::Variable("x".to_string())),
                 ],
             }],
@@ -1274,6 +1275,69 @@ mod tests {
             asm,
             ".globl main\nmain:\n    addi sp, sp, -16\n    sw ra, 12(sp)\n    sw s0, 8(sp)\n    addi s0, sp, 16\n    li a0, 3\n    sw a0, -12(s0)\n    lw a0, -12(s0)\n    lw ra, 12(sp)\n    lw s0, 8(sp)\n    addi sp, sp, 16\n    ret\n"
         );
+    }
+
+    #[test]
+    fn generates_assignment_expression_result() {
+        let program = Program {
+            functions: vec![Function {
+                name: "main".to_string(),
+                params: vec![],
+                body: vec![
+                    Statement::VarDecl {
+                        name: "x".to_string(),
+                        init: None,
+                    },
+                    Statement::Return(Expr::Assign {
+                        name: "x".to_string(),
+                        value: Box::new(Expr::IntLiteral(3)),
+                    }),
+                ],
+            }],
+        };
+
+        let asm = generate_with_codegen(&program);
+
+        assert_eq!(
+            asm,
+            ".globl main\nmain:\n    addi sp, sp, -16\n    sw ra, 12(sp)\n    sw s0, 8(sp)\n    addi s0, sp, 16\n    li a0, 3\n    sw a0, -12(s0)\n    lw ra, 12(sp)\n    lw s0, 8(sp)\n    addi sp, sp, 16\n    ret\n"
+        );
+    }
+
+    #[test]
+    fn generates_chained_assignment_expression_right_associative() {
+        let program = Program {
+            functions: vec![Function {
+                name: "main".to_string(),
+                params: vec![],
+                body: vec![
+                    Statement::VarDecl {
+                        name: "x".to_string(),
+                        init: None,
+                    },
+                    Statement::VarDecl {
+                        name: "y".to_string(),
+                        init: None,
+                    },
+                    Statement::ExprStatement(Expr::Assign {
+                        name: "x".to_string(),
+                        value: Box::new(Expr::Assign {
+                            name: "y".to_string(),
+                            value: Box::new(Expr::IntLiteral(4)),
+                        }),
+                    }),
+                    Statement::Return(Expr::Binary {
+                        op: BinaryOp::Add,
+                        left: Box::new(Expr::Variable("x".to_string())),
+                        right: Box::new(Expr::Variable("y".to_string())),
+                    }),
+                ],
+            }],
+        };
+
+        let asm = generate_raw_with_codegen(&program);
+
+        assert!(asm.contains("    li a0, 4\n    sw a0, -16(s0)\n    sw a0, -12(s0)\n"));
     }
 
     #[test]
@@ -1407,14 +1471,16 @@ mod tests {
                     },
                     Statement::While {
                         cond: Expr::Variable("x".to_string()),
-                        body: Box::new(Statement::Block(vec![Statement::Assign {
-                            name: "x".to_string(),
-                            value: Expr::Binary {
-                                op: BinaryOp::Subtract,
-                                left: Box::new(Expr::Variable("x".to_string())),
-                                right: Box::new(Expr::IntLiteral(1)),
+                        body: Box::new(Statement::Block(vec![Statement::ExprStatement(
+                            Expr::Assign {
+                                name: "x".to_string(),
+                                value: Box::new(Expr::Binary {
+                                    op: BinaryOp::Subtract,
+                                    left: Box::new(Expr::Variable("x".to_string())),
+                                    right: Box::new(Expr::IntLiteral(1)),
+                                }),
                             },
-                        }])),
+                        )])),
                     },
                     Statement::Return(Expr::Variable("x".to_string())),
                 ],
@@ -1512,23 +1578,23 @@ mod tests {
                         init: Some(Expr::IntLiteral(0)),
                     },
                     Statement::For {
-                        init: Some(Box::new(Statement::Assign {
+                        init: Some(Box::new(Statement::ExprStatement(Expr::Assign {
                             name: "i".to_string(),
-                            value: Expr::IntLiteral(0),
-                        })),
+                            value: Box::new(Expr::IntLiteral(0)),
+                        }))),
                         cond: Some(Expr::Binary {
                             op: BinaryOp::Less,
                             left: Box::new(Expr::Variable("i".to_string())),
                             right: Box::new(Expr::IntLiteral(3)),
                         }),
-                        post: Some(Box::new(Statement::Assign {
+                        post: Some(Expr::Assign {
                             name: "i".to_string(),
-                            value: Expr::Binary {
+                            value: Box::new(Expr::Binary {
                                 op: BinaryOp::Add,
                                 left: Box::new(Expr::Variable("i".to_string())),
                                 right: Box::new(Expr::IntLiteral(1)),
-                            },
-                        })),
+                            }),
+                        }),
                         body: Box::new(Statement::Block(vec![Statement::Empty])),
                     },
                     Statement::Return(Expr::Variable("i".to_string())),
@@ -1589,14 +1655,14 @@ mod tests {
                             left: Box::new(Expr::Variable("i".to_string())),
                             right: Box::new(Expr::IntLiteral(3)),
                         }),
-                        post: Some(Box::new(Statement::Assign {
+                        post: Some(Expr::Assign {
                             name: "i".to_string(),
-                            value: Expr::Binary {
+                            value: Box::new(Expr::Binary {
                                 op: BinaryOp::Add,
                                 left: Box::new(Expr::Variable("i".to_string())),
                                 right: Box::new(Expr::IntLiteral(1)),
-                            },
-                        })),
+                            }),
+                        }),
                         body: Box::new(Statement::Block(vec![Statement::Continue])),
                     },
                     Statement::Return(Expr::Variable("i".to_string())),
@@ -1675,14 +1741,14 @@ mod tests {
                             left: Box::new(Expr::Variable("i".to_string())),
                             right: Box::new(Expr::IntLiteral(1)),
                         }),
-                        post: Some(Box::new(Statement::Assign {
+                        post: Some(Expr::Assign {
                             name: "i".to_string(),
-                            value: Expr::Binary {
+                            value: Box::new(Expr::Binary {
                                 op: BinaryOp::Add,
                                 left: Box::new(Expr::Variable("i".to_string())),
                                 right: Box::new(Expr::IntLiteral(1)),
-                            },
-                        })),
+                            }),
+                        }),
                         body: Box::new(Statement::Block(vec![Statement::Empty])),
                     },
                     Statement::Return(Expr::Variable("i".to_string())),

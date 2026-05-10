@@ -55,10 +55,6 @@ impl Parser {
         &self.tokens[self.pos]
     }
 
-    fn lookahead(&self, n: usize) -> Option<&Token> {
-        self.tokens.get(self.pos + n)
-    }
-
     fn advance(&mut self) -> Token {
         let token = self.tokens[self.pos].clone();
         self.pos += 1;
@@ -241,8 +237,26 @@ impl Parser {
         self.parse_left_assoc(Self::parse_logical_and, LOGICAL_OR_OPS)
     }
 
+    fn parse_assignment(&mut self) -> Result<Expr, ParseError> {
+        let left = self.parse_logical_or()?;
+
+        if *self.peek() == Token::Equal {
+            if let Expr::Variable(name) = left {
+                self.expect(Token::Equal)?;
+                let value = Box::new(self.parse_assignment()?);
+                return Ok(Expr::Assign { name, value });
+            } else {
+                return Err(ParseError {
+                    message: format!("cannot assign to non-variable expression"),
+                });
+            }
+        }
+
+        Ok(left)
+    }
+
     fn parse_expr(&mut self) -> Result<Expr, ParseError> {
-        self.parse_logical_or()
+        self.parse_assignment()
     }
 
     fn parse_var_decl(&mut self) -> Result<Statement, ParseError> {
@@ -266,22 +280,6 @@ impl Parser {
             name,
             init: Some(expr),
         })
-    }
-
-    fn parse_assignment(&mut self) -> Result<Statement, ParseError> {
-        let name = match self.advance() {
-            Token::Ident(name) => name,
-            found => {
-                return Err(ParseError {
-                    message: format!("got unexpected token {found:?}"),
-                });
-            }
-        };
-        self.expect(Token::Equal)?;
-        let value = self.parse_expr()?;
-        self.expect(Token::Semicolon)?;
-
-        Ok(Statement::Assign { name, value })
     }
 
     fn parse_through_rbrace(&mut self, vec: &mut Vec<Statement>) -> Result<(), ParseError> {
@@ -338,48 +336,10 @@ impl Parser {
                 Ok(Statement::Empty)
             }
             // Expression-start tokens
-            token if Self::is_expr_start(token) => {
-                if matches!(self.peek(), Token::Ident(_))
-                    && matches!(self.lookahead(1), Some(Token::Equal))
-                {
-                    // x = ...
-                    self.parse_assignment()
-                } else {
-                    self.parse_expr_statement()
-                }
-            }
+            token if Self::is_expr_start(token) => self.parse_expr_statement(),
             found => Err(ParseError {
                 message: format!("got unexpected keyword {found:?}"),
             }),
-        }
-    }
-
-    fn parse_for_statment_post(&mut self) -> Result<Statement, ParseError> {
-        if !Self::is_expr_start(self.peek()) {
-            return Err(ParseError {
-                message: format!(
-                    "'post' clause of for statement doesn't contain expression or assignment"
-                ),
-            });
-        }
-        if matches!(self.peek(), Token::Ident(_)) && matches!(self.lookahead(1), Some(Token::Equal))
-        {
-            // x = ...
-            let name = match self.advance() {
-                Token::Ident(name) => name,
-                found => {
-                    return Err(ParseError {
-                        message: format!("got unexpected token {found:?}"),
-                    });
-                }
-            };
-            self.expect(Token::Equal)?;
-            let value = self.parse_expr()?;
-
-            Ok(Statement::Assign { name, value })
-        } else {
-            let expr = self.parse_expr()?;
-            Ok(Statement::ExprStatement(expr))
         }
     }
 
@@ -403,7 +363,7 @@ impl Parser {
         self.expect(Token::Semicolon)?;
 
         if *self.peek() != Token::RParen {
-            post = Some(Box::new(self.parse_for_statment_post()?))
+            post = Some(self.parse_expr()?)
         }
         self.expect(Token::RParen)?;
 
@@ -466,16 +426,7 @@ impl Parser {
                 Ok(Statement::Empty)
             }
             // Expression-start tokens
-            token if Self::is_expr_start(token) => {
-                if matches!(self.peek(), Token::Ident(_))
-                    && matches!(self.lookahead(1), Some(Token::Equal))
-                {
-                    // x = ...
-                    self.parse_assignment()
-                } else {
-                    self.parse_expr_statement()
-                }
-            }
+            token if Self::is_expr_start(token) => self.parse_expr_statement(),
             found => Err(ParseError {
                 message: format!("got unexpected keyword {found:?}"),
             }),
@@ -1174,19 +1125,115 @@ mod tests {
                             name: "x".to_string(),
                             init: Some(Expr::IntLiteral(1)),
                         },
-                        Statement::Assign {
+                        Statement::ExprStatement(Expr::Assign {
                             name: "x".to_string(),
-                            value: Expr::Binary {
+                            value: Box::new(Expr::Binary {
                                 op: BinaryOp::Add,
                                 left: Box::new(Expr::Variable("x".to_string())),
                                 right: Box::new(Expr::IntLiteral(2)),
-                            },
-                        },
+                            }),
+                        }),
                         Statement::Return(Expr::Variable("x".to_string())),
                     ],
                 }],
             }
         )
+    }
+
+    #[test]
+    fn parses_assignment_as_expression_statement() {
+        let tokens = vec![
+            Token::Ident("x".to_string()),
+            Token::Equal,
+            Token::IntLiteral(3),
+            Token::Semicolon,
+        ];
+
+        let mut parser = Parser::new(tokens);
+
+        let statement = parser.parse_statement().expect("parsing should succeed");
+
+        assert_eq!(
+            statement,
+            Statement::ExprStatement(Expr::Assign {
+                name: "x".to_string(),
+                value: Box::new(Expr::IntLiteral(3)),
+            })
+        );
+    }
+
+    #[test]
+    fn parses_assignment_as_return_expression() {
+        let tokens = vec![
+            Token::KwReturn,
+            Token::Ident("x".to_string()),
+            Token::Equal,
+            Token::IntLiteral(3),
+            Token::Semicolon,
+        ];
+
+        let mut parser = Parser::new(tokens);
+
+        let statement = parser.parse_statement().expect("parsing should succeed");
+
+        assert_eq!(
+            statement,
+            Statement::Return(Expr::Assign {
+                name: "x".to_string(),
+                value: Box::new(Expr::IntLiteral(3)),
+            })
+        );
+    }
+
+    #[test]
+    fn parses_assignment_right_associative() {
+        let tokens = vec![
+            Token::KwReturn,
+            Token::Ident("x".to_string()),
+            Token::Equal,
+            Token::Ident("y".to_string()),
+            Token::Equal,
+            Token::IntLiteral(4),
+            Token::Semicolon,
+        ];
+
+        let mut parser = Parser::new(tokens);
+
+        let statement = parser.parse_statement().expect("parsing should succeed");
+
+        assert_eq!(
+            statement,
+            Statement::Return(Expr::Assign {
+                name: "x".to_string(),
+                value: Box::new(Expr::Assign {
+                    name: "y".to_string(),
+                    value: Box::new(Expr::IntLiteral(4)),
+                }),
+            })
+        );
+    }
+
+    #[test]
+    fn rejects_assignment_to_non_variable_expression() {
+        let tokens = vec![
+            Token::KwReturn,
+            Token::LParen,
+            Token::IntLiteral(1),
+            Token::Plus,
+            Token::IntLiteral(2),
+            Token::RParen,
+            Token::Equal,
+            Token::IntLiteral(3),
+            Token::Semicolon,
+        ];
+
+        let mut parser = Parser::new(tokens);
+
+        let err = parser
+            .parse_statement()
+            .expect_err("assignment target should be rejected");
+
+        assert_eq!(err.message, "cannot assign to non-variable expression");
     }
 
     #[test]
@@ -1298,14 +1345,14 @@ mod tests {
             statement,
             Statement::While {
                 cond: Expr::Variable("x".to_string()),
-                body: Box::new(Statement::Assign {
+                body: Box::new(Statement::ExprStatement(Expr::Assign {
                     name: "x".to_string(),
-                    value: Expr::Binary {
+                    value: Box::new(Expr::Binary {
                         op: BinaryOp::Subtract,
                         left: Box::new(Expr::Variable("x".to_string())),
                         right: Box::new(Expr::IntLiteral(1)),
-                    },
-                }),
+                    }),
+                })),
             }
         );
     }
@@ -1985,23 +2032,23 @@ mod tests {
         assert_eq!(
             statement,
             Statement::For {
-                init: Some(Box::new(Statement::Assign {
+                init: Some(Box::new(Statement::ExprStatement(Expr::Assign {
                     name: "i".to_string(),
-                    value: Expr::IntLiteral(0),
-                })),
+                    value: Box::new(Expr::IntLiteral(0)),
+                }))),
                 cond: Some(Expr::Binary {
                     op: BinaryOp::Less,
                     left: Box::new(Expr::Variable("i".to_string())),
                     right: Box::new(Expr::IntLiteral(10)),
                 }),
-                post: Some(Box::new(Statement::Assign {
+                post: Some(Expr::Assign {
                     name: "i".to_string(),
-                    value: Expr::Binary {
+                    value: Box::new(Expr::Binary {
                         op: BinaryOp::Add,
                         left: Box::new(Expr::Variable("i".to_string())),
                         right: Box::new(Expr::IntLiteral(1)),
-                    },
-                })),
+                    }),
+                }),
                 body: Box::new(Statement::Empty),
             }
         );
@@ -2046,14 +2093,14 @@ mod tests {
                     left: Box::new(Expr::Variable("i".to_string())),
                     right: Box::new(Expr::IntLiteral(10)),
                 }),
-                post: Some(Box::new(Statement::Assign {
+                post: Some(Expr::Assign {
                     name: "i".to_string(),
-                    value: Expr::Binary {
+                    value: Box::new(Expr::Binary {
                         op: BinaryOp::Add,
                         left: Box::new(Expr::Variable("i".to_string())),
                         right: Box::new(Expr::IntLiteral(1)),
-                    },
-                })),
+                    }),
+                }),
                 body: Box::new(Statement::Empty),
             }
         );

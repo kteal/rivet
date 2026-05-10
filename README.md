@@ -2,7 +2,7 @@
 
 `rivet` is a C compiler written in Rust that targets RV32IM assembly. It is working toward a C23 implementation and currently implements a small C23 subset.
 
-It currently supports integer literals, local variables, assignments, blocks, expression statements, empty statements, `if` / `else`, `while`, `for`, `break`, `continue`, return statements, comments, arithmetic, unary, comparison, and bitwise operators with C-like precedence. It also supports multiple `int` functions, parameters, and calls with up to 8 `int` arguments passed in RISC-V argument registers.
+It currently supports integer literals, local variables, assignment expressions, blocks, expression statements, empty statements, `if` / `else`, `while`, `for`, `break`, `continue`, return statements, comments, arithmetic, unary, comparison, bitwise, and short-circuiting logical operators with C-like precedence. It also supports multiple `int` functions, parameters, and calls with up to 8 `int` arguments passed in RISC-V argument registers.
 
 The current language subset supports programs shaped like:
 
@@ -34,9 +34,10 @@ int adjust(int value, int mask) {
 }
 
 int main() {
-    int sum = triangular_until(5, 1);
+    int sum;
+    sum = triangular_until(5, 1);
     adjust(sum, 7);
-    return adjust(sum, 7);
+    return sum = adjust(sum, 7);
 }
 ```
 
@@ -143,7 +144,7 @@ Expressions and operators:
 - [x] arithmetic: `+ - * / %`
 - [x] operator precedence and left associativity
 - [x] parenthesized expressions
-- [x] assignments
+- [x] assignment expressions
 - [x] unary operators: `- ! ~`
 - [x] bitwise operators: `& | ^ << >>`
 - [x] comparisons: `== != < <= > >=`

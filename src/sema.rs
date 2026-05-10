@@ -134,12 +134,12 @@ impl Checker {
 
     fn check_expr(&mut self, expr: &Expr) -> Result<(), SemanticError> {
         match expr {
-            Expr::IntLiteral(_) => Ok(()),
-            Expr::Variable(name) => self.check_local_declared(name),
-            Expr::Unary { op: _, expr } => self.check_expr(expr),
+            Expr::IntLiteral(_) => (),
+            Expr::Variable(name) => self.check_local_declared(name)?,
+            Expr::Unary { op: _, expr } => self.check_expr(expr)?,
             Expr::Binary { op: _, left, right } => {
                 self.check_expr(left)?;
-                self.check_expr(right)
+                self.check_expr(right)?;
             }
             Expr::Call { name, args } => {
                 // For now, limit to 8 args (no stack-passed arguments)
@@ -157,9 +157,13 @@ impl Checker {
                 for arg in args {
                     self.check_expr(arg)?;
                 }
-                Ok(())
+            }
+            Expr::Assign { name, value } => {
+                self.check_local_declared(name)?;
+                self.check_expr(value)?;
             }
         }
+        Ok(())
     }
 
     fn check_statement(&mut self, statement: &Statement) -> Result<(), SemanticError> {
@@ -170,10 +174,6 @@ impl Checker {
                 if let Some(init_expr) = init {
                     self.check_expr(init_expr)?;
                 }
-            }
-            Statement::Assign { name, value } => {
-                self.check_local_declared(name)?;
-                self.check_expr(value)?;
             }
             Statement::Block(body) => self.check_block(body)?,
             Statement::If {
@@ -210,8 +210,8 @@ impl Checker {
                     if let Some(cond_expr) = cond {
                         self.check_expr(cond_expr)?;
                     }
-                    if let Some(post_statement) = post {
-                        self.check_statement(post_statement)?;
+                    if let Some(post_expr) = post {
+                        self.check_expr(post_expr)?;
                     }
                     self.check_statement(body)?;
 
@@ -690,14 +690,14 @@ mod tests {
                 name: "x".to_string(),
                 init: Some(Expr::IntLiteral(1)),
             },
-            Statement::Assign {
+            Statement::ExprStatement(Expr::Assign {
                 name: "x".to_string(),
-                value: Expr::Binary {
+                value: Box::new(Expr::Binary {
                     op: BinaryOp::Add,
                     left: Box::new(Expr::Variable("x".to_string())),
                     right: Box::new(Expr::IntLiteral(2)),
-                },
-            },
+                }),
+            }),
             Statement::Return(Expr::Variable("x".to_string())),
         ]);
 
@@ -711,14 +711,42 @@ mod tests {
                 name: "x".to_string(),
                 init: None,
             },
-            Statement::Assign {
+            Statement::ExprStatement(Expr::Assign {
                 name: "x".to_string(),
-                value: Expr::IntLiteral(3),
-            },
+                value: Box::new(Expr::IntLiteral(3)),
+            }),
             Statement::Return(Expr::Variable("x".to_string())),
         ]);
 
         check(&program).expect("semantic check should succeed");
+    }
+
+    #[test]
+    fn accepts_assignment_expression_in_return() {
+        let program = main_program(vec![
+            Statement::VarDecl {
+                name: "x".to_string(),
+                init: None,
+            },
+            Statement::Return(Expr::Assign {
+                name: "x".to_string(),
+                value: Box::new(Expr::IntLiteral(3)),
+            }),
+        ]);
+
+        check(&program).expect("semantic check should succeed");
+    }
+
+    #[test]
+    fn rejects_assignment_expression_to_undeclared_local() {
+        let program = main_program(vec![Statement::Return(Expr::Assign {
+            name: "x".to_string(),
+            value: Box::new(Expr::IntLiteral(3)),
+        })]);
+
+        let err = check(&program).expect_err("semantic check should fail");
+
+        assert_eq!(err.message, "undeclared local variable 'x'");
     }
 
     #[test]
@@ -773,10 +801,10 @@ mod tests {
     #[test]
     fn rejects_assignment_to_undeclared_local() {
         let program = main_program(vec![
-            Statement::Assign {
+            Statement::ExprStatement(Expr::Assign {
                 name: "x".to_string(),
-                value: Expr::IntLiteral(1),
-            },
+                value: Box::new(Expr::IntLiteral(1)),
+            }),
             Statement::Return(Expr::IntLiteral(0)),
         ]);
 
@@ -942,14 +970,16 @@ mod tests {
             },
             Statement::While {
                 cond: Expr::Variable("x".to_string()),
-                body: Box::new(Statement::Block(vec![Statement::Assign {
-                    name: "x".to_string(),
-                    value: Expr::Binary {
-                        op: BinaryOp::Subtract,
-                        left: Box::new(Expr::Variable("x".to_string())),
-                        right: Box::new(Expr::IntLiteral(1)),
+                body: Box::new(Statement::Block(vec![Statement::ExprStatement(
+                    Expr::Assign {
+                        name: "x".to_string(),
+                        value: Box::new(Expr::Binary {
+                            op: BinaryOp::Subtract,
+                            left: Box::new(Expr::Variable("x".to_string())),
+                            right: Box::new(Expr::IntLiteral(1)),
+                        }),
                     },
-                }])),
+                )])),
             },
             Statement::Return(Expr::Variable("x".to_string())),
         ]);

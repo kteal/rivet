@@ -16,10 +16,6 @@ pub enum Statement {
         name: String,
         init: Option<Expr>,
     },
-    Assign {
-        name: String,
-        value: Expr,
-    },
     Return(Expr),
     Block(Vec<Statement>),
     If {
@@ -38,7 +34,7 @@ pub enum Statement {
     For {
         init: Option<Box<Statement>>, // VarDecl, Assign, ExprStatement, Empty
         cond: Option<Expr>,
-        post: Option<Box<Statement>>, // Assign, ExprStatement, no semicolon
+        post: Option<Expr>,
         body: Box<Statement>,
     },
 }
@@ -59,6 +55,10 @@ pub enum Expr {
     Call {
         name: String,
         args: Vec<Expr>,
+    },
+    Assign {
+        name: String,
+        value: Box<Expr>,
     },
 }
 

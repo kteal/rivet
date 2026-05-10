@@ -134,12 +134,36 @@ fn qemu_unary_programs_return_expected_values() {
 #[test]
 #[ignore = "requires qemu-riscv32 and riscv64-linux-gnu binutils"]
 fn qemu_logical_operator_programs_return_expected_values() {
-    run_qemu_case("logical-and-true", "int main() {\n    return 2 && 3;\n}\n", 1);
-    run_qemu_case("logical-and-false-left", "int main() {\n    return 0 && 3;\n}\n", 0);
-    run_qemu_case("logical-and-false-right", "int main() {\n    return 2 && 0;\n}\n", 0);
-    run_qemu_case("logical-or-true-left", "int main() {\n    return 2 || 0;\n}\n", 1);
-    run_qemu_case("logical-or-true-right", "int main() {\n    return 0 || 3;\n}\n", 1);
-    run_qemu_case("logical-or-false", "int main() {\n    return 0 || 0;\n}\n", 0);
+    run_qemu_case(
+        "logical-and-true",
+        "int main() {\n    return 2 && 3;\n}\n",
+        1,
+    );
+    run_qemu_case(
+        "logical-and-false-left",
+        "int main() {\n    return 0 && 3;\n}\n",
+        0,
+    );
+    run_qemu_case(
+        "logical-and-false-right",
+        "int main() {\n    return 2 && 0;\n}\n",
+        0,
+    );
+    run_qemu_case(
+        "logical-or-true-left",
+        "int main() {\n    return 2 || 0;\n}\n",
+        1,
+    );
+    run_qemu_case(
+        "logical-or-true-right",
+        "int main() {\n    return 0 || 3;\n}\n",
+        1,
+    );
+    run_qemu_case(
+        "logical-or-false",
+        "int main() {\n    return 0 || 0;\n}\n",
+        0,
+    );
     run_qemu_case(
         "logical-and-normalizes-right",
         "int main() {\n    return 1 && 42;\n}\n",
@@ -239,6 +263,16 @@ fn qemu_local_variable_programs_return_expected_values() {
         "declaration-without-initializer",
         "int main() {\n    int x;\n    x = 3;\n    return x;\n}\n",
         3,
+    );
+    run_qemu_case(
+        "assignment-expression-result",
+        "int main() {\n    int x;\n    return x = 3;\n}\n",
+        3,
+    );
+    run_qemu_case(
+        "chained-assignment-expression",
+        "int main() {\n    int x;\n    int y;\n    x = y = 4;\n    return x + y;\n}\n",
+        8,
     );
     run_qemu_case(
         "multi-var-assignments",
