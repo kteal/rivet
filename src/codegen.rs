@@ -57,6 +57,7 @@ struct Codegen {
     scopes: Vec<HashMap<String, i32>>,
     next_local_offset: i32,
     label_counter: usize,
+    return_label: Option<String>,
     #[allow(dead_code)]
     target: CodegenTarget,
 }
@@ -69,6 +70,7 @@ impl Codegen {
             scopes: vec![HashMap::new()],
             next_local_offset: -12,
             label_counter: 0,
+            return_label: None,
             target,
         }
     }
@@ -123,7 +125,11 @@ impl Codegen {
         match statement {
             Statement::Return(expr) => {
                 self.emit_expr(expr);
-                self.emit_line(format_args!("j main_end"));
+                let return_label = self
+                    .return_label
+                    .clone()
+                    .expect("codegen should have an active return label");
+                self.emit_line(format_args!("j {return_label}"));
             }
             Statement::VarDecl { name, init: value } => {
                 // After this, value is in a0
@@ -201,13 +207,17 @@ impl Codegen {
         self.exit_scope();
     }
 
-    fn emit_program(&mut self, program: &Program) -> String {
-        let function = &program.function;
-
+    fn emit_function(&mut self, function: &Function) {
+        self.return_label = Some(format!("{}_end", function.name));
         self.frame = FrameLayout::for_function(&function);
         self.emit_prologue(&function.name);
         self.emit_statements(&function.body);
         self.emit_epilogue();
+    }
+
+    fn emit_program(&mut self, program: &Program) -> String {
+        let function = &program.function;
+        self.emit_function(function);
 
         std::mem::take(&mut self.out)
     }
@@ -224,7 +234,11 @@ impl Codegen {
 
     fn emit_epilogue(&mut self) {
         let frame_size = self.frame.size;
-        self.emit_label(format_args!("main_end"));
+        let return_label = self
+            .return_label
+            .clone()
+            .expect("codegen should have an active return label");
+        self.emit_label(format_args!("{return_label}"));
         self.emit_line(format_args!("lw ra, {}(sp)", frame_size - 4));
         self.emit_line(format_args!("lw s0, {}(sp)", frame_size - 8));
         self.emit_line(format_args!("addi sp, sp, {frame_size}"));
