@@ -174,7 +174,55 @@ impl Codegen {
         self.emit(format_args!("{label}:\n"));
     }
 
+    fn emit_logical_and(&mut self, left: &Expr, right: &Expr) {
+        let false_label = self.new_label("logical_and_false");
+        let end_label = self.new_label("logical_and_end");
+
+        self.emit_expr(left);
+        self.emit_line(format_args!("beqz a0, {false_label}"));
+
+        self.emit_expr(right);
+        self.emit_line(format_args!("snez a0, a0"));
+        self.emit_line(format_args!("j {end_label}"));
+
+        self.emit_label(&false_label);
+        self.emit_line(format_args!("li a0, 0"));
+
+        self.emit_label(&end_label);
+    }
+
+    fn emit_logical_or(&mut self, left: &Expr, right: &Expr) {
+        let true_label = self.new_label("logical_or_true");
+        let end_label = self.new_label("logical_or_end");
+
+        self.emit_expr(left);
+        self.emit_line(format_args!("bnez a0, {true_label}"));
+
+        self.emit_expr(right);
+        self.emit_line(format_args!("snez a0, a0"));
+        self.emit_line(format_args!("j {end_label}"));
+
+        self.emit_label(&true_label);
+        self.emit_line(format_args!("li a0, 1"));
+
+        self.emit_label(&end_label);
+    }
+
     fn emit_binary(&mut self, op: &BinaryOp, left: &Expr, right: &Expr) {
+        // Short-circuit binary operations
+        match op {
+            BinaryOp::LogicalAnd => {
+                self.emit_logical_and(left, right);
+                return;
+            }
+            BinaryOp::LogicalOr => {
+                self.emit_logical_or(left, right);
+                return;
+            }
+            _ => {}
+        }
+
+        // Fully-evaluated binary operations
         self.emit_expr(left);
         self.emit_line(format_args!("addi sp, sp, -4"));
         self.emit_line(format_args!("sw a0, 0(sp)"));
@@ -211,6 +259,7 @@ impl Codegen {
             BinaryOp::BitOr => self.emit_line(format_args!("or a0, a0, t0")),
             BinaryOp::ShiftLeft => self.emit_line(format_args!("sll a0, t0, a0")),
             BinaryOp::ShiftRight => self.emit_line(format_args!("sra a0, t0, a0")),
+            BinaryOp::LogicalAnd | BinaryOp::LogicalOr => unreachable!(),
         };
     }
 
@@ -1066,6 +1115,65 @@ mod tests {
         assert_eq!(
             asm,
             ".globl main\nmain:\n    addi sp, sp, -16\n    sw ra, 12(sp)\n    sw s0, 8(sp)\n    addi s0, sp, 16\n    li a0, 0\n    seqz a0, a0\n    lw ra, 12(sp)\n    lw s0, 8(sp)\n    addi sp, sp, 16\n    ret\n"
+        );
+    }
+
+    #[test]
+    fn generates_logical_and_with_short_circuit_branch() {
+        let program = Program {
+            functions: vec![Function {
+                name: "main".to_string(),
+                params: vec![],
+                body: vec![Statement::Return(Expr::Binary {
+                    op: BinaryOp::LogicalAnd,
+                    left: Box::new(Expr::IntLiteral(0)),
+                    right: Box::new(Expr::Call {
+                        name: "right".to_string(),
+                        args: vec![],
+                    }),
+                })],
+            }],
+        };
+
+        let asm = generate_raw_with_codegen(&program);
+
+        assert!(asm.contains("logical_and_false_"));
+        assert!(asm.contains("logical_and_end_"));
+        assert!(asm.contains("    beqz a0, logical_and_false_"));
+        assert!(asm.contains("    snez a0, a0"));
+        assert!(
+            asm.find("    beqz a0, logical_and_false_").unwrap()
+                < asm.find("    call right").unwrap(),
+            "logical && should branch before emitting the right operand"
+        );
+    }
+
+    #[test]
+    fn generates_logical_or_with_short_circuit_branch() {
+        let program = Program {
+            functions: vec![Function {
+                name: "main".to_string(),
+                params: vec![],
+                body: vec![Statement::Return(Expr::Binary {
+                    op: BinaryOp::LogicalOr,
+                    left: Box::new(Expr::IntLiteral(1)),
+                    right: Box::new(Expr::Call {
+                        name: "right".to_string(),
+                        args: vec![],
+                    }),
+                })],
+            }],
+        };
+
+        let asm = generate_raw_with_codegen(&program);
+
+        assert!(asm.contains("logical_or_true_"));
+        assert!(asm.contains("logical_or_end_"));
+        assert!(asm.contains("    bnez a0, logical_or_true_"));
+        assert!(asm.contains("    snez a0, a0"));
+        assert!(
+            asm.find("    bnez a0, logical_or_true_").unwrap() < asm.find("    call right").unwrap(),
+            "logical || should branch before emitting the right operand"
         );
     }
 

@@ -80,6 +80,8 @@ pub enum BinaryOp {
     BitOr,
     ShiftLeft,
     ShiftRight,
+    LogicalAnd,
+    LogicalOr,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

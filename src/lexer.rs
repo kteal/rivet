@@ -36,6 +36,8 @@ pub enum Token {
     Pipe,
     LessLess,
     GreaterGreater,
+    AmpersandAmpersand,
+    PipePipe,
     Comma,
     Eof,
 }
@@ -129,9 +131,23 @@ impl<'a> Lexer<'a> {
                     }
                 }
                 '~' => self.advance_and_push(Token::Tilde),
-                '&' => self.advance_and_push(Token::Ampersand),
+                '&' => {
+                    self.advance();
+                    if self.consume_if('&') {
+                        self.push(Token::AmpersandAmpersand);
+                    } else {
+                        self.push(Token::Ampersand)
+                    }
+                }
                 '^' => self.advance_and_push(Token::Caret),
-                '|' => self.advance_and_push(Token::Pipe),
+                '|' => {
+                    self.advance();
+                    if self.consume_if('|') {
+                        self.push(Token::PipePipe);
+                    } else {
+                        self.push(Token::Pipe)
+                    }
+                }
                 _ => {
                     return Err(LexError {
                         message: format!("unexpected character {ch:?}"),
@@ -635,5 +651,43 @@ mod tests {
         let err = lex_with_struct("int main @").expect_err("lexing should fail");
 
         assert_eq!(err.message, "unexpected character '@'");
+    }
+
+    #[test]
+    fn lexes_logical_and_or_operators() {
+        let tokens = lex_with_struct("return 1 && 0 || 2;").expect("lexing should succeed");
+
+        assert_eq!(
+            tokens,
+            vec![
+                Token::KwReturn,
+                Token::IntLiteral(1),
+                Token::AmpersandAmpersand,
+                Token::IntLiteral(0),
+                Token::PipePipe,
+                Token::IntLiteral(2),
+                Token::Semicolon,
+                Token::Eof,
+            ]
+        );
+    }
+
+    #[test]
+    fn lexes_single_bitwise_operators_after_logical_operator_support() {
+        let tokens = lex_with_struct("return 6&3|1;").expect("lexing should succeed");
+
+        assert_eq!(
+            tokens,
+            vec![
+                Token::KwReturn,
+                Token::IntLiteral(6),
+                Token::Ampersand,
+                Token::IntLiteral(3),
+                Token::Pipe,
+                Token::IntLiteral(1),
+                Token::Semicolon,
+                Token::Eof,
+            ]
+        );
     }
 }

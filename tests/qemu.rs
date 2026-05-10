@@ -133,6 +133,37 @@ fn qemu_unary_programs_return_expected_values() {
 
 #[test]
 #[ignore = "requires qemu-riscv32 and riscv64-linux-gnu binutils"]
+fn qemu_logical_operator_programs_return_expected_values() {
+    run_qemu_case("logical-and-true", "int main() {\n    return 2 && 3;\n}\n", 1);
+    run_qemu_case("logical-and-false-left", "int main() {\n    return 0 && 3;\n}\n", 0);
+    run_qemu_case("logical-and-false-right", "int main() {\n    return 2 && 0;\n}\n", 0);
+    run_qemu_case("logical-or-true-left", "int main() {\n    return 2 || 0;\n}\n", 1);
+    run_qemu_case("logical-or-true-right", "int main() {\n    return 0 || 3;\n}\n", 1);
+    run_qemu_case("logical-or-false", "int main() {\n    return 0 || 0;\n}\n", 0);
+    run_qemu_case(
+        "logical-and-normalizes-right",
+        "int main() {\n    return 1 && 42;\n}\n",
+        1,
+    );
+    run_qemu_case(
+        "logical-or-normalizes-right",
+        "int main() {\n    return 0 || 42;\n}\n",
+        1,
+    );
+    run_qemu_case(
+        "logical-and-before-or",
+        "int main() {\n    return 0 || 1 && 2;\n}\n",
+        1,
+    );
+    run_qemu_case(
+        "bitwise-or-before-logical-and",
+        "int main() {\n    return 1 | 0 && 0;\n}\n",
+        0,
+    );
+}
+
+#[test]
+#[ignore = "requires qemu-riscv32 and riscv64-linux-gnu binutils"]
 fn qemu_bitwise_and_shift_programs_return_expected_values() {
     run_qemu_case("bitwise-and", "int main() {\n    return 6 & 3;\n}\n", 2);
     run_qemu_case("bitwise-xor", "int main() {\n    return 6 ^ 3;\n}\n", 5);

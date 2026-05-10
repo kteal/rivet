@@ -150,7 +150,7 @@ Expressions and operators:
 - [x] C-style left-associative chained comparisons
 - [x] expression statements
 - [x] empty statements
-- [ ] logical `&&` and `||` with short-circuiting
+- [x] logical `&&` and `||` with short-circuiting
 - [ ] conditional operator `?:`
 - [ ] comma operator
 - [ ] prefix and postfix `++` / `--`

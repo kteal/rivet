@@ -33,6 +33,9 @@ const BITWISE_AND_OPS: &[(Token, BinaryOp)] = &[(Token::Ampersand, BinaryOp::Bit
 const BITWISE_XOR_OPS: &[(Token, BinaryOp)] = &[(Token::Caret, BinaryOp::BitXor)];
 const BITWISE_OR_OPS: &[(Token, BinaryOp)] = &[(Token::Pipe, BinaryOp::BitOr)];
 
+const LOGICAL_AND_OPS: &[(Token, BinaryOp)] = &[(Token::AmpersandAmpersand, BinaryOp::LogicalAnd)];
+const LOGICAL_OR_OPS: &[(Token, BinaryOp)] = &[(Token::PipePipe, BinaryOp::LogicalOr)];
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ParseError {
     pub message: String,
@@ -230,8 +233,16 @@ impl Parser {
         self.parse_left_assoc(Self::parse_bitwise_xor, BITWISE_OR_OPS)
     }
 
+    fn parse_logical_and(&mut self) -> Result<Expr, ParseError> {
+        self.parse_left_assoc(Self::parse_bitwise_or, LOGICAL_AND_OPS)
+    }
+
+    fn parse_logical_or(&mut self) -> Result<Expr, ParseError> {
+        self.parse_left_assoc(Self::parse_logical_and, LOGICAL_OR_OPS)
+    }
+
     fn parse_expr(&mut self) -> Result<Expr, ParseError> {
-        self.parse_bitwise_or()
+        self.parse_logical_or()
     }
 
     fn parse_var_decl(&mut self) -> Result<Statement, ParseError> {
@@ -1852,6 +1863,96 @@ mod tests {
                 post: None,
                 body: Box::new(Statement::Empty),
             }
+        );
+    }
+
+    #[test]
+    fn parses_logical_and_before_logical_or() {
+        let tokens = vec![
+            Token::KwReturn,
+            Token::IntLiteral(1),
+            Token::PipePipe,
+            Token::IntLiteral(0),
+            Token::AmpersandAmpersand,
+            Token::IntLiteral(2),
+            Token::Semicolon,
+        ];
+
+        let mut parser = Parser::new(tokens);
+
+        let statement = parser.parse_statement().expect("parsing should succeed");
+
+        assert_eq!(
+            statement,
+            Statement::Return(Expr::Binary {
+                op: BinaryOp::LogicalOr,
+                left: Box::new(Expr::IntLiteral(1)),
+                right: Box::new(Expr::Binary {
+                    op: BinaryOp::LogicalAnd,
+                    left: Box::new(Expr::IntLiteral(0)),
+                    right: Box::new(Expr::IntLiteral(2)),
+                }),
+            })
+        );
+    }
+
+    #[test]
+    fn parses_bitwise_or_before_logical_and() {
+        let tokens = vec![
+            Token::KwReturn,
+            Token::IntLiteral(1),
+            Token::Pipe,
+            Token::IntLiteral(2),
+            Token::AmpersandAmpersand,
+            Token::IntLiteral(3),
+            Token::Semicolon,
+        ];
+
+        let mut parser = Parser::new(tokens);
+
+        let statement = parser.parse_statement().expect("parsing should succeed");
+
+        assert_eq!(
+            statement,
+            Statement::Return(Expr::Binary {
+                op: BinaryOp::LogicalAnd,
+                left: Box::new(Expr::Binary {
+                    op: BinaryOp::BitOr,
+                    left: Box::new(Expr::IntLiteral(1)),
+                    right: Box::new(Expr::IntLiteral(2)),
+                }),
+                right: Box::new(Expr::IntLiteral(3)),
+            })
+        );
+    }
+
+    #[test]
+    fn parses_chained_logical_and_left_associative() {
+        let tokens = vec![
+            Token::KwReturn,
+            Token::IntLiteral(1),
+            Token::AmpersandAmpersand,
+            Token::IntLiteral(2),
+            Token::AmpersandAmpersand,
+            Token::IntLiteral(3),
+            Token::Semicolon,
+        ];
+
+        let mut parser = Parser::new(tokens);
+
+        let statement = parser.parse_statement().expect("parsing should succeed");
+
+        assert_eq!(
+            statement,
+            Statement::Return(Expr::Binary {
+                op: BinaryOp::LogicalAnd,
+                left: Box::new(Expr::Binary {
+                    op: BinaryOp::LogicalAnd,
+                    left: Box::new(Expr::IntLiteral(1)),
+                    right: Box::new(Expr::IntLiteral(2)),
+                }),
+                right: Box::new(Expr::IntLiteral(3)),
+            })
         );
     }
 
