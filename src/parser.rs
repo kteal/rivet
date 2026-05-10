@@ -107,7 +107,15 @@ impl Parser {
     fn parse_primary(&mut self) -> Result<Expr, ParseError> {
         match self.advance() {
             Token::IntLiteral(value) => Ok(Expr::IntLiteral(value)),
-            Token::Ident(name) => Ok(Expr::Variable(name)),
+            Token::Ident(name) => {
+                if *self.peek() == Token::LParen {
+                    self.expect(Token::LParen)?;
+                    self.expect(Token::RParen)?;
+                    Ok(Expr::Call { name, args: vec![] })
+                } else {
+                    Ok(Expr::Variable(name))
+                }
+            }
             Token::LParen => {
                 let expr = self.parse_expr()?;
                 self.expect(Token::RParen)?;
@@ -193,7 +201,7 @@ impl Parser {
             Token::Ident(name) => name,
             found => {
                 return Err(ParseError {
-                    message: format!("expected function name, found {found:?}"),
+                    message: format!("expected variable name, found {found:?}"),
                 });
             }
         };
@@ -312,10 +320,14 @@ impl Parser {
     }
 
     fn parse_program(&mut self) -> Result<Program, ParseError> {
-        let function = self.parse_function()?;
+        let mut functions = vec![];
+
+        while *self.peek() != Token::Eof {
+            functions.push(self.parse_function()?);
+        }
         self.expect(Token::Eof)?;
 
-        Ok(Program { function })
+        Ok(Program { functions })
     }
 }
 
@@ -348,10 +360,10 @@ mod tests {
         assert_eq!(
             program,
             Program {
-                function: Function {
+                functions: vec![Function {
                     name: "main".to_string(),
                     body: vec![Statement::Return(Expr::IntLiteral(42))],
-                },
+                }],
             }
         );
     }
@@ -402,16 +414,68 @@ mod tests {
         assert_eq!(
             program,
             Program {
-                function: Function {
+                functions: vec![Function {
                     name: "main".to_string(),
                     body: vec![Statement::Return(Expr::Binary {
                         op: BinaryOp::Add,
                         left: Box::new(Expr::IntLiteral(1)),
                         right: Box::new(Expr::IntLiteral(2)),
                     })],
-                },
+                }],
             }
         )
+    }
+
+    #[test]
+    fn parses_zero_argument_function_call() {
+        let tokens = vec![
+            Token::KwReturn,
+            Token::Ident("helper".to_string()),
+            Token::LParen,
+            Token::RParen,
+            Token::Semicolon,
+        ];
+
+        let mut parser = Parser::new(tokens);
+
+        let statement = parser.parse_statement().expect("parsing should succeed");
+
+        assert_eq!(
+            statement,
+            Statement::Return(Expr::Call {
+                name: "helper".to_string(),
+                args: vec![],
+            })
+        );
+    }
+
+    #[test]
+    fn parses_function_call_as_binary_operand() {
+        let tokens = vec![
+            Token::KwReturn,
+            Token::Ident("helper".to_string()),
+            Token::LParen,
+            Token::RParen,
+            Token::Plus,
+            Token::IntLiteral(2),
+            Token::Semicolon,
+        ];
+
+        let mut parser = Parser::new(tokens);
+
+        let statement = parser.parse_statement().expect("parsing should succeed");
+
+        assert_eq!(
+            statement,
+            Statement::Return(Expr::Binary {
+                op: BinaryOp::Add,
+                left: Box::new(Expr::Call {
+                    name: "helper".to_string(),
+                    args: vec![],
+                }),
+                right: Box::new(Expr::IntLiteral(2)),
+            })
+        );
     }
 
     #[test]
@@ -670,7 +734,7 @@ mod tests {
         assert_eq!(
             program,
             Program {
-                function: Function {
+                functions: vec![Function {
                     name: "main".to_string(),
                     body: vec![
                         Statement::VarDecl {
@@ -687,7 +751,7 @@ mod tests {
                         },
                         Statement::Return(Expr::Variable("x".to_string())),
                     ],
-                },
+                }],
             }
         )
     }
@@ -714,12 +778,12 @@ mod tests {
         assert_eq!(
             program,
             Program {
-                function: Function {
+                functions: vec![Function {
                     name: "main".to_string(),
                     body: vec![Statement::Block(vec![Statement::Return(Expr::IntLiteral(
                         1
                     ))])],
-                },
+                }],
             }
         )
     }
@@ -748,12 +812,12 @@ mod tests {
         assert_eq!(
             program,
             Program {
-                function: Function {
+                functions: vec![Function {
                     name: "main".to_string(),
                     body: vec![Statement::Block(vec![Statement::Block(vec![
                         Statement::Return(Expr::IntLiteral(1))
                     ])])],
-                },
+                }],
             }
         )
     }
@@ -856,7 +920,7 @@ mod tests {
         assert_eq!(
             program,
             Program {
-                function: Function {
+                functions: vec![Function {
                     name: "main".to_string(),
                     body: vec![Statement::Return(Expr::Binary {
                         op: BinaryOp::Multiply,
@@ -867,7 +931,7 @@ mod tests {
                         }),
                         right: Box::new(Expr::IntLiteral(3)),
                     })],
-                },
+                }],
             }
         )
     }
@@ -896,7 +960,7 @@ mod tests {
         assert_eq!(
             program,
             Program {
-                function: Function {
+                functions: vec![Function {
                     name: "main".to_string(),
                     body: vec![Statement::Return(Expr::Binary {
                         op: BinaryOp::Less,
@@ -907,7 +971,7 @@ mod tests {
                         }),
                         right: Box::new(Expr::IntLiteral(4)),
                     })],
-                },
+                }],
             }
         )
     }
@@ -1088,7 +1152,7 @@ mod tests {
         assert_eq!(
             program,
             Program {
-                function: Function {
+                functions: vec![Function {
                     name: "main".to_string(),
                     body: vec![Statement::Return(Expr::Binary {
                         op: BinaryOp::Equal,
@@ -1099,7 +1163,7 @@ mod tests {
                         }),
                         right: Box::new(Expr::IntLiteral(3)),
                     })],
-                },
+                }],
             }
         )
     }
@@ -1126,14 +1190,14 @@ mod tests {
         assert_eq!(
             program,
             Program {
-                function: Function {
+                functions: vec![Function {
                     name: "main".to_string(),
                     body: vec![Statement::Return(Expr::Binary {
                         op: BinaryOp::GreaterEqual,
                         left: Box::new(Expr::Variable("x".to_string())),
                         right: Box::new(Expr::IntLiteral(10)),
                     })],
-                },
+                }],
             }
         )
     }
@@ -1162,7 +1226,7 @@ mod tests {
         assert_eq!(
             program,
             Program {
-                function: Function {
+                functions: vec![Function {
                     name: "main".to_string(),
                     body: vec![Statement::Return(Expr::Binary {
                         op: BinaryOp::Less,
@@ -1173,7 +1237,7 @@ mod tests {
                         }),
                         right: Box::new(Expr::IntLiteral(3)),
                     })],
-                },
+                }],
             }
         );
     }
@@ -1203,7 +1267,7 @@ mod tests {
         assert_eq!(
             program,
             Program {
-                function: Function {
+                functions: vec![Function {
                     name: "main".to_string(),
                     body: vec![
                         Statement::VarDecl {
@@ -1212,7 +1276,7 @@ mod tests {
                         },
                         Statement::Return(Expr::IntLiteral(42)),
                     ],
-                },
+                }],
             }
         )
     }
@@ -1242,7 +1306,7 @@ mod tests {
         assert_eq!(
             program,
             Program {
-                function: Function {
+                functions: vec![Function {
                     name: "main".to_string(),
                     body: vec![
                         Statement::VarDecl {
@@ -1251,7 +1315,7 @@ mod tests {
                         },
                         Statement::Return(Expr::Variable("x".to_string())),
                     ],
-                },
+                }],
             }
         )
     }

@@ -9,12 +9,14 @@ pub struct SemanticError {
 
 struct Checker {
     scopes: Vec<HashSet<String>>,
+    functions: HashSet<String>,
 }
 
 impl Checker {
     fn new() -> Self {
         Self {
             scopes: vec![HashSet::new()],
+            functions: HashSet::new(),
         }
     }
 
@@ -48,7 +50,7 @@ impl Checker {
         Ok(())
     }
 
-    fn check_local_declared(&mut self, name: &str) -> Result<(), SemanticError> {
+    fn check_local_declared(&self, name: &str) -> Result<(), SemanticError> {
         for scope in self.scopes.iter().rev() {
             if scope.contains(name) {
                 return Ok(());
@@ -59,6 +61,25 @@ impl Checker {
         });
     }
 
+    fn declare_function(&mut self, name: &str) -> Result<(), SemanticError> {
+        if self.functions.contains(name) {
+            return Err(SemanticError {
+                message: format!("duplicate function '{name}'"),
+            });
+        }
+        self.functions.insert(name.to_string());
+        Ok(())
+    }
+
+    fn check_function_declared(&self, name: &str) -> Result<(), SemanticError> {
+        if !self.functions.contains(name) {
+            return Err(SemanticError {
+                message: format!("undeclared function '{name}'"),
+            });
+        }
+        Ok(())
+    }
+
     fn check_expr(&mut self, expr: &Expr) -> Result<(), SemanticError> {
         match expr {
             Expr::IntLiteral(_) => Ok(()),
@@ -67,6 +88,16 @@ impl Checker {
             Expr::Binary { op: _, left, right } => {
                 self.check_expr(left)?;
                 self.check_expr(right)
+            }
+            Expr::Call { name, args } => {
+                self.check_function_declared(name)?;
+                // TODO: allow arguments
+                if args.len() > 0 {
+                    return Err(SemanticError {
+                        message: format!("function call has {} arguments, expected 0", args.len()),
+                    });
+                }
+                Ok(())
             }
         }
     }
@@ -117,9 +148,17 @@ impl Checker {
     }
 
     fn check_program(&mut self, program: &Program) -> Result<(), SemanticError> {
-        let function = &program.function;
-
-        self.check_statements(&function.body)?;
+        for function in &program.functions {
+            self.declare_function(&function.name)?;
+        }
+        if !self.functions.contains("main") {
+            return Err(SemanticError {
+                message: "no 'main' function found".to_string(),
+            });
+        }
+        for function in &program.functions {
+            self.check_block(&function.body)?;
+        }
 
         Ok(())
     }
@@ -137,11 +176,137 @@ mod tests {
 
     fn main_program(body: Vec<Statement>) -> Program {
         Program {
-            function: Function {
+            functions: vec![Function {
                 name: "main".to_string(),
                 body,
-            },
+            }],
         }
+    }
+
+    fn function(name: &str, body: Vec<Statement>) -> Function {
+        Function {
+            name: name.to_string(),
+            body,
+        }
+    }
+
+    #[test]
+    fn accepts_multiple_functions() {
+        let program = Program {
+            functions: vec![
+                function("helper", vec![Statement::Return(Expr::IntLiteral(1))]),
+                function("main", vec![Statement::Return(Expr::IntLiteral(0))]),
+            ],
+        };
+
+        check(&program).expect("semantic check should succeed");
+    }
+
+    #[test]
+    fn accepts_same_local_name_in_different_functions() {
+        let program = Program {
+            functions: vec![
+                function(
+                    "first",
+                    vec![
+                        Statement::VarDecl {
+                            name: "x".to_string(),
+                            init: Expr::IntLiteral(1),
+                        },
+                        Statement::Return(Expr::Variable("x".to_string())),
+                    ],
+                ),
+                function(
+                    "second",
+                    vec![
+                        Statement::VarDecl {
+                            name: "x".to_string(),
+                            init: Expr::IntLiteral(2),
+                        },
+                        Statement::Return(Expr::Variable("x".to_string())),
+                    ],
+                ),
+                function("main", vec![Statement::Return(Expr::IntLiteral(0))]),
+            ],
+        };
+
+        check(&program).expect("semantic check should succeed");
+    }
+
+    #[test]
+    fn rejects_duplicate_function_names() {
+        let program = Program {
+            functions: vec![
+                function("main", vec![Statement::Return(Expr::IntLiteral(0))]),
+                function("main", vec![Statement::Return(Expr::IntLiteral(1))]),
+            ],
+        };
+
+        let err = check(&program).expect_err("semantic check should fail");
+
+        assert_eq!(err.message, "duplicate function 'main'");
+    }
+
+    #[test]
+    fn rejects_program_without_main_function() {
+        let program = Program {
+            functions: vec![function(
+                "helper",
+                vec![Statement::Return(Expr::IntLiteral(1))],
+            )],
+        };
+
+        let err = check(&program).expect_err("semantic check should fail");
+
+        assert_eq!(err.message, "no 'main' function found");
+    }
+
+    #[test]
+    fn accepts_call_to_declared_function() {
+        let program = Program {
+            functions: vec![
+                function("helper", vec![Statement::Return(Expr::IntLiteral(1))]),
+                function(
+                    "main",
+                    vec![Statement::Return(Expr::Call {
+                        name: "helper".to_string(),
+                        args: vec![],
+                    })],
+                ),
+            ],
+        };
+
+        check(&program).expect("semantic check should succeed");
+    }
+
+    #[test]
+    fn accepts_forward_call_to_later_function() {
+        let program = Program {
+            functions: vec![
+                function(
+                    "main",
+                    vec![Statement::Return(Expr::Call {
+                        name: "helper".to_string(),
+                        args: vec![],
+                    })],
+                ),
+                function("helper", vec![Statement::Return(Expr::IntLiteral(1))]),
+            ],
+        };
+
+        check(&program).expect("semantic check should succeed");
+    }
+
+    #[test]
+    fn rejects_call_to_undeclared_function() {
+        let program = main_program(vec![Statement::Return(Expr::Call {
+            name: "helper".to_string(),
+            args: vec![],
+        })]);
+
+        let err = check(&program).expect_err("semantic check should fail");
+
+        assert_eq!(err.message, "undeclared function 'helper'");
     }
 
     #[test]

@@ -1,6 +1,6 @@
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Program {
-    pub function: Function,
+    pub functions: Vec<Function>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -44,6 +44,10 @@ pub enum Expr {
     Unary {
         op: UnaryOp,
         expr: Box<Expr>,
+    },
+    Call {
+        name: String,
+        args: Vec<Expr>,
     },
 }
 

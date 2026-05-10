@@ -75,6 +75,13 @@ impl Codegen {
         }
     }
 
+    fn reset_for_function(&mut self, function: &Function) {
+        self.frame = FrameLayout::for_function(function);
+        self.scopes = vec![HashMap::new()];
+        self.next_local_offset = -12;
+        self.return_label = Some(format!("{}_end", function.name));
+    }
+
     fn new_label(&mut self, prefix: &str) -> String {
         let label = format!("{}_{}", prefix, self.label_counter);
         self.label_counter += 1;
@@ -208,16 +215,17 @@ impl Codegen {
     }
 
     fn emit_function(&mut self, function: &Function) {
-        self.return_label = Some(format!("{}_end", function.name));
-        self.frame = FrameLayout::for_function(&function);
+        self.reset_for_function(function);
+
         self.emit_prologue(&function.name);
         self.emit_statements(&function.body);
         self.emit_epilogue();
     }
 
     fn emit_program(&mut self, program: &Program) -> String {
-        let function = &program.function;
-        self.emit_function(function);
+        for function in &program.functions {
+            self.emit_function(function);
+        }
 
         std::mem::take(&mut self.out)
     }
@@ -245,50 +253,50 @@ impl Codegen {
         self.emit_line(format_args!("ret"));
     }
 
+    fn emit_binary(&mut self, op: &BinaryOp, left: &Expr, right: &Expr) {
+        self.emit_expr(left);
+        self.emit_line(format_args!("addi sp, sp, -4"));
+        self.emit_line(format_args!("sw a0, 0(sp)"));
+        self.emit_expr(right);
+        self.emit_line(format_args!("lw t0, 0(sp)"));
+        self.emit_line(format_args!("addi sp, sp, 4"));
+
+        match op {
+            BinaryOp::Add => self.emit_line(format_args!("add a0, t0, a0")),
+            BinaryOp::Subtract => self.emit_line(format_args!("sub a0, t0, a0")),
+            BinaryOp::Multiply => self.emit_line(format_args!("mul a0, t0, a0")),
+            BinaryOp::Divide => self.emit_line(format_args!("div a0, t0, a0")),
+            BinaryOp::Remainder => self.emit_line(format_args!("rem a0, t0, a0")),
+            BinaryOp::Equal => {
+                self.emit_line(format_args!("xor a0, t0, a0"));
+                self.emit_line(format_args!("seqz a0, a0"));
+            }
+            BinaryOp::NotEqual => {
+                self.emit_line(format_args!("xor a0, t0, a0"));
+                self.emit_line(format_args!("snez a0, a0"));
+            }
+            BinaryOp::Less => self.emit_line(format_args!("slt a0, t0, a0")),
+            BinaryOp::LessEqual => {
+                self.emit_line(format_args!("slt a0, a0, t0"));
+                self.emit_line(format_args!("xori a0, a0, 1"));
+            }
+            BinaryOp::Greater => self.emit_line(format_args!("slt a0, a0, t0")),
+            BinaryOp::GreaterEqual => {
+                self.emit_line(format_args!("slt a0, t0, a0"));
+                self.emit_line(format_args!("xori a0, a0, 1"));
+            }
+            BinaryOp::BitAnd => self.emit_line(format_args!("and a0, a0, t0")),
+            BinaryOp::BitXor => self.emit_line(format_args!("xor a0, a0, t0")),
+            BinaryOp::BitOr => self.emit_line(format_args!("or a0, a0, t0")),
+            BinaryOp::ShiftLeft => self.emit_line(format_args!("sll a0, t0, a0")),
+            BinaryOp::ShiftRight => self.emit_line(format_args!("sra a0, t0, a0")),
+        };
+    }
+
     fn emit_expr(&mut self, expr: &Expr) {
         match expr {
-            Expr::IntLiteral(value) => {
-                self.emit_line(format_args!("li a0, {value}"));
-            }
-            Expr::Binary { op, left, right } => {
-                self.emit_expr(left);
-                self.emit_line(format_args!("addi sp, sp, -4"));
-                self.emit_line(format_args!("sw a0, 0(sp)"));
-                self.emit_expr(right);
-                self.emit_line(format_args!("lw t0, 0(sp)"));
-                self.emit_line(format_args!("addi sp, sp, 4"));
-
-                match op {
-                    BinaryOp::Add => self.emit_line(format_args!("add a0, t0, a0")),
-                    BinaryOp::Subtract => self.emit_line(format_args!("sub a0, t0, a0")),
-                    BinaryOp::Multiply => self.emit_line(format_args!("mul a0, t0, a0")),
-                    BinaryOp::Divide => self.emit_line(format_args!("div a0, t0, a0")),
-                    BinaryOp::Remainder => self.emit_line(format_args!("rem a0, t0, a0")),
-                    BinaryOp::Equal => {
-                        self.emit_line(format_args!("xor a0, t0, a0"));
-                        self.emit_line(format_args!("seqz a0, a0"));
-                    }
-                    BinaryOp::NotEqual => {
-                        self.emit_line(format_args!("xor a0, t0, a0"));
-                        self.emit_line(format_args!("snez a0, a0"));
-                    }
-                    BinaryOp::Less => self.emit_line(format_args!("slt a0, t0, a0")),
-                    BinaryOp::LessEqual => {
-                        self.emit_line(format_args!("slt a0, a0, t0"));
-                        self.emit_line(format_args!("xori a0, a0, 1"));
-                    }
-                    BinaryOp::Greater => self.emit_line(format_args!("slt a0, a0, t0")),
-                    BinaryOp::GreaterEqual => {
-                        self.emit_line(format_args!("slt a0, t0, a0"));
-                        self.emit_line(format_args!("xori a0, a0, 1"));
-                    }
-                    BinaryOp::BitAnd => self.emit_line(format_args!("and a0, a0, t0")),
-                    BinaryOp::BitXor => self.emit_line(format_args!("xor a0, a0, t0")),
-                    BinaryOp::BitOr => self.emit_line(format_args!("or a0, a0, t0")),
-                    BinaryOp::ShiftLeft => self.emit_line(format_args!("sll a0, t0, a0")),
-                    BinaryOp::ShiftRight => self.emit_line(format_args!("sra a0, t0, a0")),
-                };
-            }
+            Expr::IntLiteral(value) => self.emit_line(format_args!("li a0, {value}")),
+            Expr::Binary { op, left, right } => self.emit_binary(op, left, right),
             Expr::Variable(name) => {
                 let offset = self
                     .resolve_local(name)
@@ -302,6 +310,9 @@ impl Codegen {
                     UnaryOp::LogicalNot => self.emit_line(format_args!("seqz a0, a0")),
                     UnaryOp::BitwiseNot => self.emit_line(format_args!("not a0, a0")),
                 }
+            }
+            Expr::Call { name, args: _ } => {
+                self.emit_line(format_args!("call {name}"));
             }
         }
     }
@@ -327,12 +338,155 @@ mod tests {
     }
 
     #[test]
+    fn generates_multiple_functions() {
+        let program = Program {
+            functions: vec![
+                Function {
+                    name: "helper".to_string(),
+                    body: vec![Statement::Return(Expr::IntLiteral(3))],
+                },
+                Function {
+                    name: "main".to_string(),
+                    body: vec![Statement::Return(Expr::IntLiteral(0))],
+                },
+            ],
+        };
+
+        let asm = generate_raw_with_codegen(&program);
+
+        assert!(asm.contains(".globl helper\nhelper:\n"));
+        assert!(asm.contains(".globl main\nmain:\n"));
+        assert!(asm.contains("    j helper_end\nhelper_end:\n"));
+        assert!(asm.contains("    j main_end\nmain_end:\n"));
+    }
+
+    #[test]
+    fn resets_local_offsets_between_functions() {
+        let program = Program {
+            functions: vec![
+                Function {
+                    name: "first".to_string(),
+                    body: vec![
+                        Statement::VarDecl {
+                            name: "x".to_string(),
+                            init: Expr::IntLiteral(1),
+                        },
+                        Statement::Return(Expr::Variable("x".to_string())),
+                    ],
+                },
+                Function {
+                    name: "main".to_string(),
+                    body: vec![
+                        Statement::VarDecl {
+                            name: "x".to_string(),
+                            init: Expr::IntLiteral(2),
+                        },
+                        Statement::Return(Expr::Variable("x".to_string())),
+                    ],
+                },
+            ],
+        };
+
+        let asm = generate_raw_with_codegen(&program);
+
+        assert_eq!(asm.matches("sw a0, -12(s0)").count(), 2);
+        assert_eq!(asm.matches("lw a0, -12(s0)").count(), 2);
+    }
+
+    #[test]
+    fn computes_frame_layout_per_function() {
+        let program = Program {
+            functions: vec![
+                Function {
+                    name: "helper".to_string(),
+                    body: vec![Statement::Return(Expr::IntLiteral(1))],
+                },
+                Function {
+                    name: "main".to_string(),
+                    body: vec![
+                        Statement::VarDecl {
+                            name: "a".to_string(),
+                            init: Expr::IntLiteral(1),
+                        },
+                        Statement::VarDecl {
+                            name: "b".to_string(),
+                            init: Expr::IntLiteral(2),
+                        },
+                        Statement::VarDecl {
+                            name: "c".to_string(),
+                            init: Expr::IntLiteral(3),
+                        },
+                        Statement::Return(Expr::Variable("c".to_string())),
+                    ],
+                },
+            ],
+        };
+
+        let asm = generate_raw_with_codegen(&program);
+
+        assert!(asm.contains("helper:\n    addi sp, sp, -16\n"));
+        assert!(asm.contains("main:\n    addi sp, sp, -32\n"));
+    }
+
+    #[test]
+    fn generates_zero_argument_function_call() {
+        let program = Program {
+            functions: vec![
+                Function {
+                    name: "helper".to_string(),
+                    body: vec![Statement::Return(Expr::IntLiteral(3))],
+                },
+                Function {
+                    name: "main".to_string(),
+                    body: vec![Statement::Return(Expr::Call {
+                        name: "helper".to_string(),
+                        args: vec![],
+                    })],
+                },
+            ],
+        };
+
+        let asm = generate_raw_with_codegen(&program);
+
+        assert!(asm.contains("main:\n"));
+        assert!(asm.contains("    call helper\n    j main_end\n"));
+    }
+
+    #[test]
+    fn uses_call_result_as_expression_operand() {
+        let program = Program {
+            functions: vec![
+                Function {
+                    name: "helper".to_string(),
+                    body: vec![Statement::Return(Expr::IntLiteral(3))],
+                },
+                Function {
+                    name: "main".to_string(),
+                    body: vec![Statement::Return(Expr::Binary {
+                        op: BinaryOp::Add,
+                        left: Box::new(Expr::Call {
+                            name: "helper".to_string(),
+                            args: vec![],
+                        }),
+                        right: Box::new(Expr::IntLiteral(2)),
+                    })],
+                },
+            ],
+        };
+
+        let asm = generate_raw_with_codegen(&program);
+
+        assert!(asm.contains("    call helper\n"));
+        assert!(asm.contains("    add a0, t0, a0\n"));
+    }
+
+    #[test]
     fn generates_return_jump_to_shared_epilogue() {
         let program = Program {
-            function: Function {
+            functions: vec![Function {
                 name: "main".to_string(),
                 body: vec![Statement::Return(Expr::IntLiteral(42))],
-            },
+            }],
         };
 
         let asm = generate_raw_with_codegen(&program);
@@ -343,10 +497,10 @@ mod tests {
     #[test]
     fn basic_codegen() {
         let program = Program {
-            function: Function {
+            functions: vec![Function {
                 name: "main".to_string(),
                 body: vec![Statement::Return(Expr::IntLiteral(42))],
-            },
+            }],
         };
 
         let asm = generate_with_codegen(&program);
@@ -360,14 +514,14 @@ mod tests {
     #[test]
     fn generates_binary_add() {
         let program = Program {
-            function: Function {
+            functions: vec![Function {
                 name: "main".to_string(),
                 body: vec![Statement::Return(Expr::Binary {
                     op: BinaryOp::Add,
                     left: Box::new(Expr::IntLiteral(1)),
                     right: Box::new(Expr::IntLiteral(2)),
                 })],
-            },
+            }],
         };
 
         let asm = generate_with_codegen(&program);
@@ -381,14 +535,14 @@ mod tests {
     #[test]
     fn generates_binary_subtract() {
         let program = Program {
-            function: Function {
+            functions: vec![Function {
                 name: "main".to_string(),
                 body: vec![Statement::Return(Expr::Binary {
                     op: BinaryOp::Subtract,
                     left: Box::new(Expr::IntLiteral(5)),
                     right: Box::new(Expr::IntLiteral(2)),
                 })],
-            },
+            }],
         };
 
         let asm = generate_with_codegen(&program);
@@ -402,14 +556,14 @@ mod tests {
     #[test]
     fn generates_binary_multiply() {
         let program = Program {
-            function: Function {
+            functions: vec![Function {
                 name: "main".to_string(),
                 body: vec![Statement::Return(Expr::Binary {
                     op: BinaryOp::Multiply,
                     left: Box::new(Expr::IntLiteral(2)),
                     right: Box::new(Expr::IntLiteral(3)),
                 })],
-            },
+            }],
         };
 
         let asm = generate_with_codegen(&program);
@@ -423,14 +577,14 @@ mod tests {
     #[test]
     fn generates_binary_divide() {
         let program = Program {
-            function: Function {
+            functions: vec![Function {
                 name: "main".to_string(),
                 body: vec![Statement::Return(Expr::Binary {
                     op: BinaryOp::Divide,
                     left: Box::new(Expr::IntLiteral(8)),
                     right: Box::new(Expr::IntLiteral(2)),
                 })],
-            },
+            }],
         };
 
         let asm = generate_with_codegen(&program);
@@ -444,14 +598,14 @@ mod tests {
     #[test]
     fn generates_binary_remainder() {
         let program = Program {
-            function: Function {
+            functions: vec![Function {
                 name: "main".to_string(),
                 body: vec![Statement::Return(Expr::Binary {
                     op: BinaryOp::Remainder,
                     left: Box::new(Expr::IntLiteral(8)),
                     right: Box::new(Expr::IntLiteral(3)),
                 })],
-            },
+            }],
         };
 
         let asm = generate_with_codegen(&program);
@@ -465,14 +619,14 @@ mod tests {
     #[test]
     fn generates_binary_equal() {
         let program = Program {
-            function: Function {
+            functions: vec![Function {
                 name: "main".to_string(),
                 body: vec![Statement::Return(Expr::Binary {
                     op: BinaryOp::Equal,
                     left: Box::new(Expr::IntLiteral(5)),
                     right: Box::new(Expr::IntLiteral(5)),
                 })],
-            },
+            }],
         };
 
         let asm = generate_with_codegen(&program);
@@ -486,14 +640,14 @@ mod tests {
     #[test]
     fn generates_binary_not_equal() {
         let program = Program {
-            function: Function {
+            functions: vec![Function {
                 name: "main".to_string(),
                 body: vec![Statement::Return(Expr::Binary {
                     op: BinaryOp::NotEqual,
                     left: Box::new(Expr::IntLiteral(5)),
                     right: Box::new(Expr::IntLiteral(3)),
                 })],
-            },
+            }],
         };
 
         let asm = generate_with_codegen(&program);
@@ -507,14 +661,14 @@ mod tests {
     #[test]
     fn generates_binary_less() {
         let program = Program {
-            function: Function {
+            functions: vec![Function {
                 name: "main".to_string(),
                 body: vec![Statement::Return(Expr::Binary {
                     op: BinaryOp::Less,
                     left: Box::new(Expr::IntLiteral(2)),
                     right: Box::new(Expr::IntLiteral(5)),
                 })],
-            },
+            }],
         };
 
         let asm = generate_with_codegen(&program);
@@ -528,14 +682,14 @@ mod tests {
     #[test]
     fn generates_binary_less_equal() {
         let program = Program {
-            function: Function {
+            functions: vec![Function {
                 name: "main".to_string(),
                 body: vec![Statement::Return(Expr::Binary {
                     op: BinaryOp::LessEqual,
                     left: Box::new(Expr::IntLiteral(5)),
                     right: Box::new(Expr::IntLiteral(5)),
                 })],
-            },
+            }],
         };
 
         let asm = generate_with_codegen(&program);
@@ -549,14 +703,14 @@ mod tests {
     #[test]
     fn generates_binary_greater() {
         let program = Program {
-            function: Function {
+            functions: vec![Function {
                 name: "main".to_string(),
                 body: vec![Statement::Return(Expr::Binary {
                     op: BinaryOp::Greater,
                     left: Box::new(Expr::IntLiteral(5)),
                     right: Box::new(Expr::IntLiteral(2)),
                 })],
-            },
+            }],
         };
 
         let asm = generate_with_codegen(&program);
@@ -570,14 +724,14 @@ mod tests {
     #[test]
     fn generates_binary_greater_equal() {
         let program = Program {
-            function: Function {
+            functions: vec![Function {
                 name: "main".to_string(),
                 body: vec![Statement::Return(Expr::Binary {
                     op: BinaryOp::GreaterEqual,
                     left: Box::new(Expr::IntLiteral(5)),
                     right: Box::new(Expr::IntLiteral(5)),
                 })],
-            },
+            }],
         };
 
         let asm = generate_with_codegen(&program);
@@ -591,13 +745,13 @@ mod tests {
     #[test]
     fn generates_unary_negation() {
         let program = Program {
-            function: Function {
+            functions: vec![Function {
                 name: "main".to_string(),
                 body: vec![Statement::Return(Expr::Unary {
                     op: UnaryOp::Negate,
                     expr: Box::new(Expr::IntLiteral(5)),
                 })],
-            },
+            }],
         };
 
         let asm = generate_with_codegen(&program);
@@ -611,13 +765,13 @@ mod tests {
     #[test]
     fn generates_logical_not() {
         let program = Program {
-            function: Function {
+            functions: vec![Function {
                 name: "main".to_string(),
                 body: vec![Statement::Return(Expr::Unary {
                     op: UnaryOp::LogicalNot,
                     expr: Box::new(Expr::IntLiteral(0)),
                 })],
-            },
+            }],
         };
 
         let asm = generate_with_codegen(&program);
@@ -631,13 +785,13 @@ mod tests {
     #[test]
     fn generates_bitwise_not() {
         let program = Program {
-            function: Function {
+            functions: vec![Function {
                 name: "main".to_string(),
                 body: vec![Statement::Return(Expr::Unary {
                     op: UnaryOp::BitwiseNot,
                     expr: Box::new(Expr::IntLiteral(0)),
                 })],
-            },
+            }],
         };
 
         let asm = generate_with_codegen(&program);
@@ -651,7 +805,7 @@ mod tests {
     #[test]
     fn generates_nested_expression_with_stack_temporaries() {
         let program = Program {
-            function: Function {
+            functions: vec![Function {
                 name: "main".to_string(),
                 body: vec![Statement::Return(Expr::Binary {
                     op: BinaryOp::Add,
@@ -662,7 +816,7 @@ mod tests {
                         right: Box::new(Expr::IntLiteral(3)),
                     }),
                 })],
-            },
+            }],
         };
 
         let asm = generate_with_codegen(&program);
@@ -676,7 +830,7 @@ mod tests {
     #[test]
     fn generates_single_local_variable() {
         let program = Program {
-            function: Function {
+            functions: vec![Function {
                 name: "main".to_string(),
                 body: vec![
                     Statement::VarDecl {
@@ -685,7 +839,7 @@ mod tests {
                     },
                     Statement::Return(Expr::Variable("x".to_string())),
                 ],
-            },
+            }],
         };
 
         let asm = generate_with_codegen(&program);
@@ -699,7 +853,7 @@ mod tests {
     #[test]
     fn generates_multiple_local_variables() {
         let program = Program {
-            function: Function {
+            functions: vec![Function {
                 name: "main".to_string(),
                 body: vec![
                     Statement::VarDecl {
@@ -724,7 +878,7 @@ mod tests {
                     },
                     Statement::Return(Expr::Variable("z".to_string())),
                 ],
-            },
+            }],
         };
 
         let asm = generate_with_codegen(&program);
@@ -738,7 +892,7 @@ mod tests {
     #[test]
     fn generates_shadowed_local_in_nested_block() {
         let program = Program {
-            function: Function {
+            functions: vec![Function {
                 name: "main".to_string(),
                 body: vec![
                     Statement::VarDecl {
@@ -753,7 +907,7 @@ mod tests {
                         Statement::Return(Expr::Variable("x".to_string())),
                     ]),
                 ],
-            },
+            }],
         };
 
         let asm = generate_with_codegen(&program);
@@ -767,7 +921,7 @@ mod tests {
     #[test]
     fn generates_if_without_else() {
         let program = Program {
-            function: Function {
+            functions: vec![Function {
                 name: "main".to_string(),
                 body: vec![
                     Statement::If {
@@ -777,7 +931,7 @@ mod tests {
                     },
                     Statement::Return(Expr::IntLiteral(3)),
                 ],
-            },
+            }],
         };
 
         let asm = generate_with_codegen(&program);
@@ -791,14 +945,14 @@ mod tests {
     #[test]
     fn generates_if_else() {
         let program = Program {
-            function: Function {
+            functions: vec![Function {
                 name: "main".to_string(),
                 body: vec![Statement::If {
                     cond: Expr::IntLiteral(0),
                     then_branch: Box::new(Statement::Return(Expr::IntLiteral(2))),
                     else_branch: Some(Box::new(Statement::Return(Expr::IntLiteral(3)))),
                 }],
-            },
+            }],
         };
 
         let asm = generate_with_codegen(&program);
@@ -813,7 +967,7 @@ mod tests {
     #[test]
     fn generates_while_loop() {
         let program = Program {
-            function: Function {
+            functions: vec![Function {
                 name: "main".to_string(),
                 body: vec![
                     Statement::VarDecl {
@@ -833,7 +987,7 @@ mod tests {
                     },
                     Statement::Return(Expr::Variable("x".to_string())),
                 ],
-            },
+            }],
         };
 
         let asm = generate_raw_with_codegen(&program);
@@ -847,7 +1001,7 @@ mod tests {
     #[test]
     fn counts_locals_inside_while_body_for_frame_size() {
         let program = Program {
-            function: Function {
+            functions: vec![Function {
                 name: "main".to_string(),
                 body: vec![
                     Statement::VarDecl {
@@ -882,7 +1036,7 @@ mod tests {
                     },
                     Statement::Return(Expr::IntLiteral(0)),
                 ],
-            },
+            }],
         };
 
         let asm = generate_raw_with_codegen(&program);

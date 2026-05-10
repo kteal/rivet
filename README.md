@@ -2,12 +2,12 @@
 
 `rivet` is a C compiler written in Rust that targets RV32IM assembly. It implements a small subset of the C23 standard.
 
-It is currently a small expression-and-local-variable subset: integer literals, local variables, assignments, blocks, `if` / `else`, `while`, return statements, comments, arithmetic, unary, comparison, and bitwise operators with C-like precedence.
+It is currently a small expression-and-local-variable subset: integer literals, local variables, assignments, blocks, `if` / `else`, `while`, return statements, comments, arithmetic, unary, comparison, and bitwise operators with C-like precedence. It also supports multiple zero-argument function definitions and zero-argument function calls.
 
 The current language subset supports programs shaped like:
 
 ```c
-int main() {
+int triangular() {
     int x = 3;
     int sum = 0;
 
@@ -15,6 +15,12 @@ int main() {
         sum = sum + x;
         x = x - 1;
     }
+
+    return sum;
+}
+
+int main() {
+    int sum = triangular();
 
     if ((sum & 7) == 6) {
         return sum;
@@ -94,43 +100,109 @@ On Ubuntu or Debian:
 sudo apt install qemu-user binutils-riscv64-linux-gnu
 ```
 
-## Project Layout
-
-- [src/lexer.rs](/home/kteal/sources/rivet/src/lexer.rs) tokenizes source text
-- [src/parser.rs](/home/kteal/sources/rivet/src/parser.rs) builds the AST
-- [src/ast.rs](/home/kteal/sources/rivet/src/ast.rs) defines the compiler IR so far
-- [src/codegen.rs](/home/kteal/sources/rivet/src/codegen.rs) emits RV32 assembly
-- [scripts/run-rv32.sh](/home/kteal/sources/rivet/scripts/run-rv32.sh) runs generated code under QEMU
-- [tests/qemu.rs](/home/kteal/sources/rivet/tests/qemu.rs) contains ignored end-to-end behavior tests
-
 ## Status
 
+Lexing and preprocessing:
+
 - [x] integer literals
+- [x] comments
+- [ ] character constants
+- [ ] string literals
+- [ ] preprocessing tokens and macro expansion
+- [ ] `#include`
+- [ ] conditional compilation
+
+Program structure and declarations:
+
 - [x] local variable declarations
-- [x] assignments
 - [x] `return`
+- [x] blocks
+- [x] nested blocks and scope
+- [x] multiple zero-argument function definitions
+- [ ] declarations without initializers
+- [ ] declaration lists mixed with statements
+- [ ] multiple translation-unit-level declarations
+- [ ] globals
+- [ ] typedef names
+- [ ] storage classes: `extern`, `static`, `auto`, `register`, `thread_local`
+- [ ] qualifiers: `const`, `volatile`, `restrict`, `_Atomic`
+- [ ] full C declarator grammar
+
+Expressions and operators:
+
 - [x] arithmetic: `+ - * / %`
 - [x] operator precedence and left associativity
 - [x] parenthesized expressions
+- [x] assignments
 - [x] unary operators: `- ! ~`
 - [x] bitwise operators: `& | ^ << >>`
 - [x] comparisons: `== != < <= > >=`
 - [x] C-style left-associative chained comparisons
-- [x] comments
+- [ ] expression statements
+- [ ] empty statements
+- [ ] logical `&&` and `||` with short-circuiting
+- [ ] conditional operator `?:`
+- [ ] comma operator
+- [ ] prefix and postfix `++` / `--`
+- [ ] compound assignments: `+= -= *= /= %= &= |= ^= <<= >>=`
+- [ ] casts
+- [ ] `sizeof`
+- [ ] `_Alignof` / `alignof`
+- [ ] address-of and dereference: `&` and `*`
+- [ ] array-to-pointer and function-to-pointer decay
+
+Types and semantic analysis:
+
 - [x] semantic errors for undeclared and duplicate locals
-- [x] blocks
-- [x] nested blocks and scope
-- [x] `if` / `else`
-- [x] `while`
-- [ ] function definitions beyond `main`
-- [ ] function parameters
-- [ ] function calls
-- [ ] argument passing and call ABI handling
 - [ ] type checking and implicit conversions
+- [ ] full integer conversion rules
 - [ ] signedness: `signed`, `unsigned`
 - [ ] non-`int` scalar types: `char`, `short`, `long`
+- [ ] fixed-width and standard integer typedef compatibility
+- [ ] `bool`, `true`, `false`
+- [ ] enum types and enumerators
+
+Control flow:
+
+- [x] `if` / `else`
+- [x] `while`
+- [ ] `for`
+- [ ] `do` / `while`
+- [ ] `break` and `continue`
+
+Functions:
+
+- [x] function definitions beyond `main`
+- [x] zero-argument function calls
+- [ ] function parameters
+- [ ] function calls with arguments
+- [ ] argument passing and call ABI handling
+
+Objects, aggregate types, and declarators:
+
 - [ ] pointers
+- [ ] pointer arithmetic
 - [ ] arrays
-- [ ] globals
-- [ ] string literals
+- [ ] array indexing
+- [ ] structs and unions
+- [ ] member access: `.` and `->`
+- [ ] initializer lists
+- [ ] compound literals
+
+Toolchain and library compatibility:
+
+- [ ] standard header strategy
+- [ ] minimal hosted C runtime integration
+- [ ] standard library calls through external symbols
+- [ ] diagnostics with source locations
+- [ ] warnings vs errors
+- [ ] separate compilation and object files
+- [ ] linker/assembler integration beyond the current assembly output
+
+Backend and portability:
+
 - [ ] RV64 target support
+- [ ] RISC-V ABI coverage for calls, returns, stack alignment, and callee-saved registers
+- [ ] register allocation
+- [ ] intermediate representation
+- [ ] basic optimization passes

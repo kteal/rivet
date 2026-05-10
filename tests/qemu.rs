@@ -287,6 +287,46 @@ fn qemu_while_programs_return_expected_values() {
 }
 
 #[test]
+#[ignore = "requires qemu-riscv32 and riscv64-linux-gnu binutils"]
+fn qemu_multiple_function_definitions_return_expected_values() {
+    run_qemu_case(
+        "unused-helper-before-main",
+        "int helper() {\n    return 3;\n}\n\nint main() {\n    return 7;\n}\n",
+        7,
+    );
+    run_qemu_case(
+        "unused-helper-after-main",
+        "int main() {\n    return 11;\n}\n\nint helper() {\n    return 4;\n}\n",
+        11,
+    );
+    run_qemu_case(
+        "independent-function-locals",
+        "int first() {\n    int x = 1;\n    return x;\n}\n\nint main() {\n    int x = 9;\n    return x;\n}\n",
+        9,
+    );
+}
+
+#[test]
+#[ignore = "requires qemu-riscv32 and riscv64-linux-gnu binutils"]
+fn qemu_function_calls_return_expected_values() {
+    run_qemu_case(
+        "zero-arg-call",
+        "int helper() {\n    return 3;\n}\n\nint main() {\n    return helper();\n}\n",
+        3,
+    );
+    run_qemu_case(
+        "forward-call",
+        "int main() {\n    return helper();\n}\n\nint helper() {\n    return 5;\n}\n",
+        5,
+    );
+    run_qemu_case(
+        "call-result-in-expression",
+        "int helper() {\n    return 3;\n}\n\nint main() {\n    return helper() + 2;\n}\n",
+        5,
+    );
+}
+
+#[test]
 #[ignore = "requires cargo"]
 fn qemu_semantic_errors_are_reported_before_codegen() {
     run_compile_error_case(
@@ -313,5 +353,10 @@ fn qemu_semantic_errors_are_reported_before_codegen() {
         "semantic-block-local-after-scope",
         "int main() {\n    {\n        int x = 1;\n    }\n    return x;\n}\n",
         "semantic analysis error: undeclared local variable 'x'",
+    );
+    run_compile_error_case(
+        "semantic-undeclared-function-call",
+        "int main() {\n    return helper();\n}\n",
+        "semantic analysis error: undeclared function 'helper'",
     );
 }
