@@ -205,6 +205,11 @@ fn qemu_local_variable_programs_return_expected_values() {
         3,
     );
     run_qemu_case(
+        "declaration-without-initializer",
+        "int main() {\n    int x;\n    x = 3;\n    return x;\n}\n",
+        3,
+    );
+    run_qemu_case(
         "multi-var-assignments",
         "int main() {\n    int x = 2;\n    int y = 3;\n    int z = x + y;\n    x = z * 2;\n    y = x - 1;\n    z = y % 4;\n    return z;\n}\n",
         1,

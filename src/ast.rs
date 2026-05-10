@@ -14,7 +14,7 @@ pub struct Function {
 pub enum Statement {
     VarDecl {
         name: String,
-        init: Expr,
+        init: Option<Expr>,
     },
     Assign {
         name: String,

@@ -244,10 +244,17 @@ impl Parser {
                 });
             }
         };
+        if *self.peek() == Token::Semicolon {
+            self.expect(Token::Semicolon)?;
+            return Ok(Statement::VarDecl { name, init: None });
+        }
         self.expect(Token::Equal)?;
         let expr = self.parse_expr()?;
         self.expect(Token::Semicolon)?;
-        return Ok(Statement::VarDecl { name, init: expr });
+        Ok(Statement::VarDecl {
+            name,
+            init: Some(expr),
+        })
     }
 
     fn parse_assignment(&mut self) -> Result<Statement, ParseError> {
@@ -1087,9 +1094,34 @@ mod tests {
             statement,
             Statement::VarDecl {
                 name: "x".to_string(),
-                init: Expr::IntLiteral(5),
+                init: Some(Expr::IntLiteral(5)),
             }
         )
+    }
+
+    #[test]
+    fn parses_variable_declaration_without_initializer() {
+        let tokens = vec![
+            Token::KwInt,
+            Token::Ident("x".to_string()),
+            Token::Semicolon,
+        ];
+
+        let mut parser = Parser::new(tokens);
+
+        let statement = parser.parse_statement().expect("parsing should succeed");
+
+        assert_eq!(
+            statement,
+            Statement::VarDecl {
+                name: "x".to_string(),
+                init: None,
+            }
+        );
+        assert_eq!(
+            parser.pos, 3,
+            "declaration without initializer should consume semicolon"
+        );
     }
 
     #[test]
@@ -1129,7 +1161,7 @@ mod tests {
                     body: vec![
                         Statement::VarDecl {
                             name: "x".to_string(),
-                            init: Expr::IntLiteral(1),
+                            init: Some(Expr::IntLiteral(1)),
                         },
                         Statement::Assign {
                             name: "x".to_string(),
@@ -1718,7 +1750,7 @@ mod tests {
                     body: vec![
                         Statement::VarDecl {
                             name: "x".to_string(),
-                            init: Expr::IntLiteral(5),
+                            init: Some(Expr::IntLiteral(5)),
                         },
                         Statement::Return(Expr::IntLiteral(42)),
                     ],
@@ -1758,7 +1790,7 @@ mod tests {
                     body: vec![
                         Statement::VarDecl {
                             name: "x".to_string(),
-                            init: Expr::IntLiteral(5),
+                            init: Some(Expr::IntLiteral(5)),
                         },
                         Statement::Return(Expr::Variable("x".to_string())),
                     ],
@@ -1906,7 +1938,7 @@ mod tests {
             Statement::For {
                 init: Some(Box::new(Statement::VarDecl {
                     name: "i".to_string(),
-                    init: Expr::IntLiteral(0),
+                    init: Some(Expr::IntLiteral(0)),
                 })),
                 cond: Some(Expr::Binary {
                     op: BinaryOp::Less,

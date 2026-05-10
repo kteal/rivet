@@ -167,7 +167,9 @@ impl Checker {
             Statement::Return(expr) => self.check_expr(expr)?,
             Statement::VarDecl { name, init } => {
                 self.declare_local(name)?;
-                self.check_expr(init)?;
+                if let Some(init_expr) = init {
+                    self.check_expr(init_expr)?;
+                }
             }
             Statement::Assign { name, value } => {
                 self.check_local_declared(name)?;
@@ -337,7 +339,7 @@ mod tests {
                     vec![
                         Statement::VarDecl {
                             name: "x".to_string(),
-                            init: Expr::IntLiteral(1),
+                            init: Some(Expr::IntLiteral(1)),
                         },
                         Statement::Return(Expr::Variable("x".to_string())),
                     ],
@@ -347,7 +349,7 @@ mod tests {
                     vec![
                         Statement::VarDecl {
                             name: "x".to_string(),
-                            init: Expr::IntLiteral(2),
+                            init: Some(Expr::IntLiteral(2)),
                         },
                         Statement::Return(Expr::Variable("x".to_string())),
                     ],
@@ -519,7 +521,7 @@ mod tests {
                 vec![
                     Statement::VarDecl {
                         name: "x".to_string(),
-                        init: Expr::IntLiteral(1),
+                        init: Some(Expr::IntLiteral(1)),
                     },
                     Statement::Return(Expr::Variable("x".to_string())),
                 ],
@@ -540,7 +542,7 @@ mod tests {
                 vec![Statement::Block(vec![
                     Statement::VarDecl {
                         name: "x".to_string(),
-                        init: Expr::IntLiteral(1),
+                        init: Some(Expr::IntLiteral(1)),
                     },
                     Statement::Return(Expr::Variable("x".to_string())),
                 ])],
@@ -686,7 +688,7 @@ mod tests {
         let program = main_program(vec![
             Statement::VarDecl {
                 name: "x".to_string(),
-                init: Expr::IntLiteral(1),
+                init: Some(Expr::IntLiteral(1)),
             },
             Statement::Assign {
                 name: "x".to_string(),
@@ -703,15 +705,32 @@ mod tests {
     }
 
     #[test]
+    fn accepts_declaration_without_initializer_assigned_before_use() {
+        let program = main_program(vec![
+            Statement::VarDecl {
+                name: "x".to_string(),
+                init: None,
+            },
+            Statement::Assign {
+                name: "x".to_string(),
+                value: Expr::IntLiteral(3),
+            },
+            Statement::Return(Expr::Variable("x".to_string())),
+        ]);
+
+        check(&program).expect("semantic check should succeed");
+    }
+
+    #[test]
     fn accepts_initializer_using_earlier_local() {
         let program = main_program(vec![
             Statement::VarDecl {
                 name: "x".to_string(),
-                init: Expr::IntLiteral(1),
+                init: Some(Expr::IntLiteral(1)),
             },
             Statement::VarDecl {
                 name: "y".to_string(),
-                init: Expr::Variable("x".to_string()),
+                init: Some(Expr::Variable("x".to_string())),
             },
             Statement::Return(Expr::Variable("y".to_string())),
         ]);
@@ -724,7 +743,7 @@ mod tests {
         let program = main_program(vec![
             Statement::VarDecl {
                 name: "x".to_string(),
-                init: Expr::Variable("x".to_string()),
+                init: Some(Expr::Variable("x".to_string())),
             },
             Statement::Return(Expr::Variable("x".to_string())),
         ]);
@@ -737,11 +756,11 @@ mod tests {
         let program = main_program(vec![
             Statement::VarDecl {
                 name: "x".to_string(),
-                init: Expr::IntLiteral(1),
+                init: Some(Expr::IntLiteral(1)),
             },
             Statement::VarDecl {
                 name: "x".to_string(),
-                init: Expr::IntLiteral(2),
+                init: Some(Expr::IntLiteral(2)),
             },
             Statement::Return(Expr::Variable("x".to_string())),
         ]);
@@ -780,11 +799,11 @@ mod tests {
         let program = main_program(vec![
             Statement::VarDecl {
                 name: "y".to_string(),
-                init: Expr::Variable("x".to_string()),
+                init: Some(Expr::Variable("x".to_string())),
             },
             Statement::VarDecl {
                 name: "x".to_string(),
-                init: Expr::IntLiteral(1),
+                init: Some(Expr::IntLiteral(1)),
             },
             Statement::Return(Expr::Variable("y".to_string())),
         ]);
@@ -799,7 +818,7 @@ mod tests {
         let program = main_program(vec![
             Statement::VarDecl {
                 name: "x".to_string(),
-                init: Expr::IntLiteral(1),
+                init: Some(Expr::IntLiteral(1)),
             },
             Statement::Return(Expr::Binary {
                 op: BinaryOp::Multiply,
@@ -818,7 +837,7 @@ mod tests {
         let program = main_program(vec![
             Statement::VarDecl {
                 name: "x".to_string(),
-                init: Expr::IntLiteral(1),
+                init: Some(Expr::IntLiteral(1)),
             },
             Statement::Block(vec![Statement::Return(Expr::Variable("x".to_string()))]),
         ]);
@@ -831,7 +850,7 @@ mod tests {
         let program = main_program(vec![
             Statement::Block(vec![Statement::VarDecl {
                 name: "x".to_string(),
-                init: Expr::IntLiteral(1),
+                init: Some(Expr::IntLiteral(1)),
             }]),
             Statement::Return(Expr::Variable("x".to_string())),
         ]);
@@ -846,12 +865,12 @@ mod tests {
         let program = main_program(vec![
             Statement::VarDecl {
                 name: "x".to_string(),
-                init: Expr::IntLiteral(1),
+                init: Some(Expr::IntLiteral(1)),
             },
             Statement::Block(vec![
                 Statement::VarDecl {
                     name: "x".to_string(),
-                    init: Expr::IntLiteral(2),
+                    init: Some(Expr::IntLiteral(2)),
                 },
                 Statement::Return(Expr::Variable("x".to_string())),
             ]),
@@ -866,11 +885,11 @@ mod tests {
             Statement::Block(vec![
                 Statement::VarDecl {
                     name: "x".to_string(),
-                    init: Expr::IntLiteral(1),
+                    init: Some(Expr::IntLiteral(1)),
                 },
                 Statement::VarDecl {
                     name: "x".to_string(),
-                    init: Expr::IntLiteral(2),
+                    init: Some(Expr::IntLiteral(2)),
                 },
             ]),
             Statement::Return(Expr::IntLiteral(0)),
@@ -886,7 +905,7 @@ mod tests {
         let program = main_program(vec![
             Statement::VarDecl {
                 name: "x".to_string(),
-                init: Expr::IntLiteral(1),
+                init: Some(Expr::IntLiteral(1)),
             },
             Statement::If {
                 cond: Expr::Binary {
@@ -897,14 +916,14 @@ mod tests {
                 then_branch: Box::new(Statement::Block(vec![
                     Statement::VarDecl {
                         name: "y".to_string(),
-                        init: Expr::Variable("x".to_string()),
+                        init: Some(Expr::Variable("x".to_string())),
                     },
                     Statement::Return(Expr::Variable("y".to_string())),
                 ])),
                 else_branch: Some(Box::new(Statement::Block(vec![
                     Statement::VarDecl {
                         name: "z".to_string(),
-                        init: Expr::Variable("x".to_string()),
+                        init: Some(Expr::Variable("x".to_string())),
                     },
                     Statement::Return(Expr::Variable("z".to_string())),
                 ]))),
@@ -919,7 +938,7 @@ mod tests {
         let program = main_program(vec![
             Statement::VarDecl {
                 name: "x".to_string(),
-                init: Expr::IntLiteral(3),
+                init: Some(Expr::IntLiteral(3)),
             },
             Statement::While {
                 cond: Expr::Variable("x".to_string()),

@@ -341,12 +341,12 @@ impl Codegen {
                     .expect("codegen should have an active return label");
                 self.emit_line(format_args!("j {return_label}"));
             }
-            Statement::VarDecl { name, init: value } => {
-                // After this, value is in a0
-                self.emit_expr(value);
-
+            Statement::VarDecl { name, init } => {
                 let offset = self.declare_local(name);
-                self.emit_line(format_args!("sw a0, {offset}(s0)"));
+                if let Some(init_expr) = init {
+                    self.emit_expr(init_expr);
+                    self.emit_line(format_args!("sw a0, {offset}(s0)"));
+                }
             }
             Statement::Assign { name, value } => {
                 self.emit_expr(value);
@@ -498,7 +498,7 @@ mod tests {
                     body: vec![
                         Statement::VarDecl {
                             name: "x".to_string(),
-                            init: Expr::IntLiteral(1),
+                            init: Some(Expr::IntLiteral(1)),
                         },
                         Statement::Return(Expr::Variable("x".to_string())),
                     ],
@@ -509,7 +509,7 @@ mod tests {
                     body: vec![
                         Statement::VarDecl {
                             name: "x".to_string(),
-                            init: Expr::IntLiteral(2),
+                            init: Some(Expr::IntLiteral(2)),
                         },
                         Statement::Return(Expr::Variable("x".to_string())),
                     ],
@@ -538,15 +538,15 @@ mod tests {
                     body: vec![
                         Statement::VarDecl {
                             name: "a".to_string(),
-                            init: Expr::IntLiteral(1),
+                            init: Some(Expr::IntLiteral(1)),
                         },
                         Statement::VarDecl {
                             name: "b".to_string(),
-                            init: Expr::IntLiteral(2),
+                            init: Some(Expr::IntLiteral(2)),
                         },
                         Statement::VarDecl {
                             name: "c".to_string(),
-                            init: Expr::IntLiteral(3),
+                            init: Some(Expr::IntLiteral(3)),
                         },
                         Statement::Return(Expr::Variable("c".to_string())),
                     ],
@@ -1125,7 +1125,7 @@ mod tests {
                 body: vec![
                     Statement::VarDecl {
                         name: "x".to_string(),
-                        init: Expr::IntLiteral(5),
+                        init: Some(Expr::IntLiteral(5)),
                     },
                     Statement::Return(Expr::Variable("x".to_string())),
                 ],
@@ -1141,6 +1141,34 @@ mod tests {
     }
 
     #[test]
+    fn generates_local_variable_without_initializer() {
+        let program = Program {
+            functions: vec![Function {
+                name: "main".to_string(),
+                params: vec![],
+                body: vec![
+                    Statement::VarDecl {
+                        name: "x".to_string(),
+                        init: None,
+                    },
+                    Statement::Assign {
+                        name: "x".to_string(),
+                        value: Expr::IntLiteral(3),
+                    },
+                    Statement::Return(Expr::Variable("x".to_string())),
+                ],
+            }],
+        };
+
+        let asm = generate_with_codegen(&program);
+
+        assert_eq!(
+            asm,
+            ".globl main\nmain:\n    addi sp, sp, -16\n    sw ra, 12(sp)\n    sw s0, 8(sp)\n    addi s0, sp, 16\n    li a0, 3\n    sw a0, -12(s0)\n    lw a0, -12(s0)\n    lw ra, 12(sp)\n    lw s0, 8(sp)\n    addi sp, sp, 16\n    ret\n"
+        );
+    }
+
+    #[test]
     fn generates_multiple_local_variables() {
         let program = Program {
             functions: vec![Function {
@@ -1149,23 +1177,23 @@ mod tests {
                 body: vec![
                     Statement::VarDecl {
                         name: "x".to_string(),
-                        init: Expr::IntLiteral(1),
+                        init: Some(Expr::IntLiteral(1)),
                     },
                     Statement::VarDecl {
                         name: "y".to_string(),
-                        init: Expr::Binary {
+                        init: Some(Expr::Binary {
                             op: BinaryOp::Add,
                             left: Box::new(Expr::Variable("x".to_string())),
                             right: Box::new(Expr::IntLiteral(2)),
-                        },
+                        }),
                     },
                     Statement::VarDecl {
                         name: "z".to_string(),
-                        init: Expr::Binary {
+                        init: Some(Expr::Binary {
                             op: BinaryOp::Add,
                             left: Box::new(Expr::Variable("x".to_string())),
                             right: Box::new(Expr::Variable("y".to_string())),
-                        },
+                        }),
                     },
                     Statement::Return(Expr::Variable("z".to_string())),
                 ],
@@ -1189,12 +1217,12 @@ mod tests {
                 body: vec![
                     Statement::VarDecl {
                         name: "x".to_string(),
-                        init: Expr::IntLiteral(1),
+                        init: Some(Expr::IntLiteral(1)),
                     },
                     Statement::Block(vec![
                         Statement::VarDecl {
                             name: "x".to_string(),
-                            init: Expr::IntLiteral(2),
+                            init: Some(Expr::IntLiteral(2)),
                         },
                         Statement::Return(Expr::Variable("x".to_string())),
                     ]),
@@ -1267,7 +1295,7 @@ mod tests {
                 body: vec![
                     Statement::VarDecl {
                         name: "x".to_string(),
-                        init: Expr::IntLiteral(3),
+                        init: Some(Expr::IntLiteral(3)),
                     },
                     Statement::While {
                         cond: Expr::Variable("x".to_string()),
@@ -1373,7 +1401,7 @@ mod tests {
                 body: vec![
                     Statement::VarDecl {
                         name: "i".to_string(),
-                        init: Expr::IntLiteral(0),
+                        init: Some(Expr::IntLiteral(0)),
                     },
                     Statement::For {
                         init: Some(Box::new(Statement::Assign {
@@ -1444,7 +1472,7 @@ mod tests {
                 body: vec![
                     Statement::VarDecl {
                         name: "i".to_string(),
-                        init: Expr::IntLiteral(0),
+                        init: Some(Expr::IntLiteral(0)),
                     },
                     Statement::For {
                         init: None,
@@ -1484,7 +1512,7 @@ mod tests {
                     Statement::For {
                         init: Some(Box::new(Statement::VarDecl {
                             name: "i".to_string(),
-                            init: Expr::IntLiteral(0),
+                            init: Some(Expr::IntLiteral(0)),
                         })),
                         cond: Some(Expr::Binary {
                             op: BinaryOp::Less,
@@ -1495,15 +1523,15 @@ mod tests {
                         body: Box::new(Statement::Block(vec![
                             Statement::VarDecl {
                                 name: "a".to_string(),
-                                init: Expr::IntLiteral(1),
+                                init: Some(Expr::IntLiteral(1)),
                             },
                             Statement::VarDecl {
                                 name: "b".to_string(),
-                                init: Expr::IntLiteral(2),
+                                init: Some(Expr::IntLiteral(2)),
                             },
                             Statement::VarDecl {
                                 name: "c".to_string(),
-                                init: Expr::IntLiteral(3),
+                                init: Some(Expr::IntLiteral(3)),
                             },
                             Statement::Break,
                         ])),
@@ -1527,12 +1555,12 @@ mod tests {
                 body: vec![
                     Statement::VarDecl {
                         name: "i".to_string(),
-                        init: Expr::IntLiteral(5),
+                        init: Some(Expr::IntLiteral(5)),
                     },
                     Statement::For {
                         init: Some(Box::new(Statement::VarDecl {
                             name: "i".to_string(),
-                            init: Expr::IntLiteral(0),
+                            init: Some(Expr::IntLiteral(0)),
                         })),
                         cond: Some(Expr::Binary {
                             op: BinaryOp::Less,
@@ -1572,22 +1600,22 @@ mod tests {
                 body: vec![
                     Statement::VarDecl {
                         name: "x".to_string(),
-                        init: Expr::IntLiteral(1),
+                        init: Some(Expr::IntLiteral(1)),
                     },
                     Statement::While {
                         cond: Expr::Variable("x".to_string()),
                         body: Box::new(Statement::Block(vec![
                             Statement::VarDecl {
                                 name: "a".to_string(),
-                                init: Expr::IntLiteral(1),
+                                init: Some(Expr::IntLiteral(1)),
                             },
                             Statement::VarDecl {
                                 name: "b".to_string(),
-                                init: Expr::IntLiteral(2),
+                                init: Some(Expr::IntLiteral(2)),
                             },
                             Statement::VarDecl {
                                 name: "c".to_string(),
-                                init: Expr::IntLiteral(3),
+                                init: Some(Expr::IntLiteral(3)),
                             },
                             Statement::Return(Expr::Binary {
                                 op: BinaryOp::Add,
