@@ -9,6 +9,7 @@ pub enum Token {
     KwWhile,
     KwBreak,
     KwContinue,
+    KwFor,
     Ident(String),
     IntLiteral(i32),
     LParen,
@@ -172,6 +173,7 @@ impl<'a> Lexer<'a> {
             "while" => Token::KwWhile,
             "break" => Token::KwBreak,
             "continue" => Token::KwContinue,
+            "for" => Token::KwFor,
             _ => Token::Ident(text),
         }
     }

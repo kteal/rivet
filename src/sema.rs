@@ -187,9 +187,37 @@ impl Checker {
             }
             Statement::While { cond, body } => {
                 self.enter_loop();
-                self.check_expr(cond)?;
-                self.check_statement(body)?;
+                let res = self
+                    .check_expr(cond)
+                    .and_then(|_| self.check_statement(body));
                 self.exit_loop();
+                res?;
+            }
+            Statement::For {
+                init,
+                cond,
+                post,
+                body,
+            } => {
+                self.enter_loop();
+                self.enter_scope();
+                let res = (|| -> Result<(), SemanticError> {
+                    if let Some(init_statement) = init {
+                        self.check_statement(init_statement)?;
+                    }
+                    if let Some(cond_expr) = cond {
+                        self.check_expr(cond_expr)?;
+                    }
+                    if let Some(post_statement) = post {
+                        self.check_statement(post_statement)?;
+                    }
+                    self.check_statement(body)?;
+
+                    Ok(())
+                })();
+                self.exit_scope();
+                self.exit_loop();
+                res?
             }
             Statement::Empty => (),
             Statement::ExprStatement(expr) => self.check_expr(expr)?,

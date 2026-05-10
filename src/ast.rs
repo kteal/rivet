@@ -35,6 +35,12 @@ pub enum Statement {
     Empty,
     Break,
     Continue,
+    For {
+        init: Option<Box<Statement>>, // VarDecl, Assign, ExprStatement, Empty
+        cond: Option<Expr>,
+        post: Option<Box<Statement>>, // Assign, ExprStatement, no semicolon
+        body: Box<Statement>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

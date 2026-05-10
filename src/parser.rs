@@ -310,6 +310,95 @@ impl Parser {
         Ok(Statement::ExprStatement(expr))
     }
 
+    fn parse_for_statement_init(&mut self) -> Result<Statement, ParseError> {
+        match self.peek() {
+            // Variable declaration
+            Token::KwInt => self.parse_var_decl(),
+            // Empty
+            Token::Semicolon => {
+                self.expect(Token::Semicolon)?;
+                Ok(Statement::Empty)
+            }
+            // Expression-start tokens
+            token if Self::is_expr_start(token) => {
+                if matches!(self.peek(), Token::Ident(_))
+                    && matches!(self.lookahead(1), Some(Token::Equal))
+                {
+                    // x = ...
+                    self.parse_assignment()
+                } else {
+                    self.parse_expr_statement()
+                }
+            }
+            found => Err(ParseError {
+                message: format!("got unexpected keyword {found:?}"),
+            }),
+        }
+    }
+
+    fn parse_for_statment_post(&mut self) -> Result<Statement, ParseError> {
+        if !Self::is_expr_start(self.peek()) {
+            return Err(ParseError {
+                message: format!(
+                    "'post' clause of for statement doesn't contain expression or assignment"
+                ),
+            });
+        }
+        if matches!(self.peek(), Token::Ident(_)) && matches!(self.lookahead(1), Some(Token::Equal))
+        {
+            // x = ...
+            let name = match self.advance() {
+                Token::Ident(name) => name,
+                found => {
+                    return Err(ParseError {
+                        message: format!("got unexpected token {found:?}"),
+                    });
+                }
+            };
+            self.expect(Token::Equal)?;
+            let value = self.parse_expr()?;
+
+            Ok(Statement::Assign { name, value })
+        } else {
+            let expr = self.parse_expr()?;
+            Ok(Statement::ExprStatement(expr))
+        }
+    }
+
+    fn parse_for_statement(&mut self) -> Result<Statement, ParseError> {
+        self.expect(Token::KwFor)?;
+        self.expect(Token::LParen)?;
+
+        let mut init = None;
+        let mut cond = None;
+        let mut post = None;
+
+        if *self.peek() == Token::Semicolon {
+            self.expect(Token::Semicolon)?;
+        } else {
+            init = Some(Box::new(self.parse_for_statement_init()?));
+        }
+
+        if *self.peek() != Token::Semicolon {
+            cond = Some(self.parse_expr()?);
+        }
+        self.expect(Token::Semicolon)?;
+
+        if *self.peek() != Token::RParen {
+            post = Some(Box::new(self.parse_for_statment_post()?))
+        }
+        self.expect(Token::RParen)?;
+
+        let body = Box::new(self.parse_statement()?);
+
+        Ok(Statement::For {
+            init,
+            cond,
+            post,
+            body,
+        })
+    }
+
     fn is_expr_start(token: &Token) -> bool {
         matches!(
             token,
@@ -343,6 +432,7 @@ impl Parser {
                 self.expect(Token::Semicolon)?;
                 Ok(Statement::Continue)
             }
+            Token::KwFor => self.parse_for_statement(),
             // Variable declaration
             Token::KwInt => self.parse_var_decl(),
             // Block
@@ -1705,5 +1795,167 @@ mod tests {
                 }),
             })
         )
+    }
+
+    #[test]
+    fn parses_for_loop_with_all_clauses_empty() {
+        let tokens = vec![
+            Token::KwFor,
+            Token::LParen,
+            Token::Semicolon,
+            Token::Semicolon,
+            Token::RParen,
+            Token::Semicolon,
+        ];
+
+        let mut parser = Parser::new(tokens);
+
+        let statement = parser.parse_statement().expect("parsing should succeed");
+
+        assert_eq!(
+            statement,
+            Statement::For {
+                init: None,
+                cond: None,
+                post: None,
+                body: Box::new(Statement::Empty),
+            }
+        );
+    }
+
+    #[test]
+    fn parses_for_loop_with_assignment_init_condition_and_assignment_post() {
+        let tokens = vec![
+            Token::KwFor,
+            Token::LParen,
+            Token::Ident("i".to_string()),
+            Token::Equal,
+            Token::IntLiteral(0),
+            Token::Semicolon,
+            Token::Ident("i".to_string()),
+            Token::Less,
+            Token::IntLiteral(10),
+            Token::Semicolon,
+            Token::Ident("i".to_string()),
+            Token::Equal,
+            Token::Ident("i".to_string()),
+            Token::Plus,
+            Token::IntLiteral(1),
+            Token::RParen,
+            Token::Semicolon,
+        ];
+
+        let mut parser = Parser::new(tokens);
+
+        let statement = parser.parse_statement().expect("parsing should succeed");
+
+        assert_eq!(
+            statement,
+            Statement::For {
+                init: Some(Box::new(Statement::Assign {
+                    name: "i".to_string(),
+                    value: Expr::IntLiteral(0),
+                })),
+                cond: Some(Expr::Binary {
+                    op: BinaryOp::Less,
+                    left: Box::new(Expr::Variable("i".to_string())),
+                    right: Box::new(Expr::IntLiteral(10)),
+                }),
+                post: Some(Box::new(Statement::Assign {
+                    name: "i".to_string(),
+                    value: Expr::Binary {
+                        op: BinaryOp::Add,
+                        left: Box::new(Expr::Variable("i".to_string())),
+                        right: Box::new(Expr::IntLiteral(1)),
+                    },
+                })),
+                body: Box::new(Statement::Empty),
+            }
+        );
+    }
+
+    #[test]
+    fn parses_for_loop_with_variable_declaration_init() {
+        let tokens = vec![
+            Token::KwFor,
+            Token::LParen,
+            Token::KwInt,
+            Token::Ident("i".to_string()),
+            Token::Equal,
+            Token::IntLiteral(0),
+            Token::Semicolon,
+            Token::Ident("i".to_string()),
+            Token::Less,
+            Token::IntLiteral(10),
+            Token::Semicolon,
+            Token::Ident("i".to_string()),
+            Token::Equal,
+            Token::Ident("i".to_string()),
+            Token::Plus,
+            Token::IntLiteral(1),
+            Token::RParen,
+            Token::Semicolon,
+        ];
+
+        let mut parser = Parser::new(tokens);
+
+        let statement = parser.parse_statement().expect("parsing should succeed");
+
+        assert_eq!(
+            statement,
+            Statement::For {
+                init: Some(Box::new(Statement::VarDecl {
+                    name: "i".to_string(),
+                    init: Expr::IntLiteral(0),
+                })),
+                cond: Some(Expr::Binary {
+                    op: BinaryOp::Less,
+                    left: Box::new(Expr::Variable("i".to_string())),
+                    right: Box::new(Expr::IntLiteral(10)),
+                }),
+                post: Some(Box::new(Statement::Assign {
+                    name: "i".to_string(),
+                    value: Expr::Binary {
+                        op: BinaryOp::Add,
+                        left: Box::new(Expr::Variable("i".to_string())),
+                        right: Box::new(Expr::IntLiteral(1)),
+                    },
+                })),
+                body: Box::new(Statement::Empty),
+            }
+        );
+    }
+
+    #[test]
+    fn parses_for_loop_with_empty_init_and_post() {
+        let tokens = vec![
+            Token::KwFor,
+            Token::LParen,
+            Token::Semicolon,
+            Token::Ident("i".to_string()),
+            Token::Less,
+            Token::IntLiteral(10),
+            Token::Semicolon,
+            Token::RParen,
+            Token::Semicolon,
+        ];
+
+        let mut parser = Parser::new(tokens);
+
+        let statement = parser.parse_statement().expect("parsing should succeed");
+
+        assert_eq!(
+            statement,
+            Statement::For {
+                init: None,
+                cond: Some(Expr::Binary {
+                    op: BinaryOp::Less,
+                    left: Box::new(Expr::Variable("i".to_string())),
+                    right: Box::new(Expr::IntLiteral(10)),
+                }),
+                post: None,
+                body: Box::new(Statement::Empty),
+            }
+        );
     }
 }

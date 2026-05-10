@@ -2,7 +2,7 @@
 
 `rivet` is a C compiler written in Rust that targets RV32IM assembly. It is working toward a C23 implementation and currently implements a small C23 subset.
 
-It currently supports integer literals, local variables, assignments, blocks, expression statements, empty statements, `if` / `else`, `while`, `break`, `continue`, return statements, comments, arithmetic, unary, comparison, and bitwise operators with C-like precedence. It also supports multiple `int` functions, parameters, and calls with up to 8 `int` arguments passed in RISC-V argument registers.
+It currently supports integer literals, local variables, assignments, blocks, expression statements, empty statements, `if` / `else`, `while`, `for`, `break`, `continue`, return statements, comments, arithmetic, unary, comparison, and bitwise operators with C-like precedence. It also supports multiple `int` functions, parameters, and calls with up to 8 `int` arguments passed in RISC-V argument registers.
 
 The current language subset supports programs shaped like:
 
@@ -10,18 +10,16 @@ The current language subset supports programs shaped like:
 int triangular_until(int x, int stop) {
     int sum = 0;
 
-    while (x) {
-        if (x == stop) {
+    for (int i = x; i > 0; i = i - 1) {
+        if (i == stop) {
             break;
         }
 
-        if (x == 2) {
-            x = x - 1;
+        if (i == 2) {
             continue;
         }
 
-        sum = sum + x;
-        x = x - 1;
+        sum = sum + i;
     }
 
     return sum;
@@ -179,7 +177,7 @@ Control flow:
 - [x] `if` / `else`
 - [x] `while`
 - [x] `break` and `continue`
-- [ ] `for`
+- [x] `for`
 - [ ] `do` / `while`
 
 Functions:

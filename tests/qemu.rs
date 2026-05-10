@@ -298,6 +298,36 @@ fn qemu_while_programs_return_expected_values() {
 
 #[test]
 #[ignore = "requires qemu-riscv32 and riscv64-linux-gnu binutils"]
+fn qemu_for_programs_return_expected_values() {
+    run_qemu_case(
+        "for-countdown",
+        "int main() {\n    int i = 0;\n    for (i = 0; i < 3; i = i + 1) {\n    }\n    return i;\n}\n",
+        3,
+    );
+    run_qemu_case(
+        "for-sum-with-decl-init",
+        "int main() {\n    int sum = 0;\n    for (int i = 1; i < 4; i = i + 1) {\n        sum = sum + i;\n    }\n    return sum;\n}\n",
+        6,
+    );
+    run_qemu_case(
+        "for-empty-condition-break",
+        "int main() {\n    int i = 0;\n    for (;;) {\n        i = i + 1;\n        if (i == 4) break;\n    }\n    return i;\n}\n",
+        4,
+    );
+    run_qemu_case(
+        "continue-in-for-runs-post",
+        "int main() {\n    int sum = 0;\n    for (int i = 0; i < 5; i = i + 1) {\n        if (i == 3) continue;\n        sum = sum + i;\n    }\n    return sum;\n}\n",
+        7,
+    );
+    run_qemu_case(
+        "for-init-shadows-outer-local",
+        "int main() {\n    int i = 5;\n    for (int i = 0; i < 1; i = i + 1) {\n    }\n    return i;\n}\n",
+        5,
+    );
+}
+
+#[test]
+#[ignore = "requires qemu-riscv32 and riscv64-linux-gnu binutils"]
 fn qemu_multiple_function_definitions_return_expected_values() {
     run_qemu_case(
         "unused-helper-before-main",
