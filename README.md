@@ -2,15 +2,24 @@
 
 `rivet` is a C compiler written in Rust that targets RV32IM assembly. It is working toward a C23 implementation and currently implements a small C23 subset.
 
-It currently supports integer literals, local variables, assignments, blocks, `if` / `else`, `while`, return statements, comments, arithmetic, unary, comparison, and bitwise operators with C-like precedence. It also supports multiple `int` functions, parameters, and calls with up to 8 `int` arguments passed in RISC-V argument registers.
+It currently supports integer literals, local variables, assignments, blocks, expression statements, empty statements, `if` / `else`, `while`, `break`, `continue`, return statements, comments, arithmetic, unary, comparison, and bitwise operators with C-like precedence. It also supports multiple `int` functions, parameters, and calls with up to 8 `int` arguments passed in RISC-V argument registers.
 
 The current language subset supports programs shaped like:
 
 ```c
-int triangular(int x) {
+int triangular_until(int x, int stop) {
     int sum = 0;
 
     while (x) {
+        if (x == stop) {
+            break;
+        }
+
+        if (x == 2) {
+            x = x - 1;
+            continue;
+        }
+
         sum = sum + x;
         x = x - 1;
     }
@@ -27,7 +36,8 @@ int adjust(int value, int mask) {
 }
 
 int main() {
-    int sum = triangular(3);
+    int sum = triangular_until(5, 1);
+    adjust(sum, 7);
     return adjust(sum, 7);
 }
 ```
@@ -140,8 +150,8 @@ Expressions and operators:
 - [x] bitwise operators: `& | ^ << >>`
 - [x] comparisons: `== != < <= > >=`
 - [x] C-style left-associative chained comparisons
-- [ ] expression statements
-- [ ] empty statements
+- [x] expression statements
+- [x] empty statements
 - [ ] logical `&&` and `||` with short-circuiting
 - [ ] conditional operator `?:`
 - [ ] comma operator
@@ -168,9 +178,9 @@ Control flow:
 
 - [x] `if` / `else`
 - [x] `while`
+- [x] `break` and `continue`
 - [ ] `for`
 - [ ] `do` / `while`
-- [ ] `break` and `continue`
 
 Functions:
 

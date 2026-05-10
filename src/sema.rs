@@ -14,6 +14,7 @@ pub struct FunctionInfo {
 struct Checker {
     scopes: Vec<HashSet<String>>,
     functions: HashMap<String, FunctionInfo>,
+    loop_depth: usize,
 }
 
 impl Checker {
@@ -21,7 +22,23 @@ impl Checker {
         Self {
             scopes: vec![HashSet::new()],
             functions: HashMap::new(),
+            loop_depth: 0,
         }
+    }
+
+    fn enter_loop(&mut self) {
+        self.loop_depth += 1
+    }
+
+    fn exit_loop(&mut self) {
+        if self.loop_depth == 0 {
+            panic!("cannot have negative loop depth")
+        }
+        self.loop_depth -= 1
+    }
+
+    fn in_loop(&self) -> bool {
+        self.loop_depth > 0
     }
 
     fn enter_scope(&mut self) {
@@ -169,8 +186,26 @@ impl Checker {
                 }
             }
             Statement::While { cond, body } => {
+                self.enter_loop();
                 self.check_expr(cond)?;
                 self.check_statement(body)?;
+                self.exit_loop();
+            }
+            Statement::Empty => (),
+            Statement::ExprStatement(expr) => self.check_expr(expr)?,
+            Statement::Break => {
+                if !self.in_loop() {
+                    return Err(SemanticError {
+                        message: format!("cannot use 'break' outside of a loop"),
+                    });
+                }
+            }
+            Statement::Continue => {
+                if !self.in_loop() {
+                    return Err(SemanticError {
+                        message: format!("cannot use 'continue' outside of a loop"),
+                    });
+                }
             }
         }
         Ok(())
@@ -380,6 +415,49 @@ mod tests {
         let err = check(&program).expect_err("semantic check should fail");
 
         assert_eq!(err.message, "undeclared function 'helper'");
+    }
+
+    #[test]
+    fn accepts_empty_statement() {
+        let program = main_program(vec![
+            Statement::Empty,
+            Statement::Return(Expr::IntLiteral(0)),
+        ]);
+
+        check(&program).expect("semantic check should succeed");
+    }
+
+    #[test]
+    fn accepts_expression_statement() {
+        let program = Program {
+            functions: vec![
+                function("helper", vec![Statement::Return(Expr::IntLiteral(1))]),
+                function(
+                    "main",
+                    vec![
+                        Statement::ExprStatement(Expr::Call {
+                            name: "helper".to_string(),
+                            args: vec![],
+                        }),
+                        Statement::Return(Expr::IntLiteral(0)),
+                    ],
+                ),
+            ],
+        };
+
+        check(&program).expect("semantic check should succeed");
+    }
+
+    #[test]
+    fn rejects_expression_statement_with_undeclared_variable() {
+        let program = main_program(vec![
+            Statement::ExprStatement(Expr::Variable("x".to_string())),
+            Statement::Return(Expr::IntLiteral(0)),
+        ]);
+
+        let err = check(&program).expect_err("semantic check should fail");
+
+        assert_eq!(err.message, "undeclared local variable 'x'");
     }
 
     #[test]
@@ -840,6 +918,57 @@ mod tests {
         ]);
 
         check(&program).expect("semantic check should succeed");
+    }
+
+    #[test]
+    fn accepts_break_and_continue_inside_loop() {
+        let program = main_program(vec![
+            Statement::While {
+                cond: Expr::IntLiteral(1),
+                body: Box::new(Statement::Block(vec![
+                    Statement::Continue,
+                    Statement::Break,
+                ])),
+            },
+            Statement::Return(Expr::IntLiteral(0)),
+        ]);
+
+        check(&program).expect("semantic check should succeed");
+    }
+
+    #[test]
+    fn accepts_break_inside_nested_if_in_loop() {
+        let program = main_program(vec![
+            Statement::While {
+                cond: Expr::IntLiteral(1),
+                body: Box::new(Statement::If {
+                    cond: Expr::IntLiteral(1),
+                    then_branch: Box::new(Statement::Break),
+                    else_branch: None,
+                }),
+            },
+            Statement::Return(Expr::IntLiteral(0)),
+        ]);
+
+        check(&program).expect("semantic check should succeed");
+    }
+
+    #[test]
+    fn rejects_break_outside_loop() {
+        let program = main_program(vec![Statement::Break]);
+
+        let err = check(&program).expect_err("semantic check should fail");
+
+        assert_eq!(err.message, "cannot use 'break' outside of a loop");
+    }
+
+    #[test]
+    fn rejects_continue_outside_loop() {
+        let program = main_program(vec![Statement::Continue]);
+
+        let err = check(&program).expect_err("semantic check should fail");
+
+        assert_eq!(err.message, "cannot use 'continue' outside of a loop");
     }
 
     #[test]

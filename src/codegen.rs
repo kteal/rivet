@@ -7,6 +7,12 @@ pub enum CodegenTarget {
     Rv32,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct LoopLabels {
+    continue_label: String,
+    break_label: String,
+}
+
 #[derive(Debug, Default, Clone)]
 struct FrameLayout {
     size: i32,
@@ -60,6 +66,7 @@ struct Codegen {
     next_local_offset: i32,
     label_counter: usize,
     return_label: Option<String>,
+    loop_stack: Vec<LoopLabels>,
     #[allow(dead_code)]
     target: CodegenTarget,
 }
@@ -73,6 +80,7 @@ impl Codegen {
             next_local_offset: -12,
             label_counter: 0,
             return_label: None,
+            loop_stack: vec![],
             target,
         }
     }
@@ -88,6 +96,29 @@ impl Codegen {
         let label = format!("{}_{}", prefix, self.label_counter);
         self.label_counter += 1;
         label
+    }
+
+    fn push_loop_labels(&mut self, continue_label: &str, break_label: &str) {
+        self.loop_stack.push(LoopLabels {
+            continue_label: continue_label.to_string(),
+            break_label: break_label.to_string(),
+        });
+    }
+
+    fn pop_loop_labels(&mut self) {
+        self.loop_stack.pop();
+    }
+
+    fn current_break_label(&self) -> Option<String> {
+        self.loop_stack
+            .last()
+            .map(|labels| labels.break_label.clone())
+    }
+
+    fn current_continue_label(&self) -> Option<String> {
+        self.loop_stack
+            .last()
+            .map(|labels| labels.continue_label.clone())
     }
 
     fn enter_scope(&mut self) {
@@ -239,6 +270,18 @@ impl Codegen {
                 else_branch,
             } => self.emit_if_statement(cond, then_branch, else_branch.as_deref()),
             Statement::While { cond, body } => self.emit_while_statement(cond, body),
+            Statement::Empty => (),
+            Statement::ExprStatement(expr) => self.emit_expr(expr),
+            Statement::Break => {
+                if let Some(label) = self.current_break_label() {
+                    self.emit_line(format_args!("j {label}"));
+                }
+            }
+            Statement::Continue => {
+                if let Some(label) = self.current_continue_label() {
+                    self.emit_line(format_args!("j {label}"));
+                }
+            }
         }
     }
 
@@ -246,12 +289,16 @@ impl Codegen {
         let start_label = self.new_label("while_start");
         let end_label = self.new_label("while_end");
 
+        self.push_loop_labels(&start_label, &end_label);
+
         self.emit_label(format_args!("{start_label}"));
         self.emit_expr(cond);
         self.emit_line(format_args!("beqz a0, {end_label}"));
         self.emit_statement(body);
         self.emit_line(format_args!("j {start_label}"));
         self.emit_label(format_args!("{end_label}"));
+
+        self.pop_loop_labels();
     }
 
     fn emit_if_statement(
@@ -596,6 +643,53 @@ mod tests {
 
         assert!(asm.contains("    lw a1, 0(sp)\n    addi sp, sp, 4\n    lw a0, 0(sp)\n"));
         assert!(asm.contains("    call add\n"));
+    }
+
+    #[test]
+    fn emits_nothing_for_empty_statement() {
+        let program = Program {
+            functions: vec![Function {
+                name: "main".to_string(),
+                params: vec![],
+                body: vec![Statement::Empty, Statement::Return(Expr::IntLiteral(7))],
+            }],
+        };
+
+        let asm = generate_with_codegen(&program);
+
+        assert_eq!(
+            asm,
+            ".globl main\nmain:\n    addi sp, sp, -16\n    sw ra, 12(sp)\n    sw s0, 8(sp)\n    addi s0, sp, 16\n    li a0, 7\n    lw ra, 12(sp)\n    lw s0, 8(sp)\n    addi sp, sp, 16\n    ret\n"
+        );
+    }
+
+    #[test]
+    fn emits_expression_statement_and_discards_result() {
+        let program = Program {
+            functions: vec![
+                Function {
+                    name: "helper".to_string(),
+                    params: vec![],
+                    body: vec![Statement::Return(Expr::IntLiteral(3))],
+                },
+                Function {
+                    name: "main".to_string(),
+                    params: vec![],
+                    body: vec![
+                        Statement::ExprStatement(Expr::Call {
+                            name: "helper".to_string(),
+                            args: vec![],
+                        }),
+                        Statement::Return(Expr::IntLiteral(7)),
+                    ],
+                },
+            ],
+        };
+
+        let asm = generate_raw_with_codegen(&program);
+
+        assert!(asm.contains("main:\n"));
+        assert!(asm.contains("    call helper\n    li a0, 7\n"));
     }
 
     #[test]
@@ -1137,6 +1231,77 @@ mod tests {
         assert!(asm.contains("while_end_"));
         assert!(asm.contains("beqz a0, while_end_"));
         assert!(asm.contains("j while_start_"));
+    }
+
+    #[test]
+    fn generates_break_jump_to_loop_end() {
+        let program = Program {
+            functions: vec![Function {
+                name: "main".to_string(),
+                params: vec![],
+                body: vec![
+                    Statement::While {
+                        cond: Expr::IntLiteral(1),
+                        body: Box::new(Statement::Block(vec![Statement::Break])),
+                    },
+                    Statement::Return(Expr::IntLiteral(0)),
+                ],
+            }],
+        };
+
+        let asm = generate_raw_with_codegen(&program);
+
+        assert!(asm.contains("while_end_"));
+        assert!(asm.contains("    j while_end_"));
+    }
+
+    #[test]
+    fn generates_continue_jump_to_loop_start() {
+        let program = Program {
+            functions: vec![Function {
+                name: "main".to_string(),
+                params: vec![],
+                body: vec![
+                    Statement::While {
+                        cond: Expr::IntLiteral(1),
+                        body: Box::new(Statement::Block(vec![Statement::Continue])),
+                    },
+                    Statement::Return(Expr::IntLiteral(0)),
+                ],
+            }],
+        };
+
+        let asm = generate_raw_with_codegen(&program);
+
+        assert!(asm.contains("while_start_"));
+        assert!(
+            asm.matches("    j while_start_").count() >= 2,
+            "continue should add a jump to the loop start in addition to the loop backedge"
+        );
+    }
+
+    #[test]
+    fn nested_loop_break_uses_inner_loop_end() {
+        let program = Program {
+            functions: vec![Function {
+                name: "main".to_string(),
+                params: vec![],
+                body: vec![
+                    Statement::While {
+                        cond: Expr::IntLiteral(1),
+                        body: Box::new(Statement::Block(vec![Statement::While {
+                            cond: Expr::IntLiteral(1),
+                            body: Box::new(Statement::Block(vec![Statement::Break])),
+                        }])),
+                    },
+                    Statement::Return(Expr::IntLiteral(0)),
+                ],
+            }],
+        };
+
+        let asm = generate_raw_with_codegen(&program);
+
+        assert!(asm.contains("    j while_end_3"));
     }
 
     #[test]

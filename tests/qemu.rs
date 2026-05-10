@@ -284,6 +284,16 @@ fn qemu_while_programs_return_expected_values() {
         "int main() {\n    int x = 1;\n    while (x) {\n        int a = 1;\n        int b = 2;\n        int c = 3;\n        x = x - 1;\n        return a + b + c;\n    }\n    return 0;\n}\n",
         6,
     );
+    run_qemu_case(
+        "break-from-while",
+        "int main() {\n    int x = 0;\n    while (1) {\n        x = x + 1;\n        if (x == 3) break;\n    }\n    return x;\n}\n",
+        3,
+    );
+    run_qemu_case(
+        "continue-in-while",
+        "int main() {\n    int x = 0;\n    int sum = 0;\n    while (x < 5) {\n        x = x + 1;\n        if (x == 3) continue;\n        sum = sum + x;\n    }\n    return sum;\n}\n",
+        12,
+    );
 }
 
 #[test]
@@ -342,6 +352,26 @@ fn qemu_function_calls_return_expected_values() {
 }
 
 #[test]
+#[ignore = "requires qemu-riscv32 and riscv64-linux-gnu binutils"]
+fn qemu_expression_and_empty_statements_return_expected_values() {
+    run_qemu_case(
+        "empty-statement",
+        "int main() {\n    ;\n    return 7;\n}\n",
+        7,
+    );
+    run_qemu_case(
+        "call-expression-statement",
+        "int helper() {\n    return 3;\n}\n\nint main() {\n    helper();\n    return 7;\n}\n",
+        7,
+    );
+    run_qemu_case(
+        "literal-expression-statement",
+        "int main() {\n    1 + 2;\n    return 5;\n}\n",
+        5,
+    );
+}
+
+#[test]
 #[ignore = "requires cargo"]
 fn qemu_semantic_errors_are_reported_before_codegen() {
     run_compile_error_case(
@@ -373,5 +403,15 @@ fn qemu_semantic_errors_are_reported_before_codegen() {
         "semantic-undeclared-function-call",
         "int main() {\n    return helper();\n}\n",
         "semantic analysis error: undeclared function 'helper'",
+    );
+    run_compile_error_case(
+        "semantic-break-outside-loop",
+        "int main() {\n    break;\n}\n",
+        "semantic analysis error: cannot use 'break' outside of a loop",
+    );
+    run_compile_error_case(
+        "semantic-continue-outside-loop",
+        "int main() {\n    continue;\n}\n",
+        "semantic analysis error: cannot use 'continue' outside of a loop",
     );
 }

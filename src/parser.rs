@@ -279,32 +279,64 @@ impl Parser {
         Ok(Statement::While { cond, body })
     }
 
+    fn parse_expr_statement(&mut self) -> Result<Statement, ParseError> {
+        let expr = self.parse_expr()?;
+        self.expect(Token::Semicolon)?;
+        Ok(Statement::ExprStatement(expr))
+    }
+
     fn parse_statement(&mut self) -> Result<Statement, ParseError> {
         match self.peek() {
+            // Control flow
             Token::KwReturn => {
                 self.expect(Token::KwReturn)?;
                 let expr = self.parse_expr()?;
                 self.expect(Token::Semicolon)?;
                 Ok(Statement::Return(expr))
             }
+            Token::KwIf => self.parse_if_statement(),
+            Token::KwWhile => self.parse_while_statement(),
+            // Variable declaration
             Token::KwInt => self.parse_var_decl(),
             Token::Ident(_) => match self.lookahead(1) {
                 Some(Token::Equal) => self.parse_assignment(),
-                Some(found) => Err(ParseError {
-                    message: format!("got unexpected token {found:?}"),
-                }),
+                Some(_) => {
+                    let expr = self.parse_expr()?;
+                    self.expect(Token::Semicolon)?;
+                    Ok(Statement::ExprStatement(expr))
+                }
                 None => Err(ParseError {
                     message: "reached end of tokens".to_string(),
                 }),
             },
+            // Block
             Token::LBrace => {
                 self.expect(Token::LBrace)?;
                 let mut body = vec![];
                 self.parse_through_rbrace(&mut body)?;
                 Ok(Statement::Block(body))
             }
-            Token::KwIf => self.parse_if_statement(),
-            Token::KwWhile => self.parse_while_statement(),
+            // Empty
+            Token::Semicolon => {
+                self.expect(Token::Semicolon)?;
+                Ok(Statement::Empty)
+            }
+            // Expression-start tokens
+            Token::IntLiteral(_) => self.parse_expr_statement(),
+            Token::LParen => self.parse_expr_statement(),
+            Token::Minus => self.parse_expr_statement(),
+            Token::Bang => self.parse_expr_statement(),
+            Token::Tilde => self.parse_expr_statement(),
+            Token::KwBreak => {
+                self.expect(Token::KwBreak)?;
+                self.expect(Token::Semicolon)?;
+                Ok(Statement::Break)
+            }
+            Token::KwContinue => {
+                self.expect(Token::KwContinue)?;
+                self.expect(Token::Semicolon)?;
+                Ok(Statement::Continue)
+            }
             found => Err(ParseError {
                 message: format!("got unexpected keyword {found:?}"),
             }),
@@ -513,6 +545,104 @@ mod tests {
                 }),
                 right: Box::new(Expr::IntLiteral(2)),
             })
+        );
+    }
+
+    #[test]
+    fn parses_empty_statement() {
+        let tokens = vec![Token::Semicolon];
+
+        let mut parser = Parser::new(tokens);
+
+        let statement = parser.parse_statement().expect("parsing should succeed");
+
+        assert_eq!(statement, Statement::Empty);
+        assert_eq!(parser.pos, 1, "empty statement should consume semicolon");
+    }
+
+    #[test]
+    fn parses_function_call_expression_statement() {
+        let tokens = vec![
+            Token::Ident("helper".to_string()),
+            Token::LParen,
+            Token::RParen,
+            Token::Semicolon,
+        ];
+
+        let mut parser = Parser::new(tokens);
+
+        let statement = parser.parse_statement().expect("parsing should succeed");
+
+        assert_eq!(
+            statement,
+            Statement::ExprStatement(Expr::Call {
+                name: "helper".to_string(),
+                args: vec![],
+            })
+        );
+        assert_eq!(
+            parser.pos, 4,
+            "expression statement should consume semicolon"
+        );
+    }
+
+    #[test]
+    fn parses_literal_expression_statement() {
+        let tokens = vec![
+            Token::IntLiteral(1),
+            Token::Plus,
+            Token::IntLiteral(2),
+            Token::Semicolon,
+        ];
+
+        let mut parser = Parser::new(tokens);
+
+        let statement = parser.parse_statement().expect("parsing should succeed");
+
+        assert_eq!(
+            statement,
+            Statement::ExprStatement(Expr::Binary {
+                op: BinaryOp::Add,
+                left: Box::new(Expr::IntLiteral(1)),
+                right: Box::new(Expr::IntLiteral(2)),
+            })
+        );
+        assert_eq!(
+            parser.pos, 4,
+            "expression statement should consume semicolon"
+        );
+    }
+
+    #[test]
+    fn parses_unary_expression_statement() {
+        let tokens = vec![Token::Bang, Token::IntLiteral(0), Token::Semicolon];
+
+        let mut parser = Parser::new(tokens);
+
+        let statement = parser.parse_statement().expect("parsing should succeed");
+
+        assert_eq!(
+            statement,
+            Statement::ExprStatement(Expr::Unary {
+                op: UnaryOp::LogicalNot,
+                expr: Box::new(Expr::IntLiteral(0)),
+            })
+        );
+        assert_eq!(
+            parser.pos, 3,
+            "expression statement should consume semicolon"
+        );
+    }
+
+    #[test]
+    fn rejects_expression_statement_without_semicolon() {
+        let tokens = vec![Token::IntLiteral(1), Token::Eof];
+
+        let mut parser = Parser::new(tokens);
+
+        assert!(
+            parser.parse_statement().is_err(),
+            "expression statements should require semicolons"
         );
     }
 
@@ -1032,6 +1162,57 @@ mod tests {
                     },
                 }),
             }
+        );
+    }
+
+    #[test]
+    fn parses_break_statement() {
+        let tokens = vec![Token::KwBreak, Token::Semicolon];
+
+        let mut parser = Parser::new(tokens);
+
+        let statement = parser.parse_statement().expect("parsing should succeed");
+
+        assert_eq!(statement, Statement::Break);
+        assert_eq!(parser.pos, 2, "break statement should consume semicolon");
+    }
+
+    #[test]
+    fn parses_continue_statement() {
+        let tokens = vec![Token::KwContinue, Token::Semicolon];
+
+        let mut parser = Parser::new(tokens);
+
+        let statement = parser.parse_statement().expect("parsing should succeed");
+
+        assert_eq!(statement, Statement::Continue);
+        assert_eq!(
+            parser.pos, 2,
+            "continue statement should consume semicolon"
+        );
+    }
+
+    #[test]
+    fn rejects_break_without_semicolon() {
+        let tokens = vec![Token::KwBreak, Token::Eof];
+
+        let mut parser = Parser::new(tokens);
+
+        assert!(
+            parser.parse_statement().is_err(),
+            "break statements should require semicolons"
+        );
+    }
+
+    #[test]
+    fn rejects_continue_without_semicolon() {
+        let tokens = vec![Token::KwContinue, Token::Eof];
+
+        let mut parser = Parser::new(tokens);
+
+        assert!(
+            parser.parse_statement().is_err(),
+            "continue statements should require semicolons"
         );
     }
 

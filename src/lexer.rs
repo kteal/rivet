@@ -4,6 +4,11 @@ use std::{iter::Peekable, str::Chars};
 pub enum Token {
     KwInt,
     KwReturn,
+    KwIf,
+    KwElse,
+    KwWhile,
+    KwBreak,
+    KwContinue,
     Ident(String),
     IntLiteral(i32),
     LParen,
@@ -30,9 +35,6 @@ pub enum Token {
     Pipe,
     LessLess,
     GreaterGreater,
-    KwIf,
-    KwElse,
-    KwWhile,
     Comma,
     Eof,
 }
@@ -168,6 +170,8 @@ impl<'a> Lexer<'a> {
             "if" => Token::KwIf,
             "else" => Token::KwElse,
             "while" => Token::KwWhile,
+            "break" => Token::KwBreak,
+            "continue" => Token::KwContinue,
             _ => Token::Ident(text),
         }
     }
@@ -469,6 +473,22 @@ mod tests {
                 Token::RParen,
                 Token::KwReturn,
                 Token::Ident("x".to_string()),
+                Token::Semicolon,
+                Token::Eof,
+            ]
+        );
+    }
+
+    #[test]
+    fn lexes_break_and_continue_keywords() {
+        let tokens = lex_with_struct("break; continue;").expect("lexing should succeed");
+
+        assert_eq!(
+            tokens,
+            vec![
+                Token::KwBreak,
+                Token::Semicolon,
+                Token::KwContinue,
                 Token::Semicolon,
                 Token::Eof,
             ]

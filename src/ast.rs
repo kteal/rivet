@@ -31,6 +31,10 @@ pub enum Statement {
         cond: Expr,
         body: Box<Statement>,
     },
+    ExprStatement(Expr),
+    Empty,
+    Break,
+    Continue,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
