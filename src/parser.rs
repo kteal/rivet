@@ -1,4 +1,4 @@
-use crate::ast::{BinaryOp, Expr, Function, Program, Statement, UnaryOp};
+use crate::ast::{BinaryOp, Expr, Function, Param, Program, Statement, UnaryOp};
 use crate::lexer::{Span, Token, TokenKind};
 
 const MULTIPLICATIVE_OPS: &[(TokenKind, BinaryOp)] = &[
@@ -138,13 +138,16 @@ impl Parser {
         self.parse_expr()
     }
 
-    fn parse_param(&mut self) -> Result<String, ParseError> {
+    fn parse_param(&mut self) -> Result<Param, ParseError> {
         self.expect(TokenKind::KwInt)?;
 
         let token = self.advance();
 
         match token.kind {
-            TokenKind::Ident(name) => Ok(name),
+            TokenKind::Ident(name) => Ok(Param {
+                name,
+                name_span: token.span,
+            }),
             found => Err(ParseError {
                 message: format!("expected identifier for parameter, found {found:?}"),
                 span: token.span,
@@ -905,7 +908,16 @@ mod tests {
                 functions: vec![Function {
                     name_span: span(),
                     name: "add".to_string(),
-                    params: vec!["x".to_string(), "y".to_string()],
+                    params: vec![
+                        Param {
+                            name: "x".to_string(),
+                            name_span: span()
+                        },
+                        Param {
+                            name: "y".to_string(),
+                            name_span: span()
+                        }
+                    ],
                     body: vec![Statement::Return(Expr::Binary {
                         op: BinaryOp::Add,
                         left: Box::new(Expr::Variable {
@@ -921,6 +933,35 @@ mod tests {
                 eof_span: span(),
             }
         );
+    }
+
+    #[test]
+    fn parses_parameter_name_spans() {
+        let tokens = vec![
+            token_with_span(TokenKind::KwInt, 0, 3),
+            token_with_span(TokenKind::Ident("add".to_string()), 4, 7),
+            token_with_span(TokenKind::LParen, 7, 8),
+            token_with_span(TokenKind::KwInt, 8, 11),
+            token_with_span(TokenKind::Ident("x".to_string()), 12, 13),
+            token_with_span(TokenKind::Comma, 13, 14),
+            token_with_span(TokenKind::KwInt, 15, 18),
+            token_with_span(TokenKind::Ident("y".to_string()), 19, 20),
+            token_with_span(TokenKind::RParen, 20, 21),
+            token_with_span(TokenKind::LBrace, 22, 23),
+            token_with_span(TokenKind::KwReturn, 28, 34),
+            token_with_span(TokenKind::Ident("x".to_string()), 35, 36),
+            token_with_span(TokenKind::Semicolon, 36, 37),
+            token_with_span(TokenKind::RBrace, 38, 39),
+            token_with_span(TokenKind::Eof, 39, 39),
+        ];
+
+        let program = parse(tokens).expect("parsing should succeed");
+        let params = &program.functions[0].params;
+
+        assert_eq!(params[0].name, "x");
+        assert_eq!(params[0].name_span, Span { start: 12, end: 13 });
+        assert_eq!(params[1].name, "y");
+        assert_eq!(params[1].name_span, Span { start: 19, end: 20 });
     }
 
     #[test]

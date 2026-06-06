@@ -78,6 +78,23 @@ fn semantic_errors_include_filename_line_and_column() {
 }
 
 #[test]
+fn duplicate_parameter_errors_point_at_duplicate_parameter() {
+    let stderr = run_diagnostic_case(
+        "semantic-duplicate-parameter-location",
+        "int main(int x, int x) {\n    return x;\n}\n",
+    );
+
+    assert!(
+        stderr.contains("semantic-duplicate-parameter-location.c:1:21: error:"),
+        "stderr should point at the duplicate parameter, got {stderr:?}"
+    );
+    assert!(
+        stderr.contains("duplicate local variable 'x'"),
+        "stderr should explain the semantic problem, got {stderr:?}"
+    );
+}
+
+#[test]
 fn semantic_errors_are_reported_before_codegen() {
     assert_diagnostic_contains(
         "semantic-undeclared-return",

@@ -10,8 +10,14 @@ pub struct Program {
 pub struct Function {
     pub name: String,
     pub name_span: Span,
-    pub params: Vec<String>,
+    pub params: Vec<Param>,
     pub body: Vec<Statement>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Param {
+    pub name: String,
+    pub name_span: Span,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

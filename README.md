@@ -61,6 +61,12 @@ Example:
 cargo run -- tests/smoke.c
 ```
 
+Lex, parse, and semantic errors are reported with file, line, and column information:
+
+```text
+path/to/program.c:2:12: error: undeclared local variable 'x'
+```
+
 ## Run Tests
 
 Normal Rust tests:
@@ -209,7 +215,7 @@ Toolchain and library compatibility:
 - [ ] standard header strategy
 - [ ] minimal hosted C runtime integration
 - [ ] standard library calls through external symbols
-- [ ] diagnostics with source locations
+- [x] diagnostics with source locations
 - [ ] warnings vs errors
 - [ ] separate compilation and object files
 - [ ] linker/assembler integration beyond the current assembly output
