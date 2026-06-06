@@ -1,44 +1,46 @@
 use crate::ast::{BinaryOp, Expr, Function, Program, Statement, UnaryOp};
-use crate::lexer::Token;
+use crate::lexer::{Span, Token, TokenKind};
 
-const MULTIPLICATIVE_OPS: &[(Token, BinaryOp)] = &[
-    (Token::Star, BinaryOp::Multiply),
-    (Token::Slash, BinaryOp::Divide),
-    (Token::Percent, BinaryOp::Remainder),
+const MULTIPLICATIVE_OPS: &[(TokenKind, BinaryOp)] = &[
+    (TokenKind::Star, BinaryOp::Multiply),
+    (TokenKind::Slash, BinaryOp::Divide),
+    (TokenKind::Percent, BinaryOp::Remainder),
 ];
 
-const ADDITIVE_OPS: &[(Token, BinaryOp)] = &[
-    (Token::Plus, BinaryOp::Add),
-    (Token::Minus, BinaryOp::Subtract),
+const ADDITIVE_OPS: &[(TokenKind, BinaryOp)] = &[
+    (TokenKind::Plus, BinaryOp::Add),
+    (TokenKind::Minus, BinaryOp::Subtract),
 ];
 
-const SHIFT_OPS: &[(Token, BinaryOp)] = &[
-    (Token::LessLess, BinaryOp::ShiftLeft),
-    (Token::GreaterGreater, BinaryOp::ShiftRight),
+const SHIFT_OPS: &[(TokenKind, BinaryOp)] = &[
+    (TokenKind::LessLess, BinaryOp::ShiftLeft),
+    (TokenKind::GreaterGreater, BinaryOp::ShiftRight),
 ];
 
-const RELATIONAL_OPS: &[(Token, BinaryOp)] = &[
-    (Token::Less, BinaryOp::Less),
-    (Token::LessEqual, BinaryOp::LessEqual),
-    (Token::Greater, BinaryOp::Greater),
-    (Token::GreaterEqual, BinaryOp::GreaterEqual),
+const RELATIONAL_OPS: &[(TokenKind, BinaryOp)] = &[
+    (TokenKind::Less, BinaryOp::Less),
+    (TokenKind::LessEqual, BinaryOp::LessEqual),
+    (TokenKind::Greater, BinaryOp::Greater),
+    (TokenKind::GreaterEqual, BinaryOp::GreaterEqual),
 ];
 
-const EQUALITY_OPS: &[(Token, BinaryOp)] = &[
-    (Token::EqualEqual, BinaryOp::Equal),
-    (Token::BangEqual, BinaryOp::NotEqual),
+const EQUALITY_OPS: &[(TokenKind, BinaryOp)] = &[
+    (TokenKind::EqualEqual, BinaryOp::Equal),
+    (TokenKind::BangEqual, BinaryOp::NotEqual),
 ];
 
-const BITWISE_AND_OPS: &[(Token, BinaryOp)] = &[(Token::Ampersand, BinaryOp::BitAnd)];
-const BITWISE_XOR_OPS: &[(Token, BinaryOp)] = &[(Token::Caret, BinaryOp::BitXor)];
-const BITWISE_OR_OPS: &[(Token, BinaryOp)] = &[(Token::Pipe, BinaryOp::BitOr)];
+const BITWISE_AND_OPS: &[(TokenKind, BinaryOp)] = &[(TokenKind::Ampersand, BinaryOp::BitAnd)];
+const BITWISE_XOR_OPS: &[(TokenKind, BinaryOp)] = &[(TokenKind::Caret, BinaryOp::BitXor)];
+const BITWISE_OR_OPS: &[(TokenKind, BinaryOp)] = &[(TokenKind::Pipe, BinaryOp::BitOr)];
 
-const LOGICAL_AND_OPS: &[(Token, BinaryOp)] = &[(Token::AmpersandAmpersand, BinaryOp::LogicalAnd)];
-const LOGICAL_OR_OPS: &[(Token, BinaryOp)] = &[(Token::PipePipe, BinaryOp::LogicalOr)];
+const LOGICAL_AND_OPS: &[(TokenKind, BinaryOp)] =
+    &[(TokenKind::AmpersandAmpersand, BinaryOp::LogicalAnd)];
+const LOGICAL_OR_OPS: &[(TokenKind, BinaryOp)] = &[(TokenKind::PipePipe, BinaryOp::LogicalOr)];
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ParseError {
     pub message: String,
+    pub span: Span,
 }
 
 struct Parser {
@@ -55,20 +57,25 @@ impl Parser {
         &self.tokens[self.pos]
     }
 
+    fn peek_kind(&self) -> &TokenKind {
+        &self.peek().kind
+    }
+
     fn advance(&mut self) -> Token {
         let token = self.tokens[self.pos].clone();
         self.pos += 1;
         token
     }
 
-    fn expect(&mut self, expected: Token) -> Result<(), ParseError> {
-        let found = self.advance();
+    fn expect(&mut self, expected: TokenKind) -> Result<Token, ParseError> {
+        let token = self.advance();
 
-        if found == expected {
-            Ok(())
+        if token.kind == expected {
+            Ok(token)
         } else {
             Err(ParseError {
-                message: format!("expected {expected:?}, found {found:?}"),
+                message: format!("expected {expected:?}, found {:?}", token.kind),
+                span: token.span,
             })
         }
     }
@@ -76,7 +83,7 @@ impl Parser {
     fn parse_left_assoc(
         &mut self,
         parse_operand: fn(&mut Self) -> Result<Expr, ParseError>,
-        ops: &[(Token, BinaryOp)],
+        ops: &[(TokenKind, BinaryOp)],
     ) -> Result<Expr, ParseError> {
         let mut left = parse_operand(self)?;
 
@@ -92,9 +99,9 @@ impl Parser {
         Ok(left)
     }
 
-    fn parse_binary_op_from(&mut self, ops: &[(Token, BinaryOp)]) -> Option<BinaryOp> {
-        for (token, op) in ops {
-            if self.peek() == token {
+    fn parse_binary_op_from(&mut self, ops: &[(TokenKind, BinaryOp)]) -> Option<BinaryOp> {
+        for (token_kind, op) in ops {
+            if self.peek_kind() == token_kind {
                 self.advance();
                 return Some(*op);
             }
@@ -109,15 +116,16 @@ impl Parser {
     ) -> Result<Vec<T>, ParseError> {
         let mut items = vec![];
 
-        while *self.peek() != Token::RParen {
+        while *self.peek_kind() != TokenKind::RParen {
             items.push(parse_item(self)?);
 
-            if *self.peek() == Token::Comma {
-                self.expect(Token::Comma)?;
+            if *self.peek_kind() == TokenKind::Comma {
+                self.expect(TokenKind::Comma)?;
 
-                if *self.peek() == Token::RParen {
+                if *self.peek_kind() == TokenKind::RParen {
                     return Err(ParseError {
                         message: "trailing comma".to_string(),
+                        span: self.peek().span,
                     });
                 }
             }
@@ -131,53 +139,66 @@ impl Parser {
     }
 
     fn parse_param(&mut self) -> Result<String, ParseError> {
-        self.expect(Token::KwInt)?;
+        self.expect(TokenKind::KwInt)?;
 
-        match self.advance() {
-            Token::Ident(name) => Ok(name),
+        let token = self.advance();
+
+        match token.kind {
+            TokenKind::Ident(name) => Ok(name),
             found => Err(ParseError {
                 message: format!("expected identifier for parameter, found {found:?}"),
+                span: token.span,
             }),
         }
     }
 
     fn parse_primary(&mut self) -> Result<Expr, ParseError> {
-        match self.advance() {
-            Token::IntLiteral(value) => Ok(Expr::IntLiteral(value)),
-            Token::Ident(name) => {
-                if *self.peek() == Token::LParen {
-                    self.expect(Token::LParen)?;
+        let token = self.advance();
+
+        match token.kind {
+            TokenKind::IntLiteral(value) => Ok(Expr::IntLiteral(value)),
+            TokenKind::Ident(name) => {
+                if *self.peek_kind() == TokenKind::LParen {
+                    self.expect(TokenKind::LParen)?;
                     let args = self.parse_comma_separated_until_rparen(Self::parse_call_arg)?;
-                    self.expect(Token::RParen)?;
-                    Ok(Expr::Call { name, args })
+                    self.expect(TokenKind::RParen)?;
+                    Ok(Expr::Call {
+                        name,
+                        name_span: token.span,
+                        args,
+                    })
                 } else {
-                    Ok(Expr::Variable(name))
+                    Ok(Expr::Variable {
+                        name,
+                        span: token.span,
+                    })
                 }
             }
-            Token::LParen => {
+            TokenKind::LParen => {
                 let expr = self.parse_expr()?;
-                self.expect(Token::RParen)?;
+                self.expect(TokenKind::RParen)?;
                 Ok(expr)
             }
             found => {
                 return Err(ParseError {
                     message: format!("expected expression, found {found:?}"),
+                    span: token.span,
                 });
             }
         }
     }
 
     fn parse_unary_op(&mut self) -> Option<UnaryOp> {
-        match self.peek() {
-            Token::Minus => {
+        match self.peek_kind() {
+            TokenKind::Minus => {
                 self.advance();
                 Some(UnaryOp::Negate)
             }
-            Token::Bang => {
+            TokenKind::Bang => {
                 self.advance();
                 Some(UnaryOp::LogicalNot)
             }
-            Token::Tilde => {
+            TokenKind::Tilde => {
                 self.advance();
                 Some(UnaryOp::BitwiseNot)
             }
@@ -240,14 +261,19 @@ impl Parser {
     fn parse_assignment(&mut self) -> Result<Expr, ParseError> {
         let left = self.parse_logical_or()?;
 
-        if *self.peek() == Token::Equal {
-            if let Expr::Variable(name) = left {
-                self.expect(Token::Equal)?;
+        if *self.peek_kind() == TokenKind::Equal {
+            if let Expr::Variable { name, span } = left {
+                self.expect(TokenKind::Equal)?;
                 let value = Box::new(self.parse_assignment()?);
-                return Ok(Expr::Assign { name, value });
+                return Ok(Expr::Assign {
+                    name,
+                    name_span: span,
+                    value,
+                });
             } else {
                 return Err(ParseError {
                     message: format!("cannot assign to non-variable expression"),
+                    span: self.peek().span,
                 });
             }
         }
@@ -260,44 +286,51 @@ impl Parser {
     }
 
     fn parse_var_decl(&mut self) -> Result<Statement, ParseError> {
-        self.expect(Token::KwInt)?;
-        let name = match self.advance() {
-            Token::Ident(name) => name,
+        self.expect(TokenKind::KwInt)?;
+        let token = self.advance();
+        let name = match token.kind {
+            TokenKind::Ident(name) => name,
             found => {
                 return Err(ParseError {
                     message: format!("expected variable name, found {found:?}"),
+                    span: token.span,
                 });
             }
         };
-        if *self.peek() == Token::Semicolon {
-            self.expect(Token::Semicolon)?;
-            return Ok(Statement::VarDecl { name, init: None });
+        if *self.peek_kind() == TokenKind::Semicolon {
+            self.expect(TokenKind::Semicolon)?;
+            return Ok(Statement::VarDecl {
+                name,
+                name_span: token.span,
+                init: None,
+            });
         }
-        self.expect(Token::Equal)?;
+        self.expect(TokenKind::Equal)?;
         let expr = self.parse_expr()?;
-        self.expect(Token::Semicolon)?;
+        self.expect(TokenKind::Semicolon)?;
         Ok(Statement::VarDecl {
             name,
+            name_span: token.span,
             init: Some(expr),
         })
     }
 
     fn parse_through_rbrace(&mut self, vec: &mut Vec<Statement>) -> Result<(), ParseError> {
-        while *self.peek() != Token::RBrace {
+        while *self.peek_kind() != TokenKind::RBrace {
             vec.push(self.parse_statement()?);
         }
-        self.expect(Token::RBrace)?;
+        self.expect(TokenKind::RBrace)?;
         Ok(())
     }
 
     fn parse_if_statement(&mut self) -> Result<Statement, ParseError> {
-        self.expect(Token::KwIf)?;
-        self.expect(Token::LParen)?;
+        self.expect(TokenKind::KwIf)?;
+        self.expect(TokenKind::LParen)?;
         let cond = self.parse_expr()?;
-        self.expect(Token::RParen)?;
+        self.expect(TokenKind::RParen)?;
         let then_statement = self.parse_statement()?;
-        let else_statement = if *self.peek() == Token::KwElse {
-            self.expect(Token::KwElse)?;
+        let else_statement = if *self.peek_kind() == TokenKind::KwElse {
+            self.expect(TokenKind::KwElse)?;
             Some(Box::new(self.parse_statement()?))
         } else {
             None
@@ -311,10 +344,10 @@ impl Parser {
     }
 
     fn parse_while_statement(&mut self) -> Result<Statement, ParseError> {
-        self.expect(Token::KwWhile)?;
-        self.expect(Token::LParen)?;
+        self.expect(TokenKind::KwWhile)?;
+        self.expect(TokenKind::LParen)?;
         let cond = self.parse_expr()?;
-        self.expect(Token::RParen)?;
+        self.expect(TokenKind::RParen)?;
         let body = Box::new(self.parse_statement()?);
 
         Ok(Statement::While { cond, body })
@@ -322,50 +355,51 @@ impl Parser {
 
     fn parse_expr_statement(&mut self) -> Result<Statement, ParseError> {
         let expr = self.parse_expr()?;
-        self.expect(Token::Semicolon)?;
+        self.expect(TokenKind::Semicolon)?;
         Ok(Statement::ExprStatement(expr))
     }
 
     fn parse_for_statement_init(&mut self) -> Result<Statement, ParseError> {
-        match self.peek() {
+        match self.peek_kind() {
             // Variable declaration
-            Token::KwInt => self.parse_var_decl(),
+            TokenKind::KwInt => self.parse_var_decl(),
             // Empty
-            Token::Semicolon => {
-                self.expect(Token::Semicolon)?;
+            TokenKind::Semicolon => {
+                self.expect(TokenKind::Semicolon)?;
                 Ok(Statement::Empty)
             }
             // Expression-start tokens
-            token if Self::is_expr_start(token) => self.parse_expr_statement(),
+            token_kind if Self::is_expr_start(token_kind) => self.parse_expr_statement(),
             found => Err(ParseError {
                 message: format!("got unexpected keyword {found:?}"),
+                span: self.peek().span,
             }),
         }
     }
 
     fn parse_for_statement(&mut self) -> Result<Statement, ParseError> {
-        self.expect(Token::KwFor)?;
-        self.expect(Token::LParen)?;
+        self.expect(TokenKind::KwFor)?;
+        self.expect(TokenKind::LParen)?;
 
         let mut init = None;
         let mut cond = None;
         let mut post = None;
 
-        if *self.peek() == Token::Semicolon {
-            self.expect(Token::Semicolon)?;
+        if *self.peek_kind() == TokenKind::Semicolon {
+            self.expect(TokenKind::Semicolon)?;
         } else {
             init = Some(Box::new(self.parse_for_statement_init()?));
         }
 
-        if *self.peek() != Token::Semicolon {
+        if *self.peek_kind() != TokenKind::Semicolon {
             cond = Some(self.parse_expr()?);
         }
-        self.expect(Token::Semicolon)?;
+        self.expect(TokenKind::Semicolon)?;
 
-        if *self.peek() != Token::RParen {
+        if *self.peek_kind() != TokenKind::RParen {
             post = Some(self.parse_expr()?)
         }
-        self.expect(Token::RParen)?;
+        self.expect(TokenKind::RParen)?;
 
         let body = Box::new(self.parse_statement()?);
 
@@ -377,96 +411,108 @@ impl Parser {
         })
     }
 
-    fn is_expr_start(token: &Token) -> bool {
+    fn is_expr_start(token_kind: &TokenKind) -> bool {
         matches!(
-            token,
-            Token::Ident(_)
-                | Token::IntLiteral(_)
-                | Token::LParen
-                | Token::Minus
-                | Token::Bang
-                | Token::Tilde
+            token_kind,
+            TokenKind::Ident(_)
+                | TokenKind::IntLiteral(_)
+                | TokenKind::LParen
+                | TokenKind::Minus
+                | TokenKind::Bang
+                | TokenKind::Tilde
         )
     }
 
     fn parse_statement(&mut self) -> Result<Statement, ParseError> {
-        match self.peek() {
+        match self.peek_kind() {
             // Control flow
-            Token::KwReturn => {
-                self.expect(Token::KwReturn)?;
+            TokenKind::KwReturn => {
+                self.expect(TokenKind::KwReturn)?;
                 let expr = self.parse_expr()?;
-                self.expect(Token::Semicolon)?;
+                self.expect(TokenKind::Semicolon)?;
                 Ok(Statement::Return(expr))
             }
-            Token::KwIf => self.parse_if_statement(),
-            Token::KwWhile => self.parse_while_statement(),
-            Token::KwBreak => {
-                self.expect(Token::KwBreak)?;
-                self.expect(Token::Semicolon)?;
-                Ok(Statement::Break)
+            TokenKind::KwIf => self.parse_if_statement(),
+            TokenKind::KwWhile => self.parse_while_statement(),
+            TokenKind::KwBreak => {
+                let token = self.expect(TokenKind::KwBreak)?;
+                self.expect(TokenKind::Semicolon)?;
+                Ok(Statement::Break { span: token.span })
             }
-            Token::KwContinue => {
-                self.expect(Token::KwContinue)?;
-                self.expect(Token::Semicolon)?;
-                Ok(Statement::Continue)
+            TokenKind::KwContinue => {
+                let token = self.expect(TokenKind::KwContinue)?;
+                self.expect(TokenKind::Semicolon)?;
+                Ok(Statement::Continue { span: token.span })
             }
-            Token::KwFor => self.parse_for_statement(),
+            TokenKind::KwFor => self.parse_for_statement(),
             // Variable declaration
-            Token::KwInt => self.parse_var_decl(),
+            TokenKind::KwInt => self.parse_var_decl(),
             // Block
-            Token::LBrace => {
-                self.expect(Token::LBrace)?;
+            TokenKind::LBrace => {
+                self.expect(TokenKind::LBrace)?;
                 let mut body = vec![];
                 self.parse_through_rbrace(&mut body)?;
                 Ok(Statement::Block(body))
             }
             // Empty
-            Token::Semicolon => {
-                self.expect(Token::Semicolon)?;
+            TokenKind::Semicolon => {
+                self.expect(TokenKind::Semicolon)?;
                 Ok(Statement::Empty)
             }
             // Expression-start tokens
-            token if Self::is_expr_start(token) => self.parse_expr_statement(),
+            token_kind if Self::is_expr_start(token_kind) => self.parse_expr_statement(),
             found => Err(ParseError {
                 message: format!("got unexpected keyword {found:?}"),
+                span: self.peek().span,
             }),
         }
     }
 
     fn parse_function(&mut self) -> Result<Function, ParseError> {
-        self.expect(Token::KwInt)?;
+        self.expect(TokenKind::KwInt)?;
 
-        let name = match self.advance() {
-            Token::Ident(name) => name,
+        let token = self.advance();
+
+        let name = match token.kind {
+            TokenKind::Ident(name) => name,
             found => {
                 return Err(ParseError {
                     message: format!("expected function name, found {found:?}"),
+                    span: token.span,
                 });
             }
         };
 
-        self.expect(Token::LParen)?;
+        self.expect(TokenKind::LParen)?;
 
         let params = self.parse_comma_separated_until_rparen(Self::parse_param)?;
-        self.expect(Token::RParen)?;
+        self.expect(TokenKind::RParen)?;
 
-        self.expect(Token::LBrace)?;
+        self.expect(TokenKind::LBrace)?;
 
         let mut body = vec![];
         self.parse_through_rbrace(&mut body)?;
 
-        Ok(Function { name, params, body })
+        Ok(Function {
+            name,
+            name_span: token.span,
+            params,
+            body,
+        })
     }
 
     fn parse_program(&mut self) -> Result<Program, ParseError> {
         let mut functions = vec![];
 
-        while *self.peek() != Token::Eof {
+        while *self.peek_kind() != TokenKind::Eof {
             functions.push(self.parse_function()?);
         }
-        self.expect(Token::Eof)?;
+        let token = self.expect(TokenKind::Eof)?;
 
-        Ok(Program { functions })
+        Ok(Program {
+            functions,
+            eof_span: token.span,
+        })
     }
 }
 
@@ -479,19 +525,120 @@ pub fn parse(tokens: Vec<Token>) -> Result<Program, ParseError> {
 mod tests {
     use super::*;
 
+    fn span() -> Span {
+        Span { start: 0, end: 0 }
+    }
+
+    fn token(kind: TokenKind) -> Token {
+        Token {
+            kind,
+            span: Span { start: 0, end: 0 },
+        }
+    }
+
+    fn token_with_span(kind: TokenKind, start: usize, end: usize) -> Token {
+        Token {
+            kind,
+            span: Span { start, end },
+        }
+    }
+
+    macro_rules! tokens {
+        ($($kind:expr),* $(,)?) => {
+            vec![$(token($kind)),*]
+        };
+    }
+
+    #[test]
+    fn parse_expect_errors_use_found_token_span() {
+        let tokens = vec![
+            token_with_span(TokenKind::IntLiteral(1), 0, 1),
+            token_with_span(TokenKind::Eof, 1, 1),
+        ];
+
+        let mut parser = Parser::new(tokens);
+        let err = parser
+            .parse_statement()
+            .expect_err("missing semicolon should fail");
+
+        assert_eq!(err.span, Span { start: 1, end: 1 });
+        assert!(err.message.contains("expected Semicolon"));
+    }
+
+    #[test]
+    fn parse_expression_errors_use_unexpected_token_span() {
+        let tokens = vec![
+            token_with_span(TokenKind::KwReturn, 0, 6),
+            token_with_span(TokenKind::RParen, 7, 8),
+            token_with_span(TokenKind::Semicolon, 8, 9),
+        ];
+
+        let mut parser = Parser::new(tokens);
+        let err = parser
+            .parse_statement()
+            .expect_err("return without expression should fail");
+
+        assert_eq!(err.span, Span { start: 7, end: 8 });
+        assert_eq!(err.message, "expected expression, found RParen");
+    }
+
+    #[test]
+    fn trailing_comma_errors_point_at_right_paren() {
+        let tokens = vec![
+            token_with_span(TokenKind::KwReturn, 0, 6),
+            token_with_span(TokenKind::Ident("add".to_string()), 7, 10),
+            token_with_span(TokenKind::LParen, 10, 11),
+            token_with_span(TokenKind::IntLiteral(1), 11, 12),
+            token_with_span(TokenKind::Comma, 12, 13),
+            token_with_span(TokenKind::RParen, 14, 15),
+            token_with_span(TokenKind::Semicolon, 15, 16),
+        ];
+
+        let mut parser = Parser::new(tokens);
+        let err = parser
+            .parse_statement()
+            .expect_err("trailing argument comma should fail");
+
+        assert_eq!(err.span, Span { start: 14, end: 15 });
+        assert_eq!(err.message, "trailing comma");
+    }
+
+    #[test]
+    fn assignment_target_errors_point_at_equal_token() {
+        let tokens = vec![
+            token_with_span(TokenKind::KwReturn, 0, 6),
+            token_with_span(TokenKind::LParen, 7, 8),
+            token_with_span(TokenKind::IntLiteral(1), 8, 9),
+            token_with_span(TokenKind::Plus, 10, 11),
+            token_with_span(TokenKind::IntLiteral(2), 12, 13),
+            token_with_span(TokenKind::RParen, 13, 14),
+            token_with_span(TokenKind::Equal, 15, 16),
+            token_with_span(TokenKind::IntLiteral(3), 17, 18),
+            token_with_span(TokenKind::Semicolon, 18, 19),
+        ];
+
+        let mut parser = Parser::new(tokens);
+        let err = parser
+            .parse_statement()
+            .expect_err("assignment to non-variable should fail");
+
+        assert_eq!(err.span, Span { start: 15, end: 16 });
+        assert_eq!(err.message, "cannot assign to non-variable expression");
+    }
+
     #[test]
     fn basic_parse() {
-        let tokens = vec![
-            Token::KwInt,
-            Token::Ident("main".to_string()),
-            Token::LParen,
-            Token::RParen,
-            Token::LBrace,
-            Token::KwReturn,
-            Token::IntLiteral(42),
-            Token::Semicolon,
-            Token::RBrace,
-            Token::Eof,
+        let tokens = tokens![
+            TokenKind::KwInt,
+            TokenKind::Ident("main".to_string()),
+            TokenKind::LParen,
+            TokenKind::RParen,
+            TokenKind::LBrace,
+            TokenKind::KwReturn,
+            TokenKind::IntLiteral(42),
+            TokenKind::Semicolon,
+            TokenKind::RBrace,
+            TokenKind::Eof,
         ];
 
         let program = parse(tokens).expect("parsing should succeed");
@@ -500,22 +647,24 @@ mod tests {
             program,
             Program {
                 functions: vec![Function {
+                    name_span: span(),
                     name: "main".to_string(),
                     params: vec![],
                     body: vec![Statement::Return(Expr::IntLiteral(42))],
                 }],
+                eof_span: span(),
             }
         );
     }
 
     #[test]
     fn parse_binary_op() {
-        let tokens = vec![
-            Token::KwReturn,
-            Token::IntLiteral(1),
-            Token::Plus,
-            Token::IntLiteral(2),
-            Token::Semicolon,
+        let tokens = tokens![
+            TokenKind::KwReturn,
+            TokenKind::IntLiteral(1),
+            TokenKind::Plus,
+            TokenKind::IntLiteral(2),
+            TokenKind::Semicolon,
         ];
 
         let mut parser = Parser::new(tokens);
@@ -534,19 +683,19 @@ mod tests {
 
     #[test]
     fn parses_function_returning_binary_op() {
-        let tokens = vec![
-            Token::KwInt,
-            Token::Ident("main".to_string()),
-            Token::LParen,
-            Token::RParen,
-            Token::LBrace,
-            Token::KwReturn,
-            Token::IntLiteral(1),
-            Token::Plus,
-            Token::IntLiteral(2),
-            Token::Semicolon,
-            Token::RBrace,
-            Token::Eof,
+        let tokens = tokens![
+            TokenKind::KwInt,
+            TokenKind::Ident("main".to_string()),
+            TokenKind::LParen,
+            TokenKind::RParen,
+            TokenKind::LBrace,
+            TokenKind::KwReturn,
+            TokenKind::IntLiteral(1),
+            TokenKind::Plus,
+            TokenKind::IntLiteral(2),
+            TokenKind::Semicolon,
+            TokenKind::RBrace,
+            TokenKind::Eof,
         ];
 
         let program = parse(tokens).expect("parsing should succeed");
@@ -555,6 +704,7 @@ mod tests {
             program,
             Program {
                 functions: vec![Function {
+                    name_span: span(),
                     name: "main".to_string(),
                     params: vec![],
                     body: vec![Statement::Return(Expr::Binary {
@@ -563,18 +713,19 @@ mod tests {
                         right: Box::new(Expr::IntLiteral(2)),
                     })],
                 }],
+                eof_span: span(),
             }
         )
     }
 
     #[test]
     fn parses_zero_argument_function_call() {
-        let tokens = vec![
-            Token::KwReturn,
-            Token::Ident("helper".to_string()),
-            Token::LParen,
-            Token::RParen,
-            Token::Semicolon,
+        let tokens = tokens![
+            TokenKind::KwReturn,
+            TokenKind::Ident("helper".to_string()),
+            TokenKind::LParen,
+            TokenKind::RParen,
+            TokenKind::Semicolon,
         ];
 
         let mut parser = Parser::new(tokens);
@@ -584,6 +735,7 @@ mod tests {
         assert_eq!(
             statement,
             Statement::Return(Expr::Call {
+                name_span: span(),
                 name: "helper".to_string(),
                 args: vec![],
             })
@@ -592,14 +744,14 @@ mod tests {
 
     #[test]
     fn parses_function_call_as_binary_operand() {
-        let tokens = vec![
-            Token::KwReturn,
-            Token::Ident("helper".to_string()),
-            Token::LParen,
-            Token::RParen,
-            Token::Plus,
-            Token::IntLiteral(2),
-            Token::Semicolon,
+        let tokens = tokens![
+            TokenKind::KwReturn,
+            TokenKind::Ident("helper".to_string()),
+            TokenKind::LParen,
+            TokenKind::RParen,
+            TokenKind::Plus,
+            TokenKind::IntLiteral(2),
+            TokenKind::Semicolon,
         ];
 
         let mut parser = Parser::new(tokens);
@@ -611,6 +763,7 @@ mod tests {
             Statement::Return(Expr::Binary {
                 op: BinaryOp::Add,
                 left: Box::new(Expr::Call {
+                    name_span: span(),
                     name: "helper".to_string(),
                     args: vec![],
                 }),
@@ -621,7 +774,7 @@ mod tests {
 
     #[test]
     fn parses_empty_statement() {
-        let tokens = vec![Token::Semicolon];
+        let tokens = tokens![TokenKind::Semicolon];
 
         let mut parser = Parser::new(tokens);
 
@@ -633,11 +786,11 @@ mod tests {
 
     #[test]
     fn parses_function_call_expression_statement() {
-        let tokens = vec![
-            Token::Ident("helper".to_string()),
-            Token::LParen,
-            Token::RParen,
-            Token::Semicolon,
+        let tokens = tokens![
+            TokenKind::Ident("helper".to_string()),
+            TokenKind::LParen,
+            TokenKind::RParen,
+            TokenKind::Semicolon,
         ];
 
         let mut parser = Parser::new(tokens);
@@ -647,6 +800,7 @@ mod tests {
         assert_eq!(
             statement,
             Statement::ExprStatement(Expr::Call {
+                name_span: span(),
                 name: "helper".to_string(),
                 args: vec![],
             })
@@ -659,11 +813,11 @@ mod tests {
 
     #[test]
     fn parses_literal_expression_statement() {
-        let tokens = vec![
-            Token::IntLiteral(1),
-            Token::Plus,
-            Token::IntLiteral(2),
-            Token::Semicolon,
+        let tokens = tokens![
+            TokenKind::IntLiteral(1),
+            TokenKind::Plus,
+            TokenKind::IntLiteral(2),
+            TokenKind::Semicolon,
         ];
 
         let mut parser = Parser::new(tokens);
@@ -686,7 +840,11 @@ mod tests {
 
     #[test]
     fn parses_unary_expression_statement() {
-        let tokens = vec![Token::Bang, Token::IntLiteral(0), Token::Semicolon];
+        let tokens = tokens![
+            TokenKind::Bang,
+            TokenKind::IntLiteral(0),
+            TokenKind::Semicolon
+        ];
 
         let mut parser = Parser::new(tokens);
 
@@ -707,7 +865,7 @@ mod tests {
 
     #[test]
     fn rejects_expression_statement_without_semicolon() {
-        let tokens = vec![Token::IntLiteral(1), Token::Eof];
+        let tokens = tokens![TokenKind::IntLiteral(1), TokenKind::Eof];
 
         let mut parser = Parser::new(tokens);
 
@@ -719,24 +877,24 @@ mod tests {
 
     #[test]
     fn parses_function_parameters() {
-        let tokens = vec![
-            Token::KwInt,
-            Token::Ident("add".to_string()),
-            Token::LParen,
-            Token::KwInt,
-            Token::Ident("x".to_string()),
-            Token::Comma,
-            Token::KwInt,
-            Token::Ident("y".to_string()),
-            Token::RParen,
-            Token::LBrace,
-            Token::KwReturn,
-            Token::Ident("x".to_string()),
-            Token::Plus,
-            Token::Ident("y".to_string()),
-            Token::Semicolon,
-            Token::RBrace,
-            Token::Eof,
+        let tokens = tokens![
+            TokenKind::KwInt,
+            TokenKind::Ident("add".to_string()),
+            TokenKind::LParen,
+            TokenKind::KwInt,
+            TokenKind::Ident("x".to_string()),
+            TokenKind::Comma,
+            TokenKind::KwInt,
+            TokenKind::Ident("y".to_string()),
+            TokenKind::RParen,
+            TokenKind::LBrace,
+            TokenKind::KwReturn,
+            TokenKind::Ident("x".to_string()),
+            TokenKind::Plus,
+            TokenKind::Ident("y".to_string()),
+            TokenKind::Semicolon,
+            TokenKind::RBrace,
+            TokenKind::Eof,
         ];
 
         let program = parse(tokens).expect("parsing should succeed");
@@ -745,31 +903,39 @@ mod tests {
             program,
             Program {
                 functions: vec![Function {
+                    name_span: span(),
                     name: "add".to_string(),
                     params: vec!["x".to_string(), "y".to_string()],
                     body: vec![Statement::Return(Expr::Binary {
                         op: BinaryOp::Add,
-                        left: Box::new(Expr::Variable("x".to_string())),
-                        right: Box::new(Expr::Variable("y".to_string())),
+                        left: Box::new(Expr::Variable {
+                            name: "x".to_string(),
+                            span: span()
+                        }),
+                        right: Box::new(Expr::Variable {
+                            name: "y".to_string(),
+                            span: span()
+                        }),
                     })],
                 }],
+                eof_span: span(),
             }
         );
     }
 
     #[test]
     fn parses_function_call_arguments() {
-        let tokens = vec![
-            Token::KwReturn,
-            Token::Ident("add".to_string()),
-            Token::LParen,
-            Token::IntLiteral(1),
-            Token::Comma,
-            Token::IntLiteral(2),
-            Token::Plus,
-            Token::IntLiteral(3),
-            Token::RParen,
-            Token::Semicolon,
+        let tokens = tokens![
+            TokenKind::KwReturn,
+            TokenKind::Ident("add".to_string()),
+            TokenKind::LParen,
+            TokenKind::IntLiteral(1),
+            TokenKind::Comma,
+            TokenKind::IntLiteral(2),
+            TokenKind::Plus,
+            TokenKind::IntLiteral(3),
+            TokenKind::RParen,
+            TokenKind::Semicolon,
         ];
 
         let mut parser = Parser::new(tokens);
@@ -779,6 +945,7 @@ mod tests {
         assert_eq!(
             statement,
             Statement::Return(Expr::Call {
+                name_span: span(),
                 name: "add".to_string(),
                 args: vec![
                     Expr::IntLiteral(1),
@@ -794,14 +961,14 @@ mod tests {
 
     #[test]
     fn rejects_trailing_comma_in_function_call() {
-        let tokens = vec![
-            Token::KwReturn,
-            Token::Ident("add".to_string()),
-            Token::LParen,
-            Token::IntLiteral(1),
-            Token::Comma,
-            Token::RParen,
-            Token::Semicolon,
+        let tokens = tokens![
+            TokenKind::KwReturn,
+            TokenKind::Ident("add".to_string()),
+            TokenKind::LParen,
+            TokenKind::IntLiteral(1),
+            TokenKind::Comma,
+            TokenKind::RParen,
+            TokenKind::Semicolon,
         ];
 
         let mut parser = Parser::new(tokens);
@@ -814,20 +981,20 @@ mod tests {
 
     #[test]
     fn rejects_trailing_comma_in_function_parameters() {
-        let tokens = vec![
-            Token::KwInt,
-            Token::Ident("add".to_string()),
-            Token::LParen,
-            Token::KwInt,
-            Token::Ident("x".to_string()),
-            Token::Comma,
-            Token::RParen,
-            Token::LBrace,
-            Token::KwReturn,
-            Token::Ident("x".to_string()),
-            Token::Semicolon,
-            Token::RBrace,
-            Token::Eof,
+        let tokens = tokens![
+            TokenKind::KwInt,
+            TokenKind::Ident("add".to_string()),
+            TokenKind::LParen,
+            TokenKind::KwInt,
+            TokenKind::Ident("x".to_string()),
+            TokenKind::Comma,
+            TokenKind::RParen,
+            TokenKind::LBrace,
+            TokenKind::KwReturn,
+            TokenKind::Ident("x".to_string()),
+            TokenKind::Semicolon,
+            TokenKind::RBrace,
+            TokenKind::Eof,
         ];
 
         assert!(
@@ -838,14 +1005,14 @@ mod tests {
 
     #[test]
     fn parses_chained_addition_left_associative() {
-        let tokens = vec![
-            Token::KwReturn,
-            Token::IntLiteral(1),
-            Token::Plus,
-            Token::IntLiteral(2),
-            Token::Plus,
-            Token::IntLiteral(3),
-            Token::Semicolon,
+        let tokens = tokens![
+            TokenKind::KwReturn,
+            TokenKind::IntLiteral(1),
+            TokenKind::Plus,
+            TokenKind::IntLiteral(2),
+            TokenKind::Plus,
+            TokenKind::IntLiteral(3),
+            TokenKind::Semicolon,
         ];
 
         let mut parser = Parser::new(tokens);
@@ -868,12 +1035,12 @@ mod tests {
 
     #[test]
     fn parses_subtraction() {
-        let tokens = vec![
-            Token::KwReturn,
-            Token::IntLiteral(5),
-            Token::Minus,
-            Token::IntLiteral(2),
-            Token::Semicolon,
+        let tokens = tokens![
+            TokenKind::KwReturn,
+            TokenKind::IntLiteral(5),
+            TokenKind::Minus,
+            TokenKind::IntLiteral(2),
+            TokenKind::Semicolon,
         ];
 
         let mut parser = Parser::new(tokens);
@@ -892,14 +1059,14 @@ mod tests {
 
     #[test]
     fn parses_chained_subtraction_left_associative() {
-        let tokens = vec![
-            Token::KwReturn,
-            Token::IntLiteral(5),
-            Token::Minus,
-            Token::IntLiteral(2),
-            Token::Minus,
-            Token::IntLiteral(1),
-            Token::Semicolon,
+        let tokens = tokens![
+            TokenKind::KwReturn,
+            TokenKind::IntLiteral(5),
+            TokenKind::Minus,
+            TokenKind::IntLiteral(2),
+            TokenKind::Minus,
+            TokenKind::IntLiteral(1),
+            TokenKind::Semicolon,
         ];
 
         let mut parser = Parser::new(tokens);
@@ -922,12 +1089,12 @@ mod tests {
 
     #[test]
     fn parses_multiplication() {
-        let tokens = vec![
-            Token::KwReturn,
-            Token::IntLiteral(2),
-            Token::Star,
-            Token::IntLiteral(3),
-            Token::Semicolon,
+        let tokens = tokens![
+            TokenKind::KwReturn,
+            TokenKind::IntLiteral(2),
+            TokenKind::Star,
+            TokenKind::IntLiteral(3),
+            TokenKind::Semicolon,
         ];
 
         let mut parser = Parser::new(tokens);
@@ -946,11 +1113,11 @@ mod tests {
 
     #[test]
     fn parses_unary_negation() {
-        let tokens = vec![
-            Token::KwReturn,
-            Token::Minus,
-            Token::IntLiteral(5),
-            Token::Semicolon,
+        let tokens = tokens![
+            TokenKind::KwReturn,
+            TokenKind::Minus,
+            TokenKind::IntLiteral(5),
+            TokenKind::Semicolon,
         ];
 
         let mut parser = Parser::new(tokens);
@@ -968,11 +1135,11 @@ mod tests {
 
     #[test]
     fn parses_logical_not() {
-        let tokens = vec![
-            Token::KwReturn,
-            Token::Bang,
-            Token::IntLiteral(0),
-            Token::Semicolon,
+        let tokens = tokens![
+            TokenKind::KwReturn,
+            TokenKind::Bang,
+            TokenKind::IntLiteral(0),
+            TokenKind::Semicolon,
         ];
 
         let mut parser = Parser::new(tokens);
@@ -990,11 +1157,11 @@ mod tests {
 
     #[test]
     fn parses_bitwise_not() {
-        let tokens = vec![
-            Token::KwReturn,
-            Token::Tilde,
-            Token::IntLiteral(1),
-            Token::Semicolon,
+        let tokens = tokens![
+            TokenKind::KwReturn,
+            TokenKind::Tilde,
+            TokenKind::IntLiteral(1),
+            TokenKind::Semicolon,
         ];
 
         let mut parser = Parser::new(tokens);
@@ -1012,13 +1179,13 @@ mod tests {
 
     #[test]
     fn parses_unary_before_multiplication() {
-        let tokens = vec![
-            Token::KwReturn,
-            Token::Minus,
-            Token::Ident("x".to_string()),
-            Token::Star,
-            Token::IntLiteral(2),
-            Token::Semicolon,
+        let tokens = tokens![
+            TokenKind::KwReturn,
+            TokenKind::Minus,
+            TokenKind::Ident("x".to_string()),
+            TokenKind::Star,
+            TokenKind::IntLiteral(2),
+            TokenKind::Semicolon,
         ];
 
         let mut parser = Parser::new(tokens);
@@ -1031,7 +1198,10 @@ mod tests {
                 op: BinaryOp::Multiply,
                 left: Box::new(Expr::Unary {
                     op: UnaryOp::Negate,
-                    expr: Box::new(Expr::Variable("x".to_string())),
+                    expr: Box::new(Expr::Variable {
+                        name: "x".to_string(),
+                        span: span()
+                    }),
                 }),
                 right: Box::new(Expr::IntLiteral(2)),
             })
@@ -1040,12 +1210,12 @@ mod tests {
 
     #[test]
     fn parses_variable_declaration() {
-        let tokens = vec![
-            Token::KwInt,
-            Token::Ident("x".to_string()),
-            Token::Equal,
-            Token::IntLiteral(5),
-            Token::Semicolon,
+        let tokens = tokens![
+            TokenKind::KwInt,
+            TokenKind::Ident("x".to_string()),
+            TokenKind::Equal,
+            TokenKind::IntLiteral(5),
+            TokenKind::Semicolon,
         ];
 
         let mut parser = Parser::new(tokens);
@@ -1055,6 +1225,7 @@ mod tests {
         assert_eq!(
             statement,
             Statement::VarDecl {
+                name_span: span(),
                 name: "x".to_string(),
                 init: Some(Expr::IntLiteral(5)),
             }
@@ -1063,10 +1234,10 @@ mod tests {
 
     #[test]
     fn parses_variable_declaration_without_initializer() {
-        let tokens = vec![
-            Token::KwInt,
-            Token::Ident("x".to_string()),
-            Token::Semicolon,
+        let tokens = tokens![
+            TokenKind::KwInt,
+            TokenKind::Ident("x".to_string()),
+            TokenKind::Semicolon,
         ];
 
         let mut parser = Parser::new(tokens);
@@ -1076,6 +1247,7 @@ mod tests {
         assert_eq!(
             statement,
             Statement::VarDecl {
+                name_span: span(),
                 name: "x".to_string(),
                 init: None,
             }
@@ -1088,28 +1260,28 @@ mod tests {
 
     #[test]
     fn parses_function_with_assignment() {
-        let tokens = vec![
-            Token::KwInt,
-            Token::Ident("main".to_string()),
-            Token::LParen,
-            Token::RParen,
-            Token::LBrace,
-            Token::KwInt,
-            Token::Ident("x".to_string()),
-            Token::Equal,
-            Token::IntLiteral(1),
-            Token::Semicolon,
-            Token::Ident("x".to_string()),
-            Token::Equal,
-            Token::Ident("x".to_string()),
-            Token::Plus,
-            Token::IntLiteral(2),
-            Token::Semicolon,
-            Token::KwReturn,
-            Token::Ident("x".to_string()),
-            Token::Semicolon,
-            Token::RBrace,
-            Token::Eof,
+        let tokens = tokens![
+            TokenKind::KwInt,
+            TokenKind::Ident("main".to_string()),
+            TokenKind::LParen,
+            TokenKind::RParen,
+            TokenKind::LBrace,
+            TokenKind::KwInt,
+            TokenKind::Ident("x".to_string()),
+            TokenKind::Equal,
+            TokenKind::IntLiteral(1),
+            TokenKind::Semicolon,
+            TokenKind::Ident("x".to_string()),
+            TokenKind::Equal,
+            TokenKind::Ident("x".to_string()),
+            TokenKind::Plus,
+            TokenKind::IntLiteral(2),
+            TokenKind::Semicolon,
+            TokenKind::KwReturn,
+            TokenKind::Ident("x".to_string()),
+            TokenKind::Semicolon,
+            TokenKind::RBrace,
+            TokenKind::Eof,
         ];
 
         let program = parse(tokens).expect("parsing should succeed");
@@ -1118,35 +1290,45 @@ mod tests {
             program,
             Program {
                 functions: vec![Function {
+                    name_span: span(),
                     name: "main".to_string(),
                     params: vec![],
                     body: vec![
                         Statement::VarDecl {
+                            name_span: span(),
                             name: "x".to_string(),
                             init: Some(Expr::IntLiteral(1)),
                         },
                         Statement::ExprStatement(Expr::Assign {
+                            name_span: span(),
                             name: "x".to_string(),
                             value: Box::new(Expr::Binary {
                                 op: BinaryOp::Add,
-                                left: Box::new(Expr::Variable("x".to_string())),
+                                left: Box::new(Expr::Variable {
+                                    name: "x".to_string(),
+                                    span: span()
+                                }),
                                 right: Box::new(Expr::IntLiteral(2)),
                             }),
                         }),
-                        Statement::Return(Expr::Variable("x".to_string())),
+                        Statement::Return(Expr::Variable {
+                            name: "x".to_string(),
+                            span: span()
+                        }),
                     ],
                 }],
+                eof_span: span(),
             }
         )
     }
 
     #[test]
     fn parses_assignment_as_expression_statement() {
-        let tokens = vec![
-            Token::Ident("x".to_string()),
-            Token::Equal,
-            Token::IntLiteral(3),
-            Token::Semicolon,
+        let tokens = tokens![
+            TokenKind::Ident("x".to_string()),
+            TokenKind::Equal,
+            TokenKind::IntLiteral(3),
+            TokenKind::Semicolon,
         ];
 
         let mut parser = Parser::new(tokens);
@@ -1156,6 +1338,7 @@ mod tests {
         assert_eq!(
             statement,
             Statement::ExprStatement(Expr::Assign {
+                name_span: span(),
                 name: "x".to_string(),
                 value: Box::new(Expr::IntLiteral(3)),
             })
@@ -1164,12 +1347,12 @@ mod tests {
 
     #[test]
     fn parses_assignment_as_return_expression() {
-        let tokens = vec![
-            Token::KwReturn,
-            Token::Ident("x".to_string()),
-            Token::Equal,
-            Token::IntLiteral(3),
-            Token::Semicolon,
+        let tokens = tokens![
+            TokenKind::KwReturn,
+            TokenKind::Ident("x".to_string()),
+            TokenKind::Equal,
+            TokenKind::IntLiteral(3),
+            TokenKind::Semicolon,
         ];
 
         let mut parser = Parser::new(tokens);
@@ -1179,6 +1362,7 @@ mod tests {
         assert_eq!(
             statement,
             Statement::Return(Expr::Assign {
+                name_span: span(),
                 name: "x".to_string(),
                 value: Box::new(Expr::IntLiteral(3)),
             })
@@ -1187,14 +1371,14 @@ mod tests {
 
     #[test]
     fn parses_assignment_right_associative() {
-        let tokens = vec![
-            Token::KwReturn,
-            Token::Ident("x".to_string()),
-            Token::Equal,
-            Token::Ident("y".to_string()),
-            Token::Equal,
-            Token::IntLiteral(4),
-            Token::Semicolon,
+        let tokens = tokens![
+            TokenKind::KwReturn,
+            TokenKind::Ident("x".to_string()),
+            TokenKind::Equal,
+            TokenKind::Ident("y".to_string()),
+            TokenKind::Equal,
+            TokenKind::IntLiteral(4),
+            TokenKind::Semicolon,
         ];
 
         let mut parser = Parser::new(tokens);
@@ -1204,8 +1388,10 @@ mod tests {
         assert_eq!(
             statement,
             Statement::Return(Expr::Assign {
+                name_span: span(),
                 name: "x".to_string(),
                 value: Box::new(Expr::Assign {
+                    name_span: span(),
                     name: "y".to_string(),
                     value: Box::new(Expr::IntLiteral(4)),
                 }),
@@ -1215,16 +1401,16 @@ mod tests {
 
     #[test]
     fn rejects_assignment_to_non_variable_expression() {
-        let tokens = vec![
-            Token::KwReturn,
-            Token::LParen,
-            Token::IntLiteral(1),
-            Token::Plus,
-            Token::IntLiteral(2),
-            Token::RParen,
-            Token::Equal,
-            Token::IntLiteral(3),
-            Token::Semicolon,
+        let tokens = tokens![
+            TokenKind::KwReturn,
+            TokenKind::LParen,
+            TokenKind::IntLiteral(1),
+            TokenKind::Plus,
+            TokenKind::IntLiteral(2),
+            TokenKind::RParen,
+            TokenKind::Equal,
+            TokenKind::IntLiteral(3),
+            TokenKind::Semicolon,
         ];
 
         let mut parser = Parser::new(tokens);
@@ -1238,19 +1424,19 @@ mod tests {
 
     #[test]
     fn parses_block_statement() {
-        let tokens = vec![
-            Token::KwInt,
-            Token::Ident("main".to_string()),
-            Token::LParen,
-            Token::RParen,
-            Token::LBrace,
-            Token::LBrace,
-            Token::KwReturn,
-            Token::IntLiteral(1),
-            Token::Semicolon,
-            Token::RBrace,
-            Token::RBrace,
-            Token::Eof,
+        let tokens = tokens![
+            TokenKind::KwInt,
+            TokenKind::Ident("main".to_string()),
+            TokenKind::LParen,
+            TokenKind::RParen,
+            TokenKind::LBrace,
+            TokenKind::LBrace,
+            TokenKind::KwReturn,
+            TokenKind::IntLiteral(1),
+            TokenKind::Semicolon,
+            TokenKind::RBrace,
+            TokenKind::RBrace,
+            TokenKind::Eof,
         ];
 
         let program = parse(tokens).expect("parsing should succeed");
@@ -1259,33 +1445,35 @@ mod tests {
             program,
             Program {
                 functions: vec![Function {
+                    name_span: span(),
                     name: "main".to_string(),
                     params: vec![],
                     body: vec![Statement::Block(vec![Statement::Return(Expr::IntLiteral(
                         1
                     ))])],
                 }],
+                eof_span: span(),
             }
         )
     }
 
     #[test]
     fn parses_nested_block_statements() {
-        let tokens = vec![
-            Token::KwInt,
-            Token::Ident("main".to_string()),
-            Token::LParen,
-            Token::RParen,
-            Token::LBrace,
-            Token::LBrace,
-            Token::LBrace,
-            Token::KwReturn,
-            Token::IntLiteral(1),
-            Token::Semicolon,
-            Token::RBrace,
-            Token::RBrace,
-            Token::RBrace,
-            Token::Eof,
+        let tokens = tokens![
+            TokenKind::KwInt,
+            TokenKind::Ident("main".to_string()),
+            TokenKind::LParen,
+            TokenKind::RParen,
+            TokenKind::LBrace,
+            TokenKind::LBrace,
+            TokenKind::LBrace,
+            TokenKind::KwReturn,
+            TokenKind::IntLiteral(1),
+            TokenKind::Semicolon,
+            TokenKind::RBrace,
+            TokenKind::RBrace,
+            TokenKind::RBrace,
+            TokenKind::Eof,
         ];
 
         let program = parse(tokens).expect("parsing should succeed");
@@ -1294,24 +1482,26 @@ mod tests {
             program,
             Program {
                 functions: vec![Function {
+                    name_span: span(),
                     name: "main".to_string(),
                     params: vec![],
                     body: vec![Statement::Block(vec![Statement::Block(vec![
                         Statement::Return(Expr::IntLiteral(1))
                     ])])],
                 }],
+                eof_span: span(),
             }
         )
     }
 
     #[test]
     fn rejects_if_without_parentheses() {
-        let tokens = vec![
-            Token::KwIf,
-            Token::Ident("x".to_string()),
-            Token::KwReturn,
-            Token::IntLiteral(1),
-            Token::Semicolon,
+        let tokens = tokens![
+            TokenKind::KwIf,
+            TokenKind::Ident("x".to_string()),
+            TokenKind::KwReturn,
+            TokenKind::IntLiteral(1),
+            TokenKind::Semicolon,
         ];
 
         let mut parser = Parser::new(tokens);
@@ -1324,17 +1514,17 @@ mod tests {
 
     #[test]
     fn parses_while_statement() {
-        let tokens = vec![
-            Token::KwWhile,
-            Token::LParen,
-            Token::Ident("x".to_string()),
-            Token::RParen,
-            Token::Ident("x".to_string()),
-            Token::Equal,
-            Token::Ident("x".to_string()),
-            Token::Minus,
-            Token::IntLiteral(1),
-            Token::Semicolon,
+        let tokens = tokens![
+            TokenKind::KwWhile,
+            TokenKind::LParen,
+            TokenKind::Ident("x".to_string()),
+            TokenKind::RParen,
+            TokenKind::Ident("x".to_string()),
+            TokenKind::Equal,
+            TokenKind::Ident("x".to_string()),
+            TokenKind::Minus,
+            TokenKind::IntLiteral(1),
+            TokenKind::Semicolon,
         ];
 
         let mut parser = Parser::new(tokens);
@@ -1344,12 +1534,19 @@ mod tests {
         assert_eq!(
             statement,
             Statement::While {
-                cond: Expr::Variable("x".to_string()),
+                cond: Expr::Variable {
+                    name: "x".to_string(),
+                    span: span()
+                },
                 body: Box::new(Statement::ExprStatement(Expr::Assign {
+                    name_span: span(),
                     name: "x".to_string(),
                     value: Box::new(Expr::Binary {
                         op: BinaryOp::Subtract,
-                        left: Box::new(Expr::Variable("x".to_string())),
+                        left: Box::new(Expr::Variable {
+                            name: "x".to_string(),
+                            span: span()
+                        }),
                         right: Box::new(Expr::IntLiteral(1)),
                     }),
                 })),
@@ -1359,31 +1556,31 @@ mod tests {
 
     #[test]
     fn parses_break_statement() {
-        let tokens = vec![Token::KwBreak, Token::Semicolon];
+        let tokens = tokens![TokenKind::KwBreak, TokenKind::Semicolon];
 
         let mut parser = Parser::new(tokens);
 
         let statement = parser.parse_statement().expect("parsing should succeed");
 
-        assert_eq!(statement, Statement::Break);
+        assert_eq!(statement, Statement::Break { span: span() });
         assert_eq!(parser.pos, 2, "break statement should consume semicolon");
     }
 
     #[test]
     fn parses_continue_statement() {
-        let tokens = vec![Token::KwContinue, Token::Semicolon];
+        let tokens = tokens![TokenKind::KwContinue, TokenKind::Semicolon];
 
         let mut parser = Parser::new(tokens);
 
         let statement = parser.parse_statement().expect("parsing should succeed");
 
-        assert_eq!(statement, Statement::Continue);
+        assert_eq!(statement, Statement::Continue { span: span() });
         assert_eq!(parser.pos, 2, "continue statement should consume semicolon");
     }
 
     #[test]
     fn rejects_break_without_semicolon() {
-        let tokens = vec![Token::KwBreak, Token::Eof];
+        let tokens = tokens![TokenKind::KwBreak, TokenKind::Eof];
 
         let mut parser = Parser::new(tokens);
 
@@ -1395,7 +1592,7 @@ mod tests {
 
     #[test]
     fn rejects_continue_without_semicolon() {
-        let tokens = vec![Token::KwContinue, Token::Eof];
+        let tokens = tokens![TokenKind::KwContinue, TokenKind::Eof];
 
         let mut parser = Parser::new(tokens);
 
@@ -1407,13 +1604,13 @@ mod tests {
 
     #[test]
     fn rejects_while_without_parentheses() {
-        let tokens = vec![
-            Token::KwWhile,
-            Token::Ident("x".to_string()),
-            Token::Ident("x".to_string()),
-            Token::Equal,
-            Token::IntLiteral(0),
-            Token::Semicolon,
+        let tokens = tokens![
+            TokenKind::KwWhile,
+            TokenKind::Ident("x".to_string()),
+            TokenKind::Ident("x".to_string()),
+            TokenKind::Equal,
+            TokenKind::IntLiteral(0),
+            TokenKind::Semicolon,
         ];
 
         let mut parser = Parser::new(tokens);
@@ -1426,23 +1623,23 @@ mod tests {
 
     #[test]
     fn parses_parenthesized_expression_precedence() {
-        let tokens = vec![
-            Token::KwInt,
-            Token::Ident("main".to_string()),
-            Token::LParen,
-            Token::RParen,
-            Token::LBrace,
-            Token::KwReturn,
-            Token::LParen,
-            Token::IntLiteral(1),
-            Token::Plus,
-            Token::IntLiteral(2),
-            Token::RParen,
-            Token::Star,
-            Token::IntLiteral(3),
-            Token::Semicolon,
-            Token::RBrace,
-            Token::Eof,
+        let tokens = tokens![
+            TokenKind::KwInt,
+            TokenKind::Ident("main".to_string()),
+            TokenKind::LParen,
+            TokenKind::RParen,
+            TokenKind::LBrace,
+            TokenKind::KwReturn,
+            TokenKind::LParen,
+            TokenKind::IntLiteral(1),
+            TokenKind::Plus,
+            TokenKind::IntLiteral(2),
+            TokenKind::RParen,
+            TokenKind::Star,
+            TokenKind::IntLiteral(3),
+            TokenKind::Semicolon,
+            TokenKind::RBrace,
+            TokenKind::Eof,
         ];
 
         let program = parse(tokens).expect("parsing should succeed");
@@ -1451,6 +1648,7 @@ mod tests {
             program,
             Program {
                 functions: vec![Function {
+                    name_span: span(),
                     name: "main".to_string(),
                     params: vec![],
                     body: vec![Statement::Return(Expr::Binary {
@@ -1463,27 +1661,28 @@ mod tests {
                         right: Box::new(Expr::IntLiteral(3)),
                     })],
                 }],
+                eof_span: span(),
             }
         )
     }
 
     #[test]
     fn parses_less_than_with_additive_operands() {
-        let tokens = vec![
-            Token::KwInt,
-            Token::Ident("main".to_string()),
-            Token::LParen,
-            Token::RParen,
-            Token::LBrace,
-            Token::KwReturn,
-            Token::IntLiteral(1),
-            Token::Plus,
-            Token::IntLiteral(2),
-            Token::Less,
-            Token::IntLiteral(4),
-            Token::Semicolon,
-            Token::RBrace,
-            Token::Eof,
+        let tokens = tokens![
+            TokenKind::KwInt,
+            TokenKind::Ident("main".to_string()),
+            TokenKind::LParen,
+            TokenKind::RParen,
+            TokenKind::LBrace,
+            TokenKind::KwReturn,
+            TokenKind::IntLiteral(1),
+            TokenKind::Plus,
+            TokenKind::IntLiteral(2),
+            TokenKind::Less,
+            TokenKind::IntLiteral(4),
+            TokenKind::Semicolon,
+            TokenKind::RBrace,
+            TokenKind::Eof,
         ];
 
         let program = parse(tokens).expect("parsing should succeed");
@@ -1492,6 +1691,7 @@ mod tests {
             program,
             Program {
                 functions: vec![Function {
+                    name_span: span(),
                     name: "main".to_string(),
                     params: vec![],
                     body: vec![Statement::Return(Expr::Binary {
@@ -1504,20 +1704,21 @@ mod tests {
                         right: Box::new(Expr::IntLiteral(4)),
                     })],
                 }],
+                eof_span: span(),
             }
         )
     }
 
     #[test]
     fn parses_shift_after_additive() {
-        let tokens = vec![
-            Token::KwReturn,
-            Token::IntLiteral(1),
-            Token::Plus,
-            Token::IntLiteral(2),
-            Token::LessLess,
-            Token::IntLiteral(3),
-            Token::Semicolon,
+        let tokens = tokens![
+            TokenKind::KwReturn,
+            TokenKind::IntLiteral(1),
+            TokenKind::Plus,
+            TokenKind::IntLiteral(2),
+            TokenKind::LessLess,
+            TokenKind::IntLiteral(3),
+            TokenKind::Semicolon,
         ];
 
         let mut parser = Parser::new(tokens);
@@ -1540,14 +1741,14 @@ mod tests {
 
     #[test]
     fn parses_relational_after_shift() {
-        let tokens = vec![
-            Token::KwReturn,
-            Token::IntLiteral(1),
-            Token::LessLess,
-            Token::IntLiteral(2),
-            Token::Less,
-            Token::IntLiteral(8),
-            Token::Semicolon,
+        let tokens = tokens![
+            TokenKind::KwReturn,
+            TokenKind::IntLiteral(1),
+            TokenKind::LessLess,
+            TokenKind::IntLiteral(2),
+            TokenKind::Less,
+            TokenKind::IntLiteral(8),
+            TokenKind::Semicolon,
         ];
 
         let mut parser = Parser::new(tokens);
@@ -1570,14 +1771,14 @@ mod tests {
 
     #[test]
     fn parses_equality_before_bitwise_and() {
-        let tokens = vec![
-            Token::KwReturn,
-            Token::Ident("a".to_string()),
-            Token::Ampersand,
-            Token::Ident("b".to_string()),
-            Token::EqualEqual,
-            Token::Ident("c".to_string()),
-            Token::Semicolon,
+        let tokens = tokens![
+            TokenKind::KwReturn,
+            TokenKind::Ident("a".to_string()),
+            TokenKind::Ampersand,
+            TokenKind::Ident("b".to_string()),
+            TokenKind::EqualEqual,
+            TokenKind::Ident("c".to_string()),
+            TokenKind::Semicolon,
         ];
 
         let mut parser = Parser::new(tokens);
@@ -1588,11 +1789,20 @@ mod tests {
             statement,
             Statement::Return(Expr::Binary {
                 op: BinaryOp::BitAnd,
-                left: Box::new(Expr::Variable("a".to_string())),
+                left: Box::new(Expr::Variable {
+                    name: "a".to_string(),
+                    span: span()
+                }),
                 right: Box::new(Expr::Binary {
                     op: BinaryOp::Equal,
-                    left: Box::new(Expr::Variable("b".to_string())),
-                    right: Box::new(Expr::Variable("c".to_string())),
+                    left: Box::new(Expr::Variable {
+                        name: "b".to_string(),
+                        span: span()
+                    }),
+                    right: Box::new(Expr::Variable {
+                        name: "c".to_string(),
+                        span: span()
+                    }),
                 }),
             })
         )
@@ -1600,14 +1810,14 @@ mod tests {
 
     #[test]
     fn parses_bitwise_and_before_xor() {
-        let tokens = vec![
-            Token::KwReturn,
-            Token::Ident("a".to_string()),
-            Token::Caret,
-            Token::Ident("b".to_string()),
-            Token::Ampersand,
-            Token::Ident("c".to_string()),
-            Token::Semicolon,
+        let tokens = tokens![
+            TokenKind::KwReturn,
+            TokenKind::Ident("a".to_string()),
+            TokenKind::Caret,
+            TokenKind::Ident("b".to_string()),
+            TokenKind::Ampersand,
+            TokenKind::Ident("c".to_string()),
+            TokenKind::Semicolon,
         ];
 
         let mut parser = Parser::new(tokens);
@@ -1618,11 +1828,20 @@ mod tests {
             statement,
             Statement::Return(Expr::Binary {
                 op: BinaryOp::BitXor,
-                left: Box::new(Expr::Variable("a".to_string())),
+                left: Box::new(Expr::Variable {
+                    name: "a".to_string(),
+                    span: span()
+                }),
                 right: Box::new(Expr::Binary {
                     op: BinaryOp::BitAnd,
-                    left: Box::new(Expr::Variable("b".to_string())),
-                    right: Box::new(Expr::Variable("c".to_string())),
+                    left: Box::new(Expr::Variable {
+                        name: "b".to_string(),
+                        span: span()
+                    }),
+                    right: Box::new(Expr::Variable {
+                        name: "c".to_string(),
+                        span: span()
+                    }),
                 }),
             })
         )
@@ -1630,14 +1849,14 @@ mod tests {
 
     #[test]
     fn parses_bitwise_xor_before_or() {
-        let tokens = vec![
-            Token::KwReturn,
-            Token::Ident("a".to_string()),
-            Token::Pipe,
-            Token::Ident("b".to_string()),
-            Token::Caret,
-            Token::Ident("c".to_string()),
-            Token::Semicolon,
+        let tokens = tokens![
+            TokenKind::KwReturn,
+            TokenKind::Ident("a".to_string()),
+            TokenKind::Pipe,
+            TokenKind::Ident("b".to_string()),
+            TokenKind::Caret,
+            TokenKind::Ident("c".to_string()),
+            TokenKind::Semicolon,
         ];
 
         let mut parser = Parser::new(tokens);
@@ -1648,11 +1867,20 @@ mod tests {
             statement,
             Statement::Return(Expr::Binary {
                 op: BinaryOp::BitOr,
-                left: Box::new(Expr::Variable("a".to_string())),
+                left: Box::new(Expr::Variable {
+                    name: "a".to_string(),
+                    span: span()
+                }),
                 right: Box::new(Expr::Binary {
                     op: BinaryOp::BitXor,
-                    left: Box::new(Expr::Variable("b".to_string())),
-                    right: Box::new(Expr::Variable("c".to_string())),
+                    left: Box::new(Expr::Variable {
+                        name: "b".to_string(),
+                        span: span()
+                    }),
+                    right: Box::new(Expr::Variable {
+                        name: "c".to_string(),
+                        span: span()
+                    }),
                 }),
             })
         )
@@ -1660,23 +1888,23 @@ mod tests {
 
     #[test]
     fn parses_equality_with_parenthesized_expression() {
-        let tokens = vec![
-            Token::KwInt,
-            Token::Ident("main".to_string()),
-            Token::LParen,
-            Token::RParen,
-            Token::LBrace,
-            Token::KwReturn,
-            Token::LParen,
-            Token::IntLiteral(1),
-            Token::Plus,
-            Token::IntLiteral(2),
-            Token::RParen,
-            Token::EqualEqual,
-            Token::IntLiteral(3),
-            Token::Semicolon,
-            Token::RBrace,
-            Token::Eof,
+        let tokens = tokens![
+            TokenKind::KwInt,
+            TokenKind::Ident("main".to_string()),
+            TokenKind::LParen,
+            TokenKind::RParen,
+            TokenKind::LBrace,
+            TokenKind::KwReturn,
+            TokenKind::LParen,
+            TokenKind::IntLiteral(1),
+            TokenKind::Plus,
+            TokenKind::IntLiteral(2),
+            TokenKind::RParen,
+            TokenKind::EqualEqual,
+            TokenKind::IntLiteral(3),
+            TokenKind::Semicolon,
+            TokenKind::RBrace,
+            TokenKind::Eof,
         ];
 
         let program = parse(tokens).expect("parsing should succeed");
@@ -1685,6 +1913,7 @@ mod tests {
             program,
             Program {
                 functions: vec![Function {
+                    name_span: span(),
                     name: "main".to_string(),
                     params: vec![],
                     body: vec![Statement::Return(Expr::Binary {
@@ -1697,25 +1926,26 @@ mod tests {
                         right: Box::new(Expr::IntLiteral(3)),
                     })],
                 }],
+                eof_span: span(),
             }
         )
     }
 
     #[test]
     fn parses_greater_equal() {
-        let tokens = vec![
-            Token::KwInt,
-            Token::Ident("main".to_string()),
-            Token::LParen,
-            Token::RParen,
-            Token::LBrace,
-            Token::KwReturn,
-            Token::Ident("x".to_string()),
-            Token::GreaterEqual,
-            Token::IntLiteral(10),
-            Token::Semicolon,
-            Token::RBrace,
-            Token::Eof,
+        let tokens = tokens![
+            TokenKind::KwInt,
+            TokenKind::Ident("main".to_string()),
+            TokenKind::LParen,
+            TokenKind::RParen,
+            TokenKind::LBrace,
+            TokenKind::KwReturn,
+            TokenKind::Ident("x".to_string()),
+            TokenKind::GreaterEqual,
+            TokenKind::IntLiteral(10),
+            TokenKind::Semicolon,
+            TokenKind::RBrace,
+            TokenKind::Eof,
         ];
 
         let program = parse(tokens).expect("parsing should succeed");
@@ -1724,35 +1954,40 @@ mod tests {
             program,
             Program {
                 functions: vec![Function {
+                    name_span: span(),
                     name: "main".to_string(),
                     params: vec![],
                     body: vec![Statement::Return(Expr::Binary {
                         op: BinaryOp::GreaterEqual,
-                        left: Box::new(Expr::Variable("x".to_string())),
+                        left: Box::new(Expr::Variable {
+                            name: "x".to_string(),
+                            span: span()
+                        }),
                         right: Box::new(Expr::IntLiteral(10)),
                     })],
                 }],
+                eof_span: span(),
             }
         )
     }
 
     #[test]
     fn parses_chained_comparisons_left_associative() {
-        let tokens = vec![
-            Token::KwInt,
-            Token::Ident("main".to_string()),
-            Token::LParen,
-            Token::RParen,
-            Token::LBrace,
-            Token::KwReturn,
-            Token::IntLiteral(1),
-            Token::Less,
-            Token::IntLiteral(2),
-            Token::Less,
-            Token::IntLiteral(3),
-            Token::Semicolon,
-            Token::RBrace,
-            Token::Eof,
+        let tokens = tokens![
+            TokenKind::KwInt,
+            TokenKind::Ident("main".to_string()),
+            TokenKind::LParen,
+            TokenKind::RParen,
+            TokenKind::LBrace,
+            TokenKind::KwReturn,
+            TokenKind::IntLiteral(1),
+            TokenKind::Less,
+            TokenKind::IntLiteral(2),
+            TokenKind::Less,
+            TokenKind::IntLiteral(3),
+            TokenKind::Semicolon,
+            TokenKind::RBrace,
+            TokenKind::Eof,
         ];
 
         let program = parse(tokens).expect("parsing should succeed");
@@ -1761,6 +1996,7 @@ mod tests {
             program,
             Program {
                 functions: vec![Function {
+                    name_span: span(),
                     name: "main".to_string(),
                     params: vec![],
                     body: vec![Statement::Return(Expr::Binary {
@@ -1773,28 +2009,29 @@ mod tests {
                         right: Box::new(Expr::IntLiteral(3)),
                     })],
                 }],
+                eof_span: span(),
             }
         );
     }
 
     #[test]
     fn parses_function_with_multiple_statements() {
-        let tokens = vec![
-            Token::KwInt,
-            Token::Ident("main".to_string()),
-            Token::LParen,
-            Token::RParen,
-            Token::LBrace,
-            Token::KwInt,
-            Token::Ident("x".to_string()),
-            Token::Equal,
-            Token::IntLiteral(5),
-            Token::Semicolon,
-            Token::KwReturn,
-            Token::IntLiteral(42),
-            Token::Semicolon,
-            Token::RBrace,
-            Token::Eof,
+        let tokens = tokens![
+            TokenKind::KwInt,
+            TokenKind::Ident("main".to_string()),
+            TokenKind::LParen,
+            TokenKind::RParen,
+            TokenKind::LBrace,
+            TokenKind::KwInt,
+            TokenKind::Ident("x".to_string()),
+            TokenKind::Equal,
+            TokenKind::IntLiteral(5),
+            TokenKind::Semicolon,
+            TokenKind::KwReturn,
+            TokenKind::IntLiteral(42),
+            TokenKind::Semicolon,
+            TokenKind::RBrace,
+            TokenKind::Eof,
         ];
 
         let program = parse(tokens).expect("parsing should succeed");
@@ -1803,38 +2040,41 @@ mod tests {
             program,
             Program {
                 functions: vec![Function {
+                    name_span: span(),
                     name: "main".to_string(),
                     params: vec![],
                     body: vec![
                         Statement::VarDecl {
+                            name_span: span(),
                             name: "x".to_string(),
                             init: Some(Expr::IntLiteral(5)),
                         },
                         Statement::Return(Expr::IntLiteral(42)),
                     ],
                 }],
+                eof_span: span(),
             }
         )
     }
 
     #[test]
     fn parses_function_returning_variable() {
-        let tokens = vec![
-            Token::KwInt,
-            Token::Ident("main".to_string()),
-            Token::LParen,
-            Token::RParen,
-            Token::LBrace,
-            Token::KwInt,
-            Token::Ident("x".to_string()),
-            Token::Equal,
-            Token::IntLiteral(5),
-            Token::Semicolon,
-            Token::KwReturn,
-            Token::Ident("x".to_string()),
-            Token::Semicolon,
-            Token::RBrace,
-            Token::Eof,
+        let tokens = tokens![
+            TokenKind::KwInt,
+            TokenKind::Ident("main".to_string()),
+            TokenKind::LParen,
+            TokenKind::RParen,
+            TokenKind::LBrace,
+            TokenKind::KwInt,
+            TokenKind::Ident("x".to_string()),
+            TokenKind::Equal,
+            TokenKind::IntLiteral(5),
+            TokenKind::Semicolon,
+            TokenKind::KwReturn,
+            TokenKind::Ident("x".to_string()),
+            TokenKind::Semicolon,
+            TokenKind::RBrace,
+            TokenKind::Eof,
         ];
 
         let program = parse(tokens).expect("parsing should succeed");
@@ -1843,30 +2083,36 @@ mod tests {
             program,
             Program {
                 functions: vec![Function {
+                    name_span: span(),
                     name: "main".to_string(),
                     params: vec![],
                     body: vec![
                         Statement::VarDecl {
+                            name_span: span(),
                             name: "x".to_string(),
                             init: Some(Expr::IntLiteral(5)),
                         },
-                        Statement::Return(Expr::Variable("x".to_string())),
+                        Statement::Return(Expr::Variable {
+                            name: "x".to_string(),
+                            span: span()
+                        }),
                     ],
                 }],
+                eof_span: span(),
             }
         )
     }
 
     #[test]
     fn multiplication_has_higher_precedence_than_addition() {
-        let tokens = vec![
-            Token::KwReturn,
-            Token::IntLiteral(1),
-            Token::Plus,
-            Token::IntLiteral(2),
-            Token::Star,
-            Token::IntLiteral(3),
-            Token::Semicolon,
+        let tokens = tokens![
+            TokenKind::KwReturn,
+            TokenKind::IntLiteral(1),
+            TokenKind::Plus,
+            TokenKind::IntLiteral(2),
+            TokenKind::Star,
+            TokenKind::IntLiteral(3),
+            TokenKind::Semicolon,
         ];
 
         let mut parser = Parser::new(tokens);
@@ -1889,13 +2135,13 @@ mod tests {
 
     #[test]
     fn parses_for_loop_with_all_clauses_empty() {
-        let tokens = vec![
-            Token::KwFor,
-            Token::LParen,
-            Token::Semicolon,
-            Token::Semicolon,
-            Token::RParen,
-            Token::Semicolon,
+        let tokens = tokens![
+            TokenKind::KwFor,
+            TokenKind::LParen,
+            TokenKind::Semicolon,
+            TokenKind::Semicolon,
+            TokenKind::RParen,
+            TokenKind::Semicolon,
         ];
 
         let mut parser = Parser::new(tokens);
@@ -1915,14 +2161,14 @@ mod tests {
 
     #[test]
     fn parses_logical_and_before_logical_or() {
-        let tokens = vec![
-            Token::KwReturn,
-            Token::IntLiteral(1),
-            Token::PipePipe,
-            Token::IntLiteral(0),
-            Token::AmpersandAmpersand,
-            Token::IntLiteral(2),
-            Token::Semicolon,
+        let tokens = tokens![
+            TokenKind::KwReturn,
+            TokenKind::IntLiteral(1),
+            TokenKind::PipePipe,
+            TokenKind::IntLiteral(0),
+            TokenKind::AmpersandAmpersand,
+            TokenKind::IntLiteral(2),
+            TokenKind::Semicolon,
         ];
 
         let mut parser = Parser::new(tokens);
@@ -1945,14 +2191,14 @@ mod tests {
 
     #[test]
     fn parses_bitwise_or_before_logical_and() {
-        let tokens = vec![
-            Token::KwReturn,
-            Token::IntLiteral(1),
-            Token::Pipe,
-            Token::IntLiteral(2),
-            Token::AmpersandAmpersand,
-            Token::IntLiteral(3),
-            Token::Semicolon,
+        let tokens = tokens![
+            TokenKind::KwReturn,
+            TokenKind::IntLiteral(1),
+            TokenKind::Pipe,
+            TokenKind::IntLiteral(2),
+            TokenKind::AmpersandAmpersand,
+            TokenKind::IntLiteral(3),
+            TokenKind::Semicolon,
         ];
 
         let mut parser = Parser::new(tokens);
@@ -1975,14 +2221,14 @@ mod tests {
 
     #[test]
     fn parses_chained_logical_and_left_associative() {
-        let tokens = vec![
-            Token::KwReturn,
-            Token::IntLiteral(1),
-            Token::AmpersandAmpersand,
-            Token::IntLiteral(2),
-            Token::AmpersandAmpersand,
-            Token::IntLiteral(3),
-            Token::Semicolon,
+        let tokens = tokens![
+            TokenKind::KwReturn,
+            TokenKind::IntLiteral(1),
+            TokenKind::AmpersandAmpersand,
+            TokenKind::IntLiteral(2),
+            TokenKind::AmpersandAmpersand,
+            TokenKind::IntLiteral(3),
+            TokenKind::Semicolon,
         ];
 
         let mut parser = Parser::new(tokens);
@@ -2005,24 +2251,24 @@ mod tests {
 
     #[test]
     fn parses_for_loop_with_assignment_init_condition_and_assignment_post() {
-        let tokens = vec![
-            Token::KwFor,
-            Token::LParen,
-            Token::Ident("i".to_string()),
-            Token::Equal,
-            Token::IntLiteral(0),
-            Token::Semicolon,
-            Token::Ident("i".to_string()),
-            Token::Less,
-            Token::IntLiteral(10),
-            Token::Semicolon,
-            Token::Ident("i".to_string()),
-            Token::Equal,
-            Token::Ident("i".to_string()),
-            Token::Plus,
-            Token::IntLiteral(1),
-            Token::RParen,
-            Token::Semicolon,
+        let tokens = tokens![
+            TokenKind::KwFor,
+            TokenKind::LParen,
+            TokenKind::Ident("i".to_string()),
+            TokenKind::Equal,
+            TokenKind::IntLiteral(0),
+            TokenKind::Semicolon,
+            TokenKind::Ident("i".to_string()),
+            TokenKind::Less,
+            TokenKind::IntLiteral(10),
+            TokenKind::Semicolon,
+            TokenKind::Ident("i".to_string()),
+            TokenKind::Equal,
+            TokenKind::Ident("i".to_string()),
+            TokenKind::Plus,
+            TokenKind::IntLiteral(1),
+            TokenKind::RParen,
+            TokenKind::Semicolon,
         ];
 
         let mut parser = Parser::new(tokens);
@@ -2033,19 +2279,27 @@ mod tests {
             statement,
             Statement::For {
                 init: Some(Box::new(Statement::ExprStatement(Expr::Assign {
+                    name_span: span(),
                     name: "i".to_string(),
                     value: Box::new(Expr::IntLiteral(0)),
                 }))),
                 cond: Some(Expr::Binary {
                     op: BinaryOp::Less,
-                    left: Box::new(Expr::Variable("i".to_string())),
+                    left: Box::new(Expr::Variable {
+                        name: "i".to_string(),
+                        span: span()
+                    }),
                     right: Box::new(Expr::IntLiteral(10)),
                 }),
                 post: Some(Expr::Assign {
+                    name_span: span(),
                     name: "i".to_string(),
                     value: Box::new(Expr::Binary {
                         op: BinaryOp::Add,
-                        left: Box::new(Expr::Variable("i".to_string())),
+                        left: Box::new(Expr::Variable {
+                            name: "i".to_string(),
+                            span: span()
+                        }),
                         right: Box::new(Expr::IntLiteral(1)),
                     }),
                 }),
@@ -2056,25 +2310,25 @@ mod tests {
 
     #[test]
     fn parses_for_loop_with_variable_declaration_init() {
-        let tokens = vec![
-            Token::KwFor,
-            Token::LParen,
-            Token::KwInt,
-            Token::Ident("i".to_string()),
-            Token::Equal,
-            Token::IntLiteral(0),
-            Token::Semicolon,
-            Token::Ident("i".to_string()),
-            Token::Less,
-            Token::IntLiteral(10),
-            Token::Semicolon,
-            Token::Ident("i".to_string()),
-            Token::Equal,
-            Token::Ident("i".to_string()),
-            Token::Plus,
-            Token::IntLiteral(1),
-            Token::RParen,
-            Token::Semicolon,
+        let tokens = tokens![
+            TokenKind::KwFor,
+            TokenKind::LParen,
+            TokenKind::KwInt,
+            TokenKind::Ident("i".to_string()),
+            TokenKind::Equal,
+            TokenKind::IntLiteral(0),
+            TokenKind::Semicolon,
+            TokenKind::Ident("i".to_string()),
+            TokenKind::Less,
+            TokenKind::IntLiteral(10),
+            TokenKind::Semicolon,
+            TokenKind::Ident("i".to_string()),
+            TokenKind::Equal,
+            TokenKind::Ident("i".to_string()),
+            TokenKind::Plus,
+            TokenKind::IntLiteral(1),
+            TokenKind::RParen,
+            TokenKind::Semicolon,
         ];
 
         let mut parser = Parser::new(tokens);
@@ -2085,19 +2339,27 @@ mod tests {
             statement,
             Statement::For {
                 init: Some(Box::new(Statement::VarDecl {
+                    name_span: span(),
                     name: "i".to_string(),
                     init: Some(Expr::IntLiteral(0)),
                 })),
                 cond: Some(Expr::Binary {
                     op: BinaryOp::Less,
-                    left: Box::new(Expr::Variable("i".to_string())),
+                    left: Box::new(Expr::Variable {
+                        name: "i".to_string(),
+                        span: span()
+                    }),
                     right: Box::new(Expr::IntLiteral(10)),
                 }),
                 post: Some(Expr::Assign {
+                    name_span: span(),
                     name: "i".to_string(),
                     value: Box::new(Expr::Binary {
                         op: BinaryOp::Add,
-                        left: Box::new(Expr::Variable("i".to_string())),
+                        left: Box::new(Expr::Variable {
+                            name: "i".to_string(),
+                            span: span()
+                        }),
                         right: Box::new(Expr::IntLiteral(1)),
                     }),
                 }),
@@ -2108,16 +2370,16 @@ mod tests {
 
     #[test]
     fn parses_for_loop_with_empty_init_and_post() {
-        let tokens = vec![
-            Token::KwFor,
-            Token::LParen,
-            Token::Semicolon,
-            Token::Ident("i".to_string()),
-            Token::Less,
-            Token::IntLiteral(10),
-            Token::Semicolon,
-            Token::RParen,
-            Token::Semicolon,
+        let tokens = tokens![
+            TokenKind::KwFor,
+            TokenKind::LParen,
+            TokenKind::Semicolon,
+            TokenKind::Ident("i".to_string()),
+            TokenKind::Less,
+            TokenKind::IntLiteral(10),
+            TokenKind::Semicolon,
+            TokenKind::RParen,
+            TokenKind::Semicolon,
         ];
 
         let mut parser = Parser::new(tokens);
@@ -2130,7 +2392,10 @@ mod tests {
                 init: None,
                 cond: Some(Expr::Binary {
                     op: BinaryOp::Less,
-                    left: Box::new(Expr::Variable("i".to_string())),
+                    left: Box::new(Expr::Variable {
+                        name: "i".to_string(),
+                        span: span()
+                    }),
                     right: Box::new(Expr::IntLiteral(10)),
                 }),
                 post: None,

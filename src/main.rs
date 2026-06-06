@@ -3,9 +3,34 @@ use std::fs;
 use std::process;
 
 use rivet::codegen::{CodegenTarget, generate};
-use rivet::lexer::lex;
+use rivet::lexer::{Span, lex};
 use rivet::parser::parse;
 use rivet::sema::check;
+
+fn line_col(source: &str, offset: usize) -> (usize, usize) {
+    let mut line = 1;
+    let mut col = 1;
+
+    for (byte_index, ch) in source.char_indices() {
+        if byte_index >= offset {
+            break;
+        }
+
+        if ch == '\n' {
+            line += 1;
+            col = 1;
+        } else {
+            col += 1;
+        }
+    }
+
+    (line, col)
+}
+
+fn print_error(path: &str, source: &str, span: Span, message: &str) {
+    let (line, col) = line_col(source, span.start);
+    eprintln!("{path}:{line}:{col}: error: {message}")
+}
 
 fn main() {
     let mut args = env::args();
@@ -27,17 +52,17 @@ fn main() {
     });
 
     let tokens = lex(&source).unwrap_or_else(|err| {
-        eprintln!("lex error: {}", err.message);
+        print_error(&path, &source, err.span, &err.message);
         process::exit(1);
     });
 
     let program = parse(tokens).unwrap_or_else(|err| {
-        eprintln!("parse error: {}", err.message);
+        print_error(&path, &source, err.span, &err.message);
         process::exit(1);
     });
 
     if let Err(err) = check(&program) {
-        eprintln!("semantic analysis error: {}", err.message);
+        print_error(&path, &source, err.span, &err.message);
         process::exit(1);
     }
 

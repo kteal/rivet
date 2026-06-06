@@ -267,7 +267,7 @@ impl Codegen {
         match expr {
             Expr::IntLiteral(value) => self.emit_line(format_args!("li a0, {value}")),
             Expr::Binary { op, left, right } => self.emit_binary(op, left, right),
-            Expr::Variable(name) => {
+            Expr::Variable { name, .. } => {
                 let offset = self
                     .resolve_local(name)
                     .expect("usage of undefined variable");
@@ -281,7 +281,11 @@ impl Codegen {
                     UnaryOp::BitwiseNot => self.emit_line(format_args!("not a0, a0")),
                 }
             }
-            Expr::Call { name, args } => {
+            Expr::Call {
+                name,
+                name_span: _,
+                args,
+            } => {
                 for arg in args {
                     self.emit_expr(arg);
                     // Push a0 onto the stack
@@ -295,7 +299,11 @@ impl Codegen {
                 }
                 self.emit_line(format_args!("call {name}"));
             }
-            Expr::Assign { name, value } => {
+            Expr::Assign {
+                name,
+                name_span: _,
+                value,
+            } => {
                 self.emit_expr(value);
 
                 let offset = self
@@ -398,7 +406,11 @@ impl Codegen {
                     .expect("codegen should have an active return label");
                 self.emit_line(format_args!("j {return_label}"));
             }
-            Statement::VarDecl { name, init } => {
+            Statement::VarDecl {
+                name,
+                name_span: _,
+                init,
+            } => {
                 let offset = self.declare_local(name);
                 if let Some(init_expr) = init {
                     self.emit_expr(init_expr);
@@ -416,12 +428,12 @@ impl Codegen {
             Statement::While { cond, body } => self.emit_while_statement(cond, body),
             Statement::Empty => (),
             Statement::ExprStatement(expr) => self.emit_expr(expr),
-            Statement::Break => {
+            Statement::Break { .. } => {
                 if let Some(label) = self.current_break_label() {
                     self.emit_line(format_args!("j {label}"));
                 }
             }
-            Statement::Continue => {
+            Statement::Continue { .. } => {
                 if let Some(label) = self.current_continue_label() {
                     self.emit_line(format_args!("j {label}"));
                 }
@@ -502,6 +514,11 @@ pub fn generate(program: &Program, target: CodegenTarget) -> String {
 mod tests {
     use super::*;
     use crate::ast::Function;
+    use crate::lexer::Span;
+
+    fn span() -> Span {
+        Span { start: 0, end: 0 }
+    }
 
     fn generate_raw_with_codegen(program: &Program) -> String {
         let mut codegen = Codegen::new(CodegenTarget::Rv32);
@@ -517,16 +534,19 @@ mod tests {
         let program = Program {
             functions: vec![
                 Function {
+                    name_span: span(),
                     name: "helper".to_string(),
                     params: vec![],
                     body: vec![Statement::Return(Expr::IntLiteral(3))],
                 },
                 Function {
+                    name_span: span(),
                     name: "main".to_string(),
                     params: vec![],
                     body: vec![Statement::Return(Expr::IntLiteral(0))],
                 },
             ],
+            eof_span: span(),
         };
 
         let asm = generate_raw_with_codegen(&program);
@@ -542,28 +562,39 @@ mod tests {
         let program = Program {
             functions: vec![
                 Function {
+                    name_span: span(),
                     name: "first".to_string(),
                     params: vec![],
                     body: vec![
                         Statement::VarDecl {
+                            name_span: span(),
                             name: "x".to_string(),
                             init: Some(Expr::IntLiteral(1)),
                         },
-                        Statement::Return(Expr::Variable("x".to_string())),
+                        Statement::Return(Expr::Variable {
+                            name: "x".to_string(),
+                            span: span(),
+                        }),
                     ],
                 },
                 Function {
+                    name_span: span(),
                     name: "main".to_string(),
                     params: vec![],
                     body: vec![
                         Statement::VarDecl {
+                            name_span: span(),
                             name: "x".to_string(),
                             init: Some(Expr::IntLiteral(2)),
                         },
-                        Statement::Return(Expr::Variable("x".to_string())),
+                        Statement::Return(Expr::Variable {
+                            name: "x".to_string(),
+                            span: span(),
+                        }),
                     ],
                 },
             ],
+            eof_span: span(),
         };
 
         let asm = generate_raw_with_codegen(&program);
@@ -577,30 +608,39 @@ mod tests {
         let program = Program {
             functions: vec![
                 Function {
+                    name_span: span(),
                     name: "helper".to_string(),
                     params: vec![],
                     body: vec![Statement::Return(Expr::IntLiteral(1))],
                 },
                 Function {
+                    name_span: span(),
                     name: "main".to_string(),
                     params: vec![],
                     body: vec![
                         Statement::VarDecl {
+                            name_span: span(),
                             name: "a".to_string(),
                             init: Some(Expr::IntLiteral(1)),
                         },
                         Statement::VarDecl {
+                            name_span: span(),
                             name: "b".to_string(),
                             init: Some(Expr::IntLiteral(2)),
                         },
                         Statement::VarDecl {
+                            name_span: span(),
                             name: "c".to_string(),
                             init: Some(Expr::IntLiteral(3)),
                         },
-                        Statement::Return(Expr::Variable("c".to_string())),
+                        Statement::Return(Expr::Variable {
+                            name: "c".to_string(),
+                            span: span(),
+                        }),
                     ],
                 },
             ],
+            eof_span: span(),
         };
 
         let asm = generate_raw_with_codegen(&program);
@@ -614,19 +654,23 @@ mod tests {
         let program = Program {
             functions: vec![
                 Function {
+                    name_span: span(),
                     name: "helper".to_string(),
                     params: vec![],
                     body: vec![Statement::Return(Expr::IntLiteral(3))],
                 },
                 Function {
+                    name_span: span(),
                     name: "main".to_string(),
                     params: vec![],
                     body: vec![Statement::Return(Expr::Call {
+                        name_span: span(),
                         name: "helper".to_string(),
                         args: vec![],
                     })],
                 },
             ],
+            eof_span: span(),
         };
 
         let asm = generate_raw_with_codegen(&program);
@@ -640,16 +684,19 @@ mod tests {
         let program = Program {
             functions: vec![
                 Function {
+                    name_span: span(),
                     name: "helper".to_string(),
                     params: vec![],
                     body: vec![Statement::Return(Expr::IntLiteral(3))],
                 },
                 Function {
+                    name_span: span(),
                     name: "main".to_string(),
                     params: vec![],
                     body: vec![Statement::Return(Expr::Binary {
                         op: BinaryOp::Add,
                         left: Box::new(Expr::Call {
+                            name_span: span(),
                             name: "helper".to_string(),
                             args: vec![],
                         }),
@@ -657,6 +704,7 @@ mod tests {
                     })],
                 },
             ],
+            eof_span: span(),
         };
 
         let asm = generate_raw_with_codegen(&program);
@@ -669,10 +717,15 @@ mod tests {
     fn stores_single_parameter_in_function_frame() {
         let program = Program {
             functions: vec![Function {
+                name_span: span(),
                 name: "id".to_string(),
                 params: vec!["x".to_string()],
-                body: vec![Statement::Return(Expr::Variable("x".to_string()))],
+                body: vec![Statement::Return(Expr::Variable {
+                    name: "x".to_string(),
+                    span: span(),
+                })],
             }],
+            eof_span: span(),
         };
 
         let asm = generate_raw_with_codegen(&program);
@@ -686,14 +739,22 @@ mod tests {
     fn stores_multiple_parameters_in_function_frame() {
         let program = Program {
             functions: vec![Function {
+                name_span: span(),
                 name: "add".to_string(),
                 params: vec!["x".to_string(), "y".to_string()],
                 body: vec![Statement::Return(Expr::Binary {
                     op: BinaryOp::Add,
-                    left: Box::new(Expr::Variable("x".to_string())),
-                    right: Box::new(Expr::Variable("y".to_string())),
+                    left: Box::new(Expr::Variable {
+                        name: "x".to_string(),
+                        span: span(),
+                    }),
+                    right: Box::new(Expr::Variable {
+                        name: "y".to_string(),
+                        span: span(),
+                    }),
                 })],
             }],
+            eof_span: span(),
         };
 
         let asm = generate_raw_with_codegen(&program);
@@ -708,13 +769,16 @@ mod tests {
     fn generates_function_call_with_arguments() {
         let program = Program {
             functions: vec![Function {
+                name_span: span(),
                 name: "main".to_string(),
                 params: vec![],
                 body: vec![Statement::Return(Expr::Call {
+                    name_span: span(),
                     name: "add".to_string(),
                     args: vec![Expr::IntLiteral(1), Expr::IntLiteral(2)],
                 })],
             }],
+            eof_span: span(),
         };
 
         let asm = generate_raw_with_codegen(&program);
@@ -728,9 +792,11 @@ mod tests {
     fn generates_function_call_with_expression_arguments() {
         let program = Program {
             functions: vec![Function {
+                name_span: span(),
                 name: "main".to_string(),
                 params: vec![],
                 body: vec![Statement::Return(Expr::Call {
+                    name_span: span(),
                     name: "add".to_string(),
                     args: vec![
                         Expr::Binary {
@@ -746,6 +812,7 @@ mod tests {
                     ],
                 })],
             }],
+            eof_span: span(),
         };
 
         let asm = generate_raw_with_codegen(&program);
@@ -758,10 +825,12 @@ mod tests {
     fn emits_nothing_for_empty_statement() {
         let program = Program {
             functions: vec![Function {
+                name_span: span(),
                 name: "main".to_string(),
                 params: vec![],
                 body: vec![Statement::Empty, Statement::Return(Expr::IntLiteral(7))],
             }],
+            eof_span: span(),
         };
 
         let asm = generate_with_codegen(&program);
@@ -777,15 +846,18 @@ mod tests {
         let program = Program {
             functions: vec![
                 Function {
+                    name_span: span(),
                     name: "helper".to_string(),
                     params: vec![],
                     body: vec![Statement::Return(Expr::IntLiteral(3))],
                 },
                 Function {
+                    name_span: span(),
                     name: "main".to_string(),
                     params: vec![],
                     body: vec![
                         Statement::ExprStatement(Expr::Call {
+                            name_span: span(),
                             name: "helper".to_string(),
                             args: vec![],
                         }),
@@ -793,6 +865,7 @@ mod tests {
                     ],
                 },
             ],
+            eof_span: span(),
         };
 
         let asm = generate_raw_with_codegen(&program);
@@ -805,10 +878,12 @@ mod tests {
     fn generates_return_jump_to_shared_epilogue() {
         let program = Program {
             functions: vec![Function {
+                name_span: span(),
                 name: "main".to_string(),
                 params: vec![],
                 body: vec![Statement::Return(Expr::IntLiteral(42))],
             }],
+            eof_span: span(),
         };
 
         let asm = generate_raw_with_codegen(&program);
@@ -820,10 +895,12 @@ mod tests {
     fn basic_codegen() {
         let program = Program {
             functions: vec![Function {
+                name_span: span(),
                 name: "main".to_string(),
                 params: vec![],
                 body: vec![Statement::Return(Expr::IntLiteral(42))],
             }],
+            eof_span: span(),
         };
 
         let asm = generate_with_codegen(&program);
@@ -838,6 +915,7 @@ mod tests {
     fn generates_binary_add() {
         let program = Program {
             functions: vec![Function {
+                name_span: span(),
                 name: "main".to_string(),
                 params: vec![],
                 body: vec![Statement::Return(Expr::Binary {
@@ -846,6 +924,7 @@ mod tests {
                     right: Box::new(Expr::IntLiteral(2)),
                 })],
             }],
+            eof_span: span(),
         };
 
         let asm = generate_with_codegen(&program);
@@ -860,6 +939,7 @@ mod tests {
     fn generates_binary_subtract() {
         let program = Program {
             functions: vec![Function {
+                name_span: span(),
                 name: "main".to_string(),
                 params: vec![],
                 body: vec![Statement::Return(Expr::Binary {
@@ -868,6 +948,7 @@ mod tests {
                     right: Box::new(Expr::IntLiteral(2)),
                 })],
             }],
+            eof_span: span(),
         };
 
         let asm = generate_with_codegen(&program);
@@ -882,6 +963,7 @@ mod tests {
     fn generates_binary_multiply() {
         let program = Program {
             functions: vec![Function {
+                name_span: span(),
                 name: "main".to_string(),
                 params: vec![],
                 body: vec![Statement::Return(Expr::Binary {
@@ -890,6 +972,7 @@ mod tests {
                     right: Box::new(Expr::IntLiteral(3)),
                 })],
             }],
+            eof_span: span(),
         };
 
         let asm = generate_with_codegen(&program);
@@ -904,6 +987,7 @@ mod tests {
     fn generates_binary_divide() {
         let program = Program {
             functions: vec![Function {
+                name_span: span(),
                 name: "main".to_string(),
                 params: vec![],
                 body: vec![Statement::Return(Expr::Binary {
@@ -912,6 +996,7 @@ mod tests {
                     right: Box::new(Expr::IntLiteral(2)),
                 })],
             }],
+            eof_span: span(),
         };
 
         let asm = generate_with_codegen(&program);
@@ -926,6 +1011,7 @@ mod tests {
     fn generates_binary_remainder() {
         let program = Program {
             functions: vec![Function {
+                name_span: span(),
                 name: "main".to_string(),
                 params: vec![],
                 body: vec![Statement::Return(Expr::Binary {
@@ -934,6 +1020,7 @@ mod tests {
                     right: Box::new(Expr::IntLiteral(3)),
                 })],
             }],
+            eof_span: span(),
         };
 
         let asm = generate_with_codegen(&program);
@@ -948,6 +1035,7 @@ mod tests {
     fn generates_binary_equal() {
         let program = Program {
             functions: vec![Function {
+                name_span: span(),
                 name: "main".to_string(),
                 params: vec![],
                 body: vec![Statement::Return(Expr::Binary {
@@ -956,6 +1044,7 @@ mod tests {
                     right: Box::new(Expr::IntLiteral(5)),
                 })],
             }],
+            eof_span: span(),
         };
 
         let asm = generate_with_codegen(&program);
@@ -970,6 +1059,7 @@ mod tests {
     fn generates_binary_not_equal() {
         let program = Program {
             functions: vec![Function {
+                name_span: span(),
                 name: "main".to_string(),
                 params: vec![],
                 body: vec![Statement::Return(Expr::Binary {
@@ -978,6 +1068,7 @@ mod tests {
                     right: Box::new(Expr::IntLiteral(3)),
                 })],
             }],
+            eof_span: span(),
         };
 
         let asm = generate_with_codegen(&program);
@@ -992,6 +1083,7 @@ mod tests {
     fn generates_binary_less() {
         let program = Program {
             functions: vec![Function {
+                name_span: span(),
                 name: "main".to_string(),
                 params: vec![],
                 body: vec![Statement::Return(Expr::Binary {
@@ -1000,6 +1092,7 @@ mod tests {
                     right: Box::new(Expr::IntLiteral(5)),
                 })],
             }],
+            eof_span: span(),
         };
 
         let asm = generate_with_codegen(&program);
@@ -1014,6 +1107,7 @@ mod tests {
     fn generates_binary_less_equal() {
         let program = Program {
             functions: vec![Function {
+                name_span: span(),
                 name: "main".to_string(),
                 params: vec![],
                 body: vec![Statement::Return(Expr::Binary {
@@ -1022,6 +1116,7 @@ mod tests {
                     right: Box::new(Expr::IntLiteral(5)),
                 })],
             }],
+            eof_span: span(),
         };
 
         let asm = generate_with_codegen(&program);
@@ -1036,6 +1131,7 @@ mod tests {
     fn generates_binary_greater() {
         let program = Program {
             functions: vec![Function {
+                name_span: span(),
                 name: "main".to_string(),
                 params: vec![],
                 body: vec![Statement::Return(Expr::Binary {
@@ -1044,6 +1140,7 @@ mod tests {
                     right: Box::new(Expr::IntLiteral(2)),
                 })],
             }],
+            eof_span: span(),
         };
 
         let asm = generate_with_codegen(&program);
@@ -1058,6 +1155,7 @@ mod tests {
     fn generates_binary_greater_equal() {
         let program = Program {
             functions: vec![Function {
+                name_span: span(),
                 name: "main".to_string(),
                 params: vec![],
                 body: vec![Statement::Return(Expr::Binary {
@@ -1066,6 +1164,7 @@ mod tests {
                     right: Box::new(Expr::IntLiteral(5)),
                 })],
             }],
+            eof_span: span(),
         };
 
         let asm = generate_with_codegen(&program);
@@ -1080,6 +1179,7 @@ mod tests {
     fn generates_unary_negation() {
         let program = Program {
             functions: vec![Function {
+                name_span: span(),
                 name: "main".to_string(),
                 params: vec![],
                 body: vec![Statement::Return(Expr::Unary {
@@ -1087,6 +1187,7 @@ mod tests {
                     expr: Box::new(Expr::IntLiteral(5)),
                 })],
             }],
+            eof_span: span(),
         };
 
         let asm = generate_with_codegen(&program);
@@ -1101,6 +1202,7 @@ mod tests {
     fn generates_logical_not() {
         let program = Program {
             functions: vec![Function {
+                name_span: span(),
                 name: "main".to_string(),
                 params: vec![],
                 body: vec![Statement::Return(Expr::Unary {
@@ -1108,6 +1210,7 @@ mod tests {
                     expr: Box::new(Expr::IntLiteral(0)),
                 })],
             }],
+            eof_span: span(),
         };
 
         let asm = generate_with_codegen(&program);
@@ -1122,17 +1225,20 @@ mod tests {
     fn generates_logical_and_with_short_circuit_branch() {
         let program = Program {
             functions: vec![Function {
+                name_span: span(),
                 name: "main".to_string(),
                 params: vec![],
                 body: vec![Statement::Return(Expr::Binary {
                     op: BinaryOp::LogicalAnd,
                     left: Box::new(Expr::IntLiteral(0)),
                     right: Box::new(Expr::Call {
+                        name_span: span(),
                         name: "right".to_string(),
                         args: vec![],
                     }),
                 })],
             }],
+            eof_span: span(),
         };
 
         let asm = generate_raw_with_codegen(&program);
@@ -1152,17 +1258,20 @@ mod tests {
     fn generates_logical_or_with_short_circuit_branch() {
         let program = Program {
             functions: vec![Function {
+                name_span: span(),
                 name: "main".to_string(),
                 params: vec![],
                 body: vec![Statement::Return(Expr::Binary {
                     op: BinaryOp::LogicalOr,
                     left: Box::new(Expr::IntLiteral(1)),
                     right: Box::new(Expr::Call {
+                        name_span: span(),
                         name: "right".to_string(),
                         args: vec![],
                     }),
                 })],
             }],
+            eof_span: span(),
         };
 
         let asm = generate_raw_with_codegen(&program);
@@ -1182,6 +1291,7 @@ mod tests {
     fn generates_bitwise_not() {
         let program = Program {
             functions: vec![Function {
+                name_span: span(),
                 name: "main".to_string(),
                 params: vec![],
                 body: vec![Statement::Return(Expr::Unary {
@@ -1189,6 +1299,7 @@ mod tests {
                     expr: Box::new(Expr::IntLiteral(0)),
                 })],
             }],
+            eof_span: span(),
         };
 
         let asm = generate_with_codegen(&program);
@@ -1203,6 +1314,7 @@ mod tests {
     fn generates_nested_expression_with_stack_temporaries() {
         let program = Program {
             functions: vec![Function {
+                name_span: span(),
                 name: "main".to_string(),
                 params: vec![],
                 body: vec![Statement::Return(Expr::Binary {
@@ -1215,6 +1327,7 @@ mod tests {
                     }),
                 })],
             }],
+            eof_span: span(),
         };
 
         let asm = generate_with_codegen(&program);
@@ -1229,16 +1342,22 @@ mod tests {
     fn generates_single_local_variable() {
         let program = Program {
             functions: vec![Function {
+                name_span: span(),
                 name: "main".to_string(),
                 params: vec![],
                 body: vec![
                     Statement::VarDecl {
+                        name_span: span(),
                         name: "x".to_string(),
                         init: Some(Expr::IntLiteral(5)),
                     },
-                    Statement::Return(Expr::Variable("x".to_string())),
+                    Statement::Return(Expr::Variable {
+                        name: "x".to_string(),
+                        span: span(),
+                    }),
                 ],
             }],
+            eof_span: span(),
         };
 
         let asm = generate_with_codegen(&program);
@@ -1253,20 +1372,27 @@ mod tests {
     fn generates_local_variable_without_initializer() {
         let program = Program {
             functions: vec![Function {
+                name_span: span(),
                 name: "main".to_string(),
                 params: vec![],
                 body: vec![
                     Statement::VarDecl {
+                        name_span: span(),
                         name: "x".to_string(),
                         init: None,
                     },
                     Statement::ExprStatement(Expr::Assign {
+                        name_span: span(),
                         name: "x".to_string(),
                         value: Box::new(Expr::IntLiteral(3)),
                     }),
-                    Statement::Return(Expr::Variable("x".to_string())),
+                    Statement::Return(Expr::Variable {
+                        name: "x".to_string(),
+                        span: span(),
+                    }),
                 ],
             }],
+            eof_span: span(),
         };
 
         let asm = generate_with_codegen(&program);
@@ -1281,19 +1407,23 @@ mod tests {
     fn generates_assignment_expression_result() {
         let program = Program {
             functions: vec![Function {
+                name_span: span(),
                 name: "main".to_string(),
                 params: vec![],
                 body: vec![
                     Statement::VarDecl {
+                        name_span: span(),
                         name: "x".to_string(),
                         init: None,
                     },
                     Statement::Return(Expr::Assign {
+                        name_span: span(),
                         name: "x".to_string(),
                         value: Box::new(Expr::IntLiteral(3)),
                     }),
                 ],
             }],
+            eof_span: span(),
         };
 
         let asm = generate_with_codegen(&program);
@@ -1308,31 +1438,43 @@ mod tests {
     fn generates_chained_assignment_expression_right_associative() {
         let program = Program {
             functions: vec![Function {
+                name_span: span(),
                 name: "main".to_string(),
                 params: vec![],
                 body: vec![
                     Statement::VarDecl {
+                        name_span: span(),
                         name: "x".to_string(),
                         init: None,
                     },
                     Statement::VarDecl {
+                        name_span: span(),
                         name: "y".to_string(),
                         init: None,
                     },
                     Statement::ExprStatement(Expr::Assign {
+                        name_span: span(),
                         name: "x".to_string(),
                         value: Box::new(Expr::Assign {
+                            name_span: span(),
                             name: "y".to_string(),
                             value: Box::new(Expr::IntLiteral(4)),
                         }),
                     }),
                     Statement::Return(Expr::Binary {
                         op: BinaryOp::Add,
-                        left: Box::new(Expr::Variable("x".to_string())),
-                        right: Box::new(Expr::Variable("y".to_string())),
+                        left: Box::new(Expr::Variable {
+                            name: "x".to_string(),
+                            span: span(),
+                        }),
+                        right: Box::new(Expr::Variable {
+                            name: "y".to_string(),
+                            span: span(),
+                        }),
                     }),
                 ],
             }],
+            eof_span: span(),
         };
 
         let asm = generate_raw_with_codegen(&program);
@@ -1344,32 +1486,49 @@ mod tests {
     fn generates_multiple_local_variables() {
         let program = Program {
             functions: vec![Function {
+                name_span: span(),
                 name: "main".to_string(),
                 params: vec![],
                 body: vec![
                     Statement::VarDecl {
+                        name_span: span(),
                         name: "x".to_string(),
                         init: Some(Expr::IntLiteral(1)),
                     },
                     Statement::VarDecl {
+                        name_span: span(),
                         name: "y".to_string(),
                         init: Some(Expr::Binary {
                             op: BinaryOp::Add,
-                            left: Box::new(Expr::Variable("x".to_string())),
+                            left: Box::new(Expr::Variable {
+                                name: "x".to_string(),
+                                span: span(),
+                            }),
                             right: Box::new(Expr::IntLiteral(2)),
                         }),
                     },
                     Statement::VarDecl {
+                        name_span: span(),
                         name: "z".to_string(),
                         init: Some(Expr::Binary {
                             op: BinaryOp::Add,
-                            left: Box::new(Expr::Variable("x".to_string())),
-                            right: Box::new(Expr::Variable("y".to_string())),
+                            left: Box::new(Expr::Variable {
+                                name: "x".to_string(),
+                                span: span(),
+                            }),
+                            right: Box::new(Expr::Variable {
+                                name: "y".to_string(),
+                                span: span(),
+                            }),
                         }),
                     },
-                    Statement::Return(Expr::Variable("z".to_string())),
+                    Statement::Return(Expr::Variable {
+                        name: "z".to_string(),
+                        span: span(),
+                    }),
                 ],
             }],
+            eof_span: span(),
         };
 
         let asm = generate_with_codegen(&program);
@@ -1384,22 +1543,29 @@ mod tests {
     fn generates_shadowed_local_in_nested_block() {
         let program = Program {
             functions: vec![Function {
+                name_span: span(),
                 name: "main".to_string(),
                 params: vec![],
                 body: vec![
                     Statement::VarDecl {
+                        name_span: span(),
                         name: "x".to_string(),
                         init: Some(Expr::IntLiteral(1)),
                     },
                     Statement::Block(vec![
                         Statement::VarDecl {
+                            name_span: span(),
                             name: "x".to_string(),
                             init: Some(Expr::IntLiteral(2)),
                         },
-                        Statement::Return(Expr::Variable("x".to_string())),
+                        Statement::Return(Expr::Variable {
+                            name: "x".to_string(),
+                            span: span(),
+                        }),
                     ]),
                 ],
             }],
+            eof_span: span(),
         };
 
         let asm = generate_with_codegen(&program);
@@ -1414,6 +1580,7 @@ mod tests {
     fn generates_if_without_else() {
         let program = Program {
             functions: vec![Function {
+                name_span: span(),
                 name: "main".to_string(),
                 params: vec![],
                 body: vec![
@@ -1425,6 +1592,7 @@ mod tests {
                     Statement::Return(Expr::IntLiteral(3)),
                 ],
             }],
+            eof_span: span(),
         };
 
         let asm = generate_with_codegen(&program);
@@ -1439,6 +1607,7 @@ mod tests {
     fn generates_if_else() {
         let program = Program {
             functions: vec![Function {
+                name_span: span(),
                 name: "main".to_string(),
                 params: vec![],
                 body: vec![Statement::If {
@@ -1447,6 +1616,7 @@ mod tests {
                     else_branch: Some(Box::new(Statement::Return(Expr::IntLiteral(3)))),
                 }],
             }],
+            eof_span: span(),
         };
 
         let asm = generate_with_codegen(&program);
@@ -1462,29 +1632,42 @@ mod tests {
     fn generates_while_loop() {
         let program = Program {
             functions: vec![Function {
+                name_span: span(),
                 name: "main".to_string(),
                 params: vec![],
                 body: vec![
                     Statement::VarDecl {
+                        name_span: span(),
                         name: "x".to_string(),
                         init: Some(Expr::IntLiteral(3)),
                     },
                     Statement::While {
-                        cond: Expr::Variable("x".to_string()),
+                        cond: Expr::Variable {
+                            name: "x".to_string(),
+                            span: span(),
+                        },
                         body: Box::new(Statement::Block(vec![Statement::ExprStatement(
                             Expr::Assign {
+                                name_span: span(),
                                 name: "x".to_string(),
                                 value: Box::new(Expr::Binary {
                                     op: BinaryOp::Subtract,
-                                    left: Box::new(Expr::Variable("x".to_string())),
+                                    left: Box::new(Expr::Variable {
+                                        name: "x".to_string(),
+                                        span: span(),
+                                    }),
                                     right: Box::new(Expr::IntLiteral(1)),
                                 }),
                             },
                         )])),
                     },
-                    Statement::Return(Expr::Variable("x".to_string())),
+                    Statement::Return(Expr::Variable {
+                        name: "x".to_string(),
+                        span: span(),
+                    }),
                 ],
             }],
+            eof_span: span(),
         };
 
         let asm = generate_raw_with_codegen(&program);
@@ -1499,16 +1682,18 @@ mod tests {
     fn generates_break_jump_to_loop_end() {
         let program = Program {
             functions: vec![Function {
+                name_span: span(),
                 name: "main".to_string(),
                 params: vec![],
                 body: vec![
                     Statement::While {
                         cond: Expr::IntLiteral(1),
-                        body: Box::new(Statement::Block(vec![Statement::Break])),
+                        body: Box::new(Statement::Block(vec![Statement::Break { span: span() }])),
                     },
                     Statement::Return(Expr::IntLiteral(0)),
                 ],
             }],
+            eof_span: span(),
         };
 
         let asm = generate_raw_with_codegen(&program);
@@ -1521,16 +1706,20 @@ mod tests {
     fn generates_continue_jump_to_loop_start() {
         let program = Program {
             functions: vec![Function {
+                name_span: span(),
                 name: "main".to_string(),
                 params: vec![],
                 body: vec![
                     Statement::While {
                         cond: Expr::IntLiteral(1),
-                        body: Box::new(Statement::Block(vec![Statement::Continue])),
+                        body: Box::new(Statement::Block(vec![Statement::Continue {
+                            span: span(),
+                        }])),
                     },
                     Statement::Return(Expr::IntLiteral(0)),
                 ],
             }],
+            eof_span: span(),
         };
 
         let asm = generate_raw_with_codegen(&program);
@@ -1546,6 +1735,7 @@ mod tests {
     fn nested_loop_break_uses_inner_loop_end() {
         let program = Program {
             functions: vec![Function {
+                name_span: span(),
                 name: "main".to_string(),
                 params: vec![],
                 body: vec![
@@ -1553,12 +1743,15 @@ mod tests {
                         cond: Expr::IntLiteral(1),
                         body: Box::new(Statement::Block(vec![Statement::While {
                             cond: Expr::IntLiteral(1),
-                            body: Box::new(Statement::Block(vec![Statement::Break])),
+                            body: Box::new(Statement::Block(vec![Statement::Break {
+                                span: span(),
+                            }])),
                         }])),
                     },
                     Statement::Return(Expr::IntLiteral(0)),
                 ],
             }],
+            eof_span: span(),
         };
 
         let asm = generate_raw_with_codegen(&program);
@@ -1570,36 +1763,50 @@ mod tests {
     fn generates_for_loop_with_init_condition_and_post() {
         let program = Program {
             functions: vec![Function {
+                name_span: span(),
                 name: "main".to_string(),
                 params: vec![],
                 body: vec![
                     Statement::VarDecl {
+                        name_span: span(),
                         name: "i".to_string(),
                         init: Some(Expr::IntLiteral(0)),
                     },
                     Statement::For {
                         init: Some(Box::new(Statement::ExprStatement(Expr::Assign {
+                            name_span: span(),
                             name: "i".to_string(),
                             value: Box::new(Expr::IntLiteral(0)),
                         }))),
                         cond: Some(Expr::Binary {
                             op: BinaryOp::Less,
-                            left: Box::new(Expr::Variable("i".to_string())),
+                            left: Box::new(Expr::Variable {
+                                name: "i".to_string(),
+                                span: span(),
+                            }),
                             right: Box::new(Expr::IntLiteral(3)),
                         }),
                         post: Some(Expr::Assign {
+                            name_span: span(),
                             name: "i".to_string(),
                             value: Box::new(Expr::Binary {
                                 op: BinaryOp::Add,
-                                left: Box::new(Expr::Variable("i".to_string())),
+                                left: Box::new(Expr::Variable {
+                                    name: "i".to_string(),
+                                    span: span(),
+                                }),
                                 right: Box::new(Expr::IntLiteral(1)),
                             }),
                         }),
                         body: Box::new(Statement::Block(vec![Statement::Empty])),
                     },
-                    Statement::Return(Expr::Variable("i".to_string())),
+                    Statement::Return(Expr::Variable {
+                        name: "i".to_string(),
+                        span: span(),
+                    }),
                 ],
             }],
+            eof_span: span(),
         };
 
         let asm = generate_raw_with_codegen(&program);
@@ -1615,6 +1822,7 @@ mod tests {
     fn generates_for_loop_without_condition_as_unconditional_loop() {
         let program = Program {
             functions: vec![Function {
+                name_span: span(),
                 name: "main".to_string(),
                 params: vec![],
                 body: vec![
@@ -1622,11 +1830,12 @@ mod tests {
                         init: None,
                         cond: None,
                         post: None,
-                        body: Box::new(Statement::Block(vec![Statement::Break])),
+                        body: Box::new(Statement::Block(vec![Statement::Break { span: span() }])),
                     },
                     Statement::Return(Expr::IntLiteral(0)),
                 ],
             }],
+            eof_span: span(),
         };
 
         let asm = generate_raw_with_codegen(&program);
@@ -1641,10 +1850,12 @@ mod tests {
     fn generates_continue_in_for_loop_to_post_clause() {
         let program = Program {
             functions: vec![Function {
+                name_span: span(),
                 name: "main".to_string(),
                 params: vec![],
                 body: vec![
                     Statement::VarDecl {
+                        name_span: span(),
                         name: "i".to_string(),
                         init: Some(Expr::IntLiteral(0)),
                     },
@@ -1652,22 +1863,35 @@ mod tests {
                         init: None,
                         cond: Some(Expr::Binary {
                             op: BinaryOp::Less,
-                            left: Box::new(Expr::Variable("i".to_string())),
+                            left: Box::new(Expr::Variable {
+                                name: "i".to_string(),
+                                span: span(),
+                            }),
                             right: Box::new(Expr::IntLiteral(3)),
                         }),
                         post: Some(Expr::Assign {
+                            name_span: span(),
                             name: "i".to_string(),
                             value: Box::new(Expr::Binary {
                                 op: BinaryOp::Add,
-                                left: Box::new(Expr::Variable("i".to_string())),
+                                left: Box::new(Expr::Variable {
+                                    name: "i".to_string(),
+                                    span: span(),
+                                }),
                                 right: Box::new(Expr::IntLiteral(1)),
                             }),
                         }),
-                        body: Box::new(Statement::Block(vec![Statement::Continue])),
+                        body: Box::new(Statement::Block(vec![Statement::Continue {
+                            span: span(),
+                        }])),
                     },
-                    Statement::Return(Expr::Variable("i".to_string())),
+                    Statement::Return(Expr::Variable {
+                        name: "i".to_string(),
+                        span: span(),
+                    }),
                 ],
             }],
+            eof_span: span(),
         };
 
         let asm = generate_raw_with_codegen(&program);
@@ -1680,39 +1904,48 @@ mod tests {
     fn counts_locals_inside_for_init_and_body_for_frame_size() {
         let program = Program {
             functions: vec![Function {
+                name_span: span(),
                 name: "main".to_string(),
                 params: vec![],
                 body: vec![
                     Statement::For {
                         init: Some(Box::new(Statement::VarDecl {
+                            name_span: span(),
                             name: "i".to_string(),
                             init: Some(Expr::IntLiteral(0)),
                         })),
                         cond: Some(Expr::Binary {
                             op: BinaryOp::Less,
-                            left: Box::new(Expr::Variable("i".to_string())),
+                            left: Box::new(Expr::Variable {
+                                name: "i".to_string(),
+                                span: span(),
+                            }),
                             right: Box::new(Expr::IntLiteral(1)),
                         }),
                         post: None,
                         body: Box::new(Statement::Block(vec![
                             Statement::VarDecl {
+                                name_span: span(),
                                 name: "a".to_string(),
                                 init: Some(Expr::IntLiteral(1)),
                             },
                             Statement::VarDecl {
+                                name_span: span(),
                                 name: "b".to_string(),
                                 init: Some(Expr::IntLiteral(2)),
                             },
                             Statement::VarDecl {
+                                name_span: span(),
                                 name: "c".to_string(),
                                 init: Some(Expr::IntLiteral(3)),
                             },
-                            Statement::Break,
+                            Statement::Break { span: span() },
                         ])),
                     },
                     Statement::Return(Expr::IntLiteral(0)),
                 ],
             }],
+            eof_span: span(),
         };
 
         let asm = generate_raw_with_codegen(&program);
@@ -1724,36 +1957,50 @@ mod tests {
     fn for_init_scope_can_shadow_outer_local_without_replacing_it() {
         let program = Program {
             functions: vec![Function {
+                name_span: span(),
                 name: "main".to_string(),
                 params: vec![],
                 body: vec![
                     Statement::VarDecl {
+                        name_span: span(),
                         name: "i".to_string(),
                         init: Some(Expr::IntLiteral(5)),
                     },
                     Statement::For {
                         init: Some(Box::new(Statement::VarDecl {
+                            name_span: span(),
                             name: "i".to_string(),
                             init: Some(Expr::IntLiteral(0)),
                         })),
                         cond: Some(Expr::Binary {
                             op: BinaryOp::Less,
-                            left: Box::new(Expr::Variable("i".to_string())),
+                            left: Box::new(Expr::Variable {
+                                name: "i".to_string(),
+                                span: span(),
+                            }),
                             right: Box::new(Expr::IntLiteral(1)),
                         }),
                         post: Some(Expr::Assign {
+                            name_span: span(),
                             name: "i".to_string(),
                             value: Box::new(Expr::Binary {
                                 op: BinaryOp::Add,
-                                left: Box::new(Expr::Variable("i".to_string())),
+                                left: Box::new(Expr::Variable {
+                                    name: "i".to_string(),
+                                    span: span(),
+                                }),
                                 right: Box::new(Expr::IntLiteral(1)),
                             }),
                         }),
                         body: Box::new(Statement::Block(vec![Statement::Empty])),
                     },
-                    Statement::Return(Expr::Variable("i".to_string())),
+                    Statement::Return(Expr::Variable {
+                        name: "i".to_string(),
+                        span: span(),
+                    }),
                 ],
             }],
+            eof_span: span(),
         };
 
         let asm = generate_raw_with_codegen(&program);
@@ -1769,25 +2016,33 @@ mod tests {
     fn counts_locals_inside_while_body_for_frame_size() {
         let program = Program {
             functions: vec![Function {
+                name_span: span(),
                 name: "main".to_string(),
                 params: vec![],
                 body: vec![
                     Statement::VarDecl {
+                        name_span: span(),
                         name: "x".to_string(),
                         init: Some(Expr::IntLiteral(1)),
                     },
                     Statement::While {
-                        cond: Expr::Variable("x".to_string()),
+                        cond: Expr::Variable {
+                            name: "x".to_string(),
+                            span: span(),
+                        },
                         body: Box::new(Statement::Block(vec![
                             Statement::VarDecl {
+                                name_span: span(),
                                 name: "a".to_string(),
                                 init: Some(Expr::IntLiteral(1)),
                             },
                             Statement::VarDecl {
+                                name_span: span(),
                                 name: "b".to_string(),
                                 init: Some(Expr::IntLiteral(2)),
                             },
                             Statement::VarDecl {
+                                name_span: span(),
                                 name: "c".to_string(),
                                 init: Some(Expr::IntLiteral(3)),
                             },
@@ -1795,16 +2050,26 @@ mod tests {
                                 op: BinaryOp::Add,
                                 left: Box::new(Expr::Binary {
                                     op: BinaryOp::Add,
-                                    left: Box::new(Expr::Variable("a".to_string())),
-                                    right: Box::new(Expr::Variable("b".to_string())),
+                                    left: Box::new(Expr::Variable {
+                                        name: "a".to_string(),
+                                        span: span(),
+                                    }),
+                                    right: Box::new(Expr::Variable {
+                                        name: "b".to_string(),
+                                        span: span(),
+                                    }),
                                 }),
-                                right: Box::new(Expr::Variable("c".to_string())),
+                                right: Box::new(Expr::Variable {
+                                    name: "c".to_string(),
+                                    span: span(),
+                                }),
                             }),
                         ])),
                     },
                     Statement::Return(Expr::IntLiteral(0)),
                 ],
             }],
+            eof_span: span(),
         };
 
         let asm = generate_raw_with_codegen(&program);

@@ -1,7 +1,7 @@
 use std::{iter::Peekable, str::Chars};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Token {
+pub enum TokenKind {
     KwInt,
     KwReturn,
     KwIf,
@@ -42,14 +42,28 @@ pub enum Token {
     Eof,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Span {
+    pub start: usize,
+    pub end: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Token {
+    pub kind: TokenKind,
+    pub span: Span,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LexError {
     pub message: String,
+    pub span: Span,
 }
 
 struct Lexer<'a> {
     chars: Peekable<Chars<'a>>,
     tokens: Vec<Token>,
+    offset: usize,
 }
 
 impl<'a> Lexer<'a> {
@@ -57,6 +71,7 @@ impl<'a> Lexer<'a> {
         Self {
             chars: source.chars().peekable(),
             tokens: Vec::new(),
+            offset: 0,
         }
     }
 
@@ -66,131 +81,141 @@ impl<'a> Lexer<'a> {
                 ' ' | '\n' | '\r' | '\t' => {
                     self.advance();
                 }
-                ',' => self.advance_and_push(Token::Comma),
-                '(' => self.advance_and_push(Token::LParen),
-                ')' => self.advance_and_push(Token::RParen),
-                '{' => self.advance_and_push(Token::LBrace),
-                '}' => self.advance_and_push(Token::RBrace),
-                ';' => self.advance_and_push(Token::Semicolon),
+                ',' => self.advance_and_push(TokenKind::Comma),
+                '(' => self.advance_and_push(TokenKind::LParen),
+                ')' => self.advance_and_push(TokenKind::RParen),
+                '{' => self.advance_and_push(TokenKind::LBrace),
+                '}' => self.advance_and_push(TokenKind::RBrace),
+                ';' => self.advance_and_push(TokenKind::Semicolon),
                 '0'..='9' => {
                     let token = self.lex_int_literal()?;
-                    self.push(token);
+                    self.push_token(token);
                 }
                 'a'..='z' | 'A'..='Z' | '_' => {
                     let token = self.lex_word();
-                    self.push(token);
+                    self.push_token(token);
                 }
-                '+' => self.advance_and_push(Token::Plus),
-                '-' => self.advance_and_push(Token::Minus),
-                '*' => self.advance_and_push(Token::Star),
+                '+' => self.advance_and_push(TokenKind::Plus),
+                '-' => self.advance_and_push(TokenKind::Minus),
+                '*' => self.advance_and_push(TokenKind::Star),
                 '/' => {
+                    let start = self.offset;
                     self.advance();
                     if self.consume_if('/') {
                         self.skip_line_comment();
                     } else if self.consume_if('*') {
-                        self.skip_block_comment()?
+                        self.skip_block_comment(start)?
                     } else {
-                        self.push(Token::Slash)
+                        let end = self.offset;
+                        self.push(TokenKind::Slash, Span { start, end })
                     }
                 }
-                '%' => self.advance_and_push(Token::Percent),
-                '=' => {
-                    self.advance();
-                    if self.consume_if('=') {
-                        self.push(Token::EqualEqual);
-                    } else {
-                        self.push(Token::Equal);
-                    }
-                }
-                '!' => {
-                    self.advance();
-                    if self.consume_if('=') {
-                        self.push(Token::BangEqual);
-                    } else {
-                        self.push(Token::Bang);
-                    }
-                }
+                '%' => self.advance_and_push(TokenKind::Percent),
+                '=' => self.advance_and_push_if_next('=', TokenKind::Equal, TokenKind::EqualEqual),
+                '!' => self.advance_and_push_if_next('=', TokenKind::Bang, TokenKind::BangEqual),
                 '<' => {
+                    let start = self.offset;
                     self.advance();
                     if self.consume_if('=') {
-                        self.push(Token::LessEqual);
+                        let end = self.offset;
+                        self.push(TokenKind::LessEqual, Span { start, end });
                     } else if self.consume_if('<') {
-                        self.push(Token::LessLess);
+                        let end = self.offset;
+                        self.push(TokenKind::LessLess, Span { start, end });
                     } else {
-                        self.push(Token::Less);
+                        let end = self.offset;
+                        self.push(TokenKind::Less, Span { start, end });
                     }
                 }
                 '>' => {
+                    let start = self.offset;
                     self.advance();
                     if self.consume_if('=') {
-                        self.push(Token::GreaterEqual);
+                        let end = self.offset;
+                        self.push(TokenKind::GreaterEqual, Span { start, end });
                     } else if self.consume_if('>') {
-                        self.push(Token::GreaterGreater);
+                        let end = self.offset;
+                        self.push(TokenKind::GreaterGreater, Span { start, end });
                     } else {
-                        self.push(Token::Greater);
+                        let end = self.offset;
+                        self.push(TokenKind::Greater, Span { start, end });
                     }
                 }
-                '~' => self.advance_and_push(Token::Tilde),
-                '&' => {
-                    self.advance();
-                    if self.consume_if('&') {
-                        self.push(Token::AmpersandAmpersand);
-                    } else {
-                        self.push(Token::Ampersand)
-                    }
-                }
-                '^' => self.advance_and_push(Token::Caret),
-                '|' => {
-                    self.advance();
-                    if self.consume_if('|') {
-                        self.push(Token::PipePipe);
-                    } else {
-                        self.push(Token::Pipe)
-                    }
-                }
+                '~' => self.advance_and_push(TokenKind::Tilde),
+                '&' => self.advance_and_push_if_next(
+                    '&',
+                    TokenKind::Ampersand,
+                    TokenKind::AmpersandAmpersand,
+                ),
+                '^' => self.advance_and_push(TokenKind::Caret),
+                '|' => self.advance_and_push_if_next('|', TokenKind::Pipe, TokenKind::PipePipe),
                 _ => {
+                    let start = self.offset;
+                    let ch = self.advance().unwrap();
+                    let end = self.offset;
+
                     return Err(LexError {
                         message: format!("unexpected character {ch:?}"),
+                        span: Span { start, end },
                     });
                 }
             }
         }
 
-        self.push(Token::Eof);
+        self.push(
+            TokenKind::Eof,
+            Span {
+                start: self.offset,
+                end: self.offset,
+            },
+        );
         Ok(std::mem::take(&mut self.tokens))
     }
 
     fn lex_int_literal(&mut self) -> Result<Token, LexError> {
+        let start = self.offset;
         let mut text = String::new();
 
         while let Some('0'..='9') = self.peek() {
             text.push(self.advance().expect("peeked character should exist"));
         }
 
+        let end = self.offset;
         let value = text.parse::<i32>().map_err(|_| LexError {
             message: format!("integer literal out of range: {text}"),
+            span: Span { start, end },
         })?;
 
-        Ok(Token::IntLiteral(value))
+        Ok(Token {
+            kind: TokenKind::IntLiteral(value),
+            span: Span { start, end },
+        })
     }
 
     fn lex_word(&mut self) -> Token {
+        let start = self.offset;
         let mut text = String::new();
 
         while let Some('a'..='z' | 'A'..='Z' | '0'..='9' | '_') = self.peek() {
             text.push(self.advance().expect("peeked character should exist"));
         }
 
-        match text.as_str() {
-            "int" => Token::KwInt,
-            "return" => Token::KwReturn,
-            "if" => Token::KwIf,
-            "else" => Token::KwElse,
-            "while" => Token::KwWhile,
-            "break" => Token::KwBreak,
-            "continue" => Token::KwContinue,
-            "for" => Token::KwFor,
-            _ => Token::Ident(text),
+        let end = self.offset;
+        let kind = match text.as_str() {
+            "int" => TokenKind::KwInt,
+            "return" => TokenKind::KwReturn,
+            "if" => TokenKind::KwIf,
+            "else" => TokenKind::KwElse,
+            "while" => TokenKind::KwWhile,
+            "break" => TokenKind::KwBreak,
+            "continue" => TokenKind::KwContinue,
+            "for" => TokenKind::KwFor,
+            _ => TokenKind::Ident(text),
+        };
+
+        Token {
+            kind,
+            span: Span { start, end },
         }
     }
 
@@ -202,20 +227,20 @@ impl<'a> Lexer<'a> {
         }
     }
 
-    fn skip_block_comment(&mut self) -> Result<(), LexError> {
+    fn skip_block_comment(&mut self, start: usize) -> Result<(), LexError> {
         while let Some(char) = self.advance() {
-            if char == '*' {
-                if self.consume_if('/') {
-                    break;
-                }
+            if char == '*' && self.consume_if('/') {
+                return Ok(());
             }
         }
-        if self.eof() {
-            return Err(LexError {
-                message: format!("unterminated block comment"),
-            });
-        }
-        Ok(())
+
+        Err(LexError {
+            message: format!("unterminated block comment"),
+            span: Span {
+                start,
+                end: self.offset,
+            },
+        })
     }
 
     fn peek(&mut self) -> Option<char> {
@@ -223,7 +248,9 @@ impl<'a> Lexer<'a> {
     }
 
     fn advance(&mut self) -> Option<char> {
-        self.chars.next()
+        let ch = self.chars.next()?;
+        self.offset += ch.len_utf8();
+        Some(ch)
     }
 
     fn consume_if(&mut self, expected: char) -> bool {
@@ -234,17 +261,34 @@ impl<'a> Lexer<'a> {
         false
     }
 
-    fn push(&mut self, token: Token) {
-        self.tokens.push(token);
+    fn push(&mut self, kind: TokenKind, span: Span) {
+        self.tokens.push(Token { kind, span });
     }
 
-    fn advance_and_push(&mut self, token: Token) {
+    fn push_token(&mut self, token: Token) {
+        self.tokens.push(token)
+    }
+
+    fn advance_and_push(&mut self, kind: TokenKind) {
+        let start = self.offset;
         self.advance();
-        self.push(token);
+        let end = self.offset;
+
+        self.push(kind, Span { start, end });
     }
 
-    fn eof(&mut self) -> bool {
-        self.chars.peek().is_none()
+    fn advance_and_push_if_next(&mut self, expected: char, single: TokenKind, double: TokenKind) {
+        let start = self.offset;
+        self.advance();
+
+        let kind = if self.consume_if(expected) {
+            double
+        } else {
+            single
+        };
+
+        let end = self.offset;
+        self.push(kind, Span { start, end })
     }
 }
 
@@ -262,6 +306,29 @@ mod tests {
         lexer.lex()
     }
 
+    fn token_kinds(tokens: &[Token]) -> Vec<TokenKind> {
+        tokens.iter().map(|token| token.kind.clone()).collect()
+    }
+
+    fn token_spans(tokens: &[Token]) -> Vec<Span> {
+        tokens.iter().map(|token| token.span).collect()
+    }
+
+    #[test]
+    fn lexes_token_spans() {
+        let tokens = lex_with_struct("int x;").expect("lexing should succeed");
+
+        assert_eq!(
+            token_spans(&tokens),
+            vec![
+                Span { start: 0, end: 3 },
+                Span { start: 4, end: 5 },
+                Span { start: 5, end: 6 },
+                Span { start: 6, end: 6 },
+            ]
+        );
+    }
+
     #[test]
     fn lexes_basic_program() {
         let source = "int main() {\n    return 42;\n}";
@@ -269,18 +336,18 @@ mod tests {
         let tokens = lex_with_struct(source).expect("lexing should succeed");
 
         assert_eq!(
-            tokens,
+            token_kinds(&tokens),
             vec![
-                Token::KwInt,
-                Token::Ident("main".to_string()),
-                Token::LParen,
-                Token::RParen,
-                Token::LBrace,
-                Token::KwReturn,
-                Token::IntLiteral(42),
-                Token::Semicolon,
-                Token::RBrace,
-                Token::Eof,
+                TokenKind::KwInt,
+                TokenKind::Ident("main".to_string()),
+                TokenKind::LParen,
+                TokenKind::RParen,
+                TokenKind::LBrace,
+                TokenKind::KwReturn,
+                TokenKind::IntLiteral(42),
+                TokenKind::Semicolon,
+                TokenKind::RBrace,
+                TokenKind::Eof,
             ]
         );
     }
@@ -290,14 +357,14 @@ mod tests {
         let tokens = lex_with_struct("return 1 + 2;").expect("lexing should succeed");
 
         assert_eq!(
-            tokens,
+            token_kinds(&tokens),
             vec![
-                Token::KwReturn,
-                Token::IntLiteral(1),
-                Token::Plus,
-                Token::IntLiteral(2),
-                Token::Semicolon,
-                Token::Eof,
+                TokenKind::KwReturn,
+                TokenKind::IntLiteral(1),
+                TokenKind::Plus,
+                TokenKind::IntLiteral(2),
+                TokenKind::Semicolon,
+                TokenKind::Eof,
             ]
         );
     }
@@ -307,20 +374,20 @@ mod tests {
         let tokens = lex_with_struct("return 1 - 2 * 3 / 4 % 5;").expect("lexing should succeed");
 
         assert_eq!(
-            tokens,
+            token_kinds(&tokens),
             vec![
-                Token::KwReturn,
-                Token::IntLiteral(1),
-                Token::Minus,
-                Token::IntLiteral(2),
-                Token::Star,
-                Token::IntLiteral(3),
-                Token::Slash,
-                Token::IntLiteral(4),
-                Token::Percent,
-                Token::IntLiteral(5),
-                Token::Semicolon,
-                Token::Eof,
+                TokenKind::KwReturn,
+                TokenKind::IntLiteral(1),
+                TokenKind::Minus,
+                TokenKind::IntLiteral(2),
+                TokenKind::Star,
+                TokenKind::IntLiteral(3),
+                TokenKind::Slash,
+                TokenKind::IntLiteral(4),
+                TokenKind::Percent,
+                TokenKind::IntLiteral(5),
+                TokenKind::Semicolon,
+                TokenKind::Eof,
             ]
         );
     }
@@ -330,14 +397,14 @@ mod tests {
         let tokens = lex_with_struct("int x = 5;").expect("lexing should succeed");
 
         assert_eq!(
-            tokens,
+            token_kinds(&tokens),
             vec![
-                Token::KwInt,
-                Token::Ident("x".to_string()),
-                Token::Equal,
-                Token::IntLiteral(5),
-                Token::Semicolon,
-                Token::Eof,
+                TokenKind::KwInt,
+                TokenKind::Ident("x".to_string()),
+                TokenKind::Equal,
+                TokenKind::IntLiteral(5),
+                TokenKind::Semicolon,
+                TokenKind::Eof,
             ]
         );
     }
@@ -348,28 +415,28 @@ mod tests {
             .expect("lexing should succeed");
 
         assert_eq!(
-            tokens,
+            token_kinds(&tokens),
             vec![
-                Token::KwInt,
-                Token::Ident("add".to_string()),
-                Token::LParen,
-                Token::KwInt,
-                Token::Ident("x".to_string()),
-                Token::Comma,
-                Token::KwInt,
-                Token::Ident("y".to_string()),
-                Token::RParen,
-                Token::LBrace,
-                Token::KwReturn,
-                Token::Ident("add".to_string()),
-                Token::LParen,
-                Token::Ident("x".to_string()),
-                Token::Comma,
-                Token::Ident("y".to_string()),
-                Token::RParen,
-                Token::Semicolon,
-                Token::RBrace,
-                Token::Eof,
+                TokenKind::KwInt,
+                TokenKind::Ident("add".to_string()),
+                TokenKind::LParen,
+                TokenKind::KwInt,
+                TokenKind::Ident("x".to_string()),
+                TokenKind::Comma,
+                TokenKind::KwInt,
+                TokenKind::Ident("y".to_string()),
+                TokenKind::RParen,
+                TokenKind::LBrace,
+                TokenKind::KwReturn,
+                TokenKind::Ident("add".to_string()),
+                TokenKind::LParen,
+                TokenKind::Ident("x".to_string()),
+                TokenKind::Comma,
+                TokenKind::Ident("y".to_string()),
+                TokenKind::RParen,
+                TokenKind::Semicolon,
+                TokenKind::RBrace,
+                TokenKind::Eof,
             ]
         );
     }
@@ -380,24 +447,24 @@ mod tests {
             .expect("lexing should succeed");
 
         assert_eq!(
-            tokens,
+            token_kinds(&tokens),
             vec![
-                Token::KwReturn,
-                Token::IntLiteral(1),
-                Token::EqualEqual,
-                Token::IntLiteral(2),
-                Token::BangEqual,
-                Token::IntLiteral(3),
-                Token::Less,
-                Token::IntLiteral(4),
-                Token::LessEqual,
-                Token::IntLiteral(5),
-                Token::Greater,
-                Token::IntLiteral(6),
-                Token::GreaterEqual,
-                Token::IntLiteral(7),
-                Token::Semicolon,
-                Token::Eof,
+                TokenKind::KwReturn,
+                TokenKind::IntLiteral(1),
+                TokenKind::EqualEqual,
+                TokenKind::IntLiteral(2),
+                TokenKind::BangEqual,
+                TokenKind::IntLiteral(3),
+                TokenKind::Less,
+                TokenKind::IntLiteral(4),
+                TokenKind::LessEqual,
+                TokenKind::IntLiteral(5),
+                TokenKind::Greater,
+                TokenKind::IntLiteral(6),
+                TokenKind::GreaterEqual,
+                TokenKind::IntLiteral(7),
+                TokenKind::Semicolon,
+                TokenKind::Eof,
             ]
         );
     }
@@ -407,19 +474,19 @@ mod tests {
         let tokens = lex_with_struct("return -x + !0 + ~1;").expect("lexing should succeed");
 
         assert_eq!(
-            tokens,
+            token_kinds(&tokens),
             vec![
-                Token::KwReturn,
-                Token::Minus,
-                Token::Ident("x".to_string()),
-                Token::Plus,
-                Token::Bang,
-                Token::IntLiteral(0),
-                Token::Plus,
-                Token::Tilde,
-                Token::IntLiteral(1),
-                Token::Semicolon,
-                Token::Eof,
+                TokenKind::KwReturn,
+                TokenKind::Minus,
+                TokenKind::Ident("x".to_string()),
+                TokenKind::Plus,
+                TokenKind::Bang,
+                TokenKind::IntLiteral(0),
+                TokenKind::Plus,
+                TokenKind::Tilde,
+                TokenKind::IntLiteral(1),
+                TokenKind::Semicolon,
+                TokenKind::Eof,
             ]
         );
     }
@@ -430,22 +497,22 @@ mod tests {
             lex_with_struct("return a & b | c ^ d << 2 >> 1;").expect("lexing should succeed");
 
         assert_eq!(
-            tokens,
+            token_kinds(&tokens),
             vec![
-                Token::KwReturn,
-                Token::Ident("a".to_string()),
-                Token::Ampersand,
-                Token::Ident("b".to_string()),
-                Token::Pipe,
-                Token::Ident("c".to_string()),
-                Token::Caret,
-                Token::Ident("d".to_string()),
-                Token::LessLess,
-                Token::IntLiteral(2),
-                Token::GreaterGreater,
-                Token::IntLiteral(1),
-                Token::Semicolon,
-                Token::Eof,
+                TokenKind::KwReturn,
+                TokenKind::Ident("a".to_string()),
+                TokenKind::Ampersand,
+                TokenKind::Ident("b".to_string()),
+                TokenKind::Pipe,
+                TokenKind::Ident("c".to_string()),
+                TokenKind::Caret,
+                TokenKind::Ident("d".to_string()),
+                TokenKind::LessLess,
+                TokenKind::IntLiteral(2),
+                TokenKind::GreaterGreater,
+                TokenKind::IntLiteral(1),
+                TokenKind::Semicolon,
+                TokenKind::Eof,
             ]
         );
     }
@@ -456,24 +523,24 @@ mod tests {
             .expect("lexing should succeed");
 
         assert_eq!(
-            tokens,
+            token_kinds(&tokens),
             vec![
-                Token::KwReturn,
-                Token::Ident("a".to_string()),
-                Token::Less,
-                Token::Ident("b".to_string()),
-                Token::LessEqual,
-                Token::Ident("c".to_string()),
-                Token::LessLess,
-                Token::Ident("d".to_string()),
-                Token::Greater,
-                Token::Ident("e".to_string()),
-                Token::GreaterEqual,
-                Token::Ident("f".to_string()),
-                Token::GreaterGreater,
-                Token::Ident("g".to_string()),
-                Token::Semicolon,
-                Token::Eof,
+                TokenKind::KwReturn,
+                TokenKind::Ident("a".to_string()),
+                TokenKind::Less,
+                TokenKind::Ident("b".to_string()),
+                TokenKind::LessEqual,
+                TokenKind::Ident("c".to_string()),
+                TokenKind::LessLess,
+                TokenKind::Ident("d".to_string()),
+                TokenKind::Greater,
+                TokenKind::Ident("e".to_string()),
+                TokenKind::GreaterEqual,
+                TokenKind::Ident("f".to_string()),
+                TokenKind::GreaterGreater,
+                TokenKind::Ident("g".to_string()),
+                TokenKind::Semicolon,
+                TokenKind::Eof,
             ]
         );
     }
@@ -483,16 +550,16 @@ mod tests {
         let tokens = lex_with_struct("while (x) return x;").expect("lexing should succeed");
 
         assert_eq!(
-            tokens,
+            token_kinds(&tokens),
             vec![
-                Token::KwWhile,
-                Token::LParen,
-                Token::Ident("x".to_string()),
-                Token::RParen,
-                Token::KwReturn,
-                Token::Ident("x".to_string()),
-                Token::Semicolon,
-                Token::Eof,
+                TokenKind::KwWhile,
+                TokenKind::LParen,
+                TokenKind::Ident("x".to_string()),
+                TokenKind::RParen,
+                TokenKind::KwReturn,
+                TokenKind::Ident("x".to_string()),
+                TokenKind::Semicolon,
+                TokenKind::Eof,
             ]
         );
     }
@@ -502,13 +569,13 @@ mod tests {
         let tokens = lex_with_struct("break; continue;").expect("lexing should succeed");
 
         assert_eq!(
-            tokens,
+            token_kinds(&tokens),
             vec![
-                Token::KwBreak,
-                Token::Semicolon,
-                Token::KwContinue,
-                Token::Semicolon,
-                Token::Eof,
+                TokenKind::KwBreak,
+                TokenKind::Semicolon,
+                TokenKind::KwContinue,
+                TokenKind::Semicolon,
+                TokenKind::Eof,
             ]
         );
     }
@@ -518,14 +585,14 @@ mod tests {
         let tokens = lex_with_struct("return 6 / 2;").expect("lexing should succeed");
 
         assert_eq!(
-            tokens,
+            token_kinds(&tokens),
             vec![
-                Token::KwReturn,
-                Token::IntLiteral(6),
-                Token::Slash,
-                Token::IntLiteral(2),
-                Token::Semicolon,
-                Token::Eof,
+                TokenKind::KwReturn,
+                TokenKind::IntLiteral(6),
+                TokenKind::Slash,
+                TokenKind::IntLiteral(2),
+                TokenKind::Semicolon,
+                TokenKind::Eof,
             ]
         );
     }
@@ -535,12 +602,12 @@ mod tests {
         let tokens = lex_with_struct("return 1; // comment").expect("lexing should succeed");
 
         assert_eq!(
-            tokens,
+            token_kinds(&tokens),
             vec![
-                Token::KwReturn,
-                Token::IntLiteral(1),
-                Token::Semicolon,
-                Token::Eof,
+                TokenKind::KwReturn,
+                TokenKind::IntLiteral(1),
+                TokenKind::Semicolon,
+                TokenKind::Eof,
             ]
         );
     }
@@ -550,12 +617,12 @@ mod tests {
         let tokens = lex_with_struct("return /* comment */ 1;").expect("lexing should succeed");
 
         assert_eq!(
-            tokens,
+            token_kinds(&tokens),
             vec![
-                Token::KwReturn,
-                Token::IntLiteral(1),
-                Token::Semicolon,
-                Token::Eof,
+                TokenKind::KwReturn,
+                TokenKind::IntLiteral(1),
+                TokenKind::Semicolon,
+                TokenKind::Eof,
             ]
         );
     }
@@ -565,12 +632,12 @@ mod tests {
         let tokens = lex_with_struct("return /* *a ** b* c */ 1;").expect("lexing should succeed");
 
         assert_eq!(
-            tokens,
+            token_kinds(&tokens),
             vec![
-                Token::KwReturn,
-                Token::IntLiteral(1),
-                Token::Semicolon,
-                Token::Eof,
+                TokenKind::KwReturn,
+                TokenKind::IntLiteral(1),
+                TokenKind::Semicolon,
+                TokenKind::Eof,
             ]
         );
     }
@@ -581,14 +648,14 @@ mod tests {
             lex_with_struct("return 8 / 2; // trailing comment").expect("lexing should succeed");
 
         assert_eq!(
-            tokens,
+            token_kinds(&tokens),
             vec![
-                Token::KwReturn,
-                Token::IntLiteral(8),
-                Token::Slash,
-                Token::IntLiteral(2),
-                Token::Semicolon,
-                Token::Eof,
+                TokenKind::KwReturn,
+                TokenKind::IntLiteral(8),
+                TokenKind::Slash,
+                TokenKind::IntLiteral(2),
+                TokenKind::Semicolon,
+                TokenKind::Eof,
             ]
         );
     }
@@ -598,12 +665,12 @@ mod tests {
         let tokens = lex_with_struct("return/* comment */1;").expect("lexing should succeed");
 
         assert_eq!(
-            tokens,
+            token_kinds(&tokens),
             vec![
-                Token::KwReturn,
-                Token::IntLiteral(1),
-                Token::Semicolon,
-                Token::Eof,
+                TokenKind::KwReturn,
+                TokenKind::IntLiteral(1),
+                TokenKind::Semicolon,
+                TokenKind::Eof,
             ]
         );
     }
@@ -614,12 +681,12 @@ mod tests {
             lex_with_struct("return /* first */ /* second */ 1;").expect("lexing should succeed");
 
         assert_eq!(
-            tokens,
+            token_kinds(&tokens),
             vec![
-                Token::KwReturn,
-                Token::IntLiteral(1),
-                Token::Semicolon,
-                Token::Eof,
+                TokenKind::KwReturn,
+                TokenKind::IntLiteral(1),
+                TokenKind::Semicolon,
+                TokenKind::Eof,
             ]
         );
     }
@@ -629,21 +696,29 @@ mod tests {
         let tokens = lex_with_struct("return /**/ 1;").expect("lexing should succeed");
 
         assert_eq!(
-            tokens,
+            token_kinds(&tokens),
             vec![
-                Token::KwReturn,
-                Token::IntLiteral(1),
-                Token::Semicolon,
-                Token::Eof,
+                TokenKind::KwReturn,
+                TokenKind::IntLiteral(1),
+                TokenKind::Semicolon,
+                TokenKind::Eof,
             ]
         );
     }
 
     #[test]
     fn rejects_unterminated_block_comment() {
-        let err = lex_with_struct("return /* unterminated").expect_err("lexing should fail");
+        let source = "return /* unterminated";
+        let err = lex_with_struct(source).expect_err("lexing should fail");
 
         assert_eq!(err.message, "unterminated block comment");
+        assert_eq!(
+            err.span,
+            Span {
+                start: 7,
+                end: source.len()
+            }
+        );
     }
 
     #[test]
@@ -651,6 +726,7 @@ mod tests {
         let err = lex_with_struct("int main @").expect_err("lexing should fail");
 
         assert_eq!(err.message, "unexpected character '@'");
+        assert_eq!(err.span, Span { start: 9, end: 10 });
     }
 
     #[test]
@@ -658,16 +734,16 @@ mod tests {
         let tokens = lex_with_struct("return 1 && 0 || 2;").expect("lexing should succeed");
 
         assert_eq!(
-            tokens,
+            token_kinds(&tokens),
             vec![
-                Token::KwReturn,
-                Token::IntLiteral(1),
-                Token::AmpersandAmpersand,
-                Token::IntLiteral(0),
-                Token::PipePipe,
-                Token::IntLiteral(2),
-                Token::Semicolon,
-                Token::Eof,
+                TokenKind::KwReturn,
+                TokenKind::IntLiteral(1),
+                TokenKind::AmpersandAmpersand,
+                TokenKind::IntLiteral(0),
+                TokenKind::PipePipe,
+                TokenKind::IntLiteral(2),
+                TokenKind::Semicolon,
+                TokenKind::Eof,
             ]
         );
     }
@@ -677,16 +753,16 @@ mod tests {
         let tokens = lex_with_struct("return 6&3|1;").expect("lexing should succeed");
 
         assert_eq!(
-            tokens,
+            token_kinds(&tokens),
             vec![
-                Token::KwReturn,
-                Token::IntLiteral(6),
-                Token::Ampersand,
-                Token::IntLiteral(3),
-                Token::Pipe,
-                Token::IntLiteral(1),
-                Token::Semicolon,
-                Token::Eof,
+                TokenKind::KwReturn,
+                TokenKind::IntLiteral(6),
+                TokenKind::Ampersand,
+                TokenKind::IntLiteral(3),
+                TokenKind::Pipe,
+                TokenKind::IntLiteral(1),
+                TokenKind::Semicolon,
+                TokenKind::Eof,
             ]
         );
     }

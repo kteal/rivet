@@ -1,10 +1,12 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::ast::{Expr, Function, Program, Statement};
+use crate::lexer::Span;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SemanticError {
     pub message: String,
+    pub span: Span,
 }
 
 pub struct FunctionInfo {
@@ -61,17 +63,18 @@ impl Checker {
             .expect("semantic checker should have an active scope")
     }
 
-    fn declare_local(&mut self, name: &str) -> Result<(), SemanticError> {
+    fn declare_local(&mut self, name: &str, span: Span) -> Result<(), SemanticError> {
         if self.current_scope().contains(name) {
             return Err(SemanticError {
                 message: format!("duplicate local variable '{name}'"),
+                span,
             });
         }
         self.current_scope_mut().insert(name.to_string());
         Ok(())
     }
 
-    fn check_local_declared(&self, name: &str) -> Result<(), SemanticError> {
+    fn check_local_declared(&self, name: &str, span: Span) -> Result<(), SemanticError> {
         for scope in self.scopes.iter().rev() {
             if scope.contains(name) {
                 return Ok(());
@@ -79,6 +82,7 @@ impl Checker {
         }
         return Err(SemanticError {
             message: format!("undeclared local variable '{name}'"),
+            span,
         });
     }
 
@@ -86,6 +90,7 @@ impl Checker {
         if self.functions.contains_key(&function.name) {
             return Err(SemanticError {
                 message: format!("duplicate function '{}'", &function.name),
+                span: function.name_span,
             });
         }
         // For now, limit to 8 args (no stack-passed arguments)
@@ -96,6 +101,7 @@ impl Checker {
                     function.name,
                     function.params.len()
                 ),
+                span: function.name_span,
             });
         }
         self.functions.insert(
@@ -107,16 +113,22 @@ impl Checker {
         Ok(())
     }
 
-    fn check_function_declared(&self, name: &str) -> Result<(), SemanticError> {
+    fn check_function_declared(&self, name: &str, span: Span) -> Result<(), SemanticError> {
         if !self.functions.contains_key(name) {
             return Err(SemanticError {
                 message: format!("undeclared function '{name}'"),
+                span,
             });
         }
         Ok(())
     }
 
-    fn check_function_param_count(&self, name: &str, expected: usize) -> Result<(), SemanticError> {
+    fn check_function_param_count(
+        &self,
+        name: &str,
+        expected: usize,
+        span: Span,
+    ) -> Result<(), SemanticError> {
         let num_args = self
             .functions
             .get(name)
@@ -127,6 +139,7 @@ impl Checker {
                 message: format!(
                     "function call of '{name}' has {expected} arguments, declaration has {num_args}"
                 ),
+                span,
             });
         }
         Ok(())
@@ -135,13 +148,18 @@ impl Checker {
     fn check_expr(&mut self, expr: &Expr) -> Result<(), SemanticError> {
         match expr {
             Expr::IntLiteral(_) => (),
-            Expr::Variable(name) => self.check_local_declared(name)?,
+            Expr::Variable { name, span } => self.check_local_declared(name, *span)?,
             Expr::Unary { op: _, expr } => self.check_expr(expr)?,
             Expr::Binary { op: _, left, right } => {
                 self.check_expr(left)?;
                 self.check_expr(right)?;
             }
-            Expr::Call { name, args } => {
+            Expr::Call {
+                name,
+                name_span,
+                args,
+            } => {
+                self.check_function_declared(name, *name_span)?;
                 // For now, limit to 8 args (no stack-passed arguments)
                 if args.len() > 8 {
                     return Err(SemanticError {
@@ -150,16 +168,20 @@ impl Checker {
                             name,
                             args.len()
                         ),
+                        span: *name_span,
                     });
                 }
-                self.check_function_declared(name)?;
-                self.check_function_param_count(name, args.len())?;
+                self.check_function_param_count(name, args.len(), *name_span)?;
                 for arg in args {
                     self.check_expr(arg)?;
                 }
             }
-            Expr::Assign { name, value } => {
-                self.check_local_declared(name)?;
+            Expr::Assign {
+                name,
+                name_span,
+                value,
+            } => {
+                self.check_local_declared(name, *name_span)?;
                 self.check_expr(value)?;
             }
         }
@@ -169,8 +191,12 @@ impl Checker {
     fn check_statement(&mut self, statement: &Statement) -> Result<(), SemanticError> {
         match statement {
             Statement::Return(expr) => self.check_expr(expr)?,
-            Statement::VarDecl { name, init } => {
-                self.declare_local(name)?;
+            Statement::VarDecl {
+                name,
+                name_span,
+                init,
+            } => {
+                self.declare_local(name, *name_span)?;
                 if let Some(init_expr) = init {
                     self.check_expr(init_expr)?;
                 }
@@ -223,17 +249,19 @@ impl Checker {
             }
             Statement::Empty => (),
             Statement::ExprStatement(expr) => self.check_expr(expr)?,
-            Statement::Break => {
+            Statement::Break { span } => {
                 if !self.in_loop() {
                     return Err(SemanticError {
                         message: format!("cannot use 'break' outside of a loop"),
+                        span: *span,
                     });
                 }
             }
-            Statement::Continue => {
+            Statement::Continue { span } => {
                 if !self.in_loop() {
                     return Err(SemanticError {
                         message: format!("cannot use 'continue' outside of a loop"),
+                        span: *span,
                     });
                 }
             }
@@ -258,7 +286,7 @@ impl Checker {
     fn check_function(&mut self, function: &Function) -> Result<(), SemanticError> {
         self.enter_scope();
         for param in function.params.clone() {
-            self.declare_local(&param)?;
+            self.declare_local(&param, function.name_span)?;
         }
         let res = self.check_statements(&function.body);
         self.exit_scope();
@@ -272,6 +300,7 @@ impl Checker {
         if !self.functions.contains_key("main") {
             return Err(SemanticError {
                 message: "no 'main' function found".to_string(),
+                span: program.eof_span,
             });
         }
         for function in &program.functions {
@@ -291,19 +320,27 @@ pub fn check(program: &Program) -> Result<(), SemanticError> {
 mod tests {
     use super::*;
     use crate::ast::{BinaryOp, Expr, Function, Program, Statement};
+    use crate::lexer::Span;
+
+    fn span() -> Span {
+        Span { start: 0, end: 0 }
+    }
 
     fn main_program(body: Vec<Statement>) -> Program {
         Program {
             functions: vec![Function {
+                name_span: span(),
                 name: "main".to_string(),
                 params: vec![],
                 body,
             }],
+            eof_span: span(),
         }
     }
 
     fn function(name: &str, body: Vec<Statement>) -> Function {
         Function {
+            name_span: span(),
             name: name.to_string(),
             params: vec![],
             body,
@@ -312,6 +349,7 @@ mod tests {
 
     fn function_with_params(name: &str, params: &[&str], body: Vec<Statement>) -> Function {
         Function {
+            name_span: span(),
             name: name.to_string(),
             params: params.iter().map(|param| param.to_string()).collect(),
             body,
@@ -325,6 +363,7 @@ mod tests {
                 function("helper", vec![Statement::Return(Expr::IntLiteral(1))]),
                 function("main", vec![Statement::Return(Expr::IntLiteral(0))]),
             ],
+            eof_span: span(),
         };
 
         check(&program).expect("semantic check should succeed");
@@ -338,24 +377,33 @@ mod tests {
                     "first",
                     vec![
                         Statement::VarDecl {
+                            name_span: span(),
                             name: "x".to_string(),
                             init: Some(Expr::IntLiteral(1)),
                         },
-                        Statement::Return(Expr::Variable("x".to_string())),
+                        Statement::Return(Expr::Variable {
+                            name: "x".to_string(),
+                            span: span(),
+                        }),
                     ],
                 ),
                 function(
                     "second",
                     vec![
                         Statement::VarDecl {
+                            name_span: span(),
                             name: "x".to_string(),
                             init: Some(Expr::IntLiteral(2)),
                         },
-                        Statement::Return(Expr::Variable("x".to_string())),
+                        Statement::Return(Expr::Variable {
+                            name: "x".to_string(),
+                            span: span(),
+                        }),
                     ],
                 ),
                 function("main", vec![Statement::Return(Expr::IntLiteral(0))]),
             ],
+            eof_span: span(),
         };
 
         check(&program).expect("semantic check should succeed");
@@ -368,6 +416,7 @@ mod tests {
                 function("main", vec![Statement::Return(Expr::IntLiteral(0))]),
                 function("main", vec![Statement::Return(Expr::IntLiteral(1))]),
             ],
+            eof_span: span(),
         };
 
         let err = check(&program).expect_err("semantic check should fail");
@@ -382,6 +431,7 @@ mod tests {
                 "helper",
                 vec![Statement::Return(Expr::IntLiteral(1))],
             )],
+            eof_span: span(),
         };
 
         let err = check(&program).expect_err("semantic check should fail");
@@ -397,11 +447,13 @@ mod tests {
                 function(
                     "main",
                     vec![Statement::Return(Expr::Call {
+                        name_span: span(),
                         name: "helper".to_string(),
                         args: vec![],
                     })],
                 ),
             ],
+            eof_span: span(),
         };
 
         check(&program).expect("semantic check should succeed");
@@ -414,12 +466,14 @@ mod tests {
                 function(
                     "main",
                     vec![Statement::Return(Expr::Call {
+                        name_span: span(),
                         name: "helper".to_string(),
                         args: vec![],
                     })],
                 ),
                 function("helper", vec![Statement::Return(Expr::IntLiteral(1))]),
             ],
+            eof_span: span(),
         };
 
         check(&program).expect("semantic check should succeed");
@@ -428,6 +482,7 @@ mod tests {
     #[test]
     fn rejects_call_to_undeclared_function() {
         let program = main_program(vec![Statement::Return(Expr::Call {
+            name_span: span(),
             name: "helper".to_string(),
             args: vec![],
         })]);
@@ -456,6 +511,7 @@ mod tests {
                     "main",
                     vec![
                         Statement::ExprStatement(Expr::Call {
+                            name_span: span(),
                             name: "helper".to_string(),
                             args: vec![],
                         }),
@@ -463,6 +519,7 @@ mod tests {
                     ],
                 ),
             ],
+            eof_span: span(),
         };
 
         check(&program).expect("semantic check should succeed");
@@ -471,7 +528,10 @@ mod tests {
     #[test]
     fn rejects_expression_statement_with_undeclared_variable() {
         let program = main_program(vec![
-            Statement::ExprStatement(Expr::Variable("x".to_string())),
+            Statement::ExprStatement(Expr::Variable {
+                name: "x".to_string(),
+                span: span(),
+            }),
             Statement::Return(Expr::IntLiteral(0)),
         ]);
 
@@ -488,10 +548,17 @@ mod tests {
                 &["x", "y"],
                 vec![Statement::Return(Expr::Binary {
                     op: BinaryOp::Add,
-                    left: Box::new(Expr::Variable("x".to_string())),
-                    right: Box::new(Expr::Variable("y".to_string())),
+                    left: Box::new(Expr::Variable {
+                        name: "x".to_string(),
+                        span: span(),
+                    }),
+                    right: Box::new(Expr::Variable {
+                        name: "y".to_string(),
+                        span: span(),
+                    }),
                 })],
             )],
+            eof_span: span(),
         };
 
         check(&program).expect("semantic check should succeed");
@@ -503,8 +570,12 @@ mod tests {
             functions: vec![function_with_params(
                 "main",
                 &["x", "x"],
-                vec![Statement::Return(Expr::Variable("x".to_string()))],
+                vec![Statement::Return(Expr::Variable {
+                    name: "x".to_string(),
+                    span: span(),
+                })],
             )],
+            eof_span: span(),
         };
 
         let err = check(&program).expect_err("semantic check should fail");
@@ -520,12 +591,17 @@ mod tests {
                 &["x"],
                 vec![
                     Statement::VarDecl {
+                        name_span: span(),
                         name: "x".to_string(),
                         init: Some(Expr::IntLiteral(1)),
                     },
-                    Statement::Return(Expr::Variable("x".to_string())),
+                    Statement::Return(Expr::Variable {
+                        name: "x".to_string(),
+                        span: span(),
+                    }),
                 ],
             )],
+            eof_span: span(),
         };
 
         let err = check(&program).expect_err("semantic check should fail");
@@ -541,12 +617,17 @@ mod tests {
                 &["x"],
                 vec![Statement::Block(vec![
                     Statement::VarDecl {
+                        name_span: span(),
                         name: "x".to_string(),
                         init: Some(Expr::IntLiteral(1)),
                     },
-                    Statement::Return(Expr::Variable("x".to_string())),
+                    Statement::Return(Expr::Variable {
+                        name: "x".to_string(),
+                        span: span(),
+                    }),
                 ])],
             )],
+            eof_span: span(),
         };
 
         check(&program).expect("semantic check should succeed");
@@ -561,18 +642,26 @@ mod tests {
                     &["x", "y"],
                     vec![Statement::Return(Expr::Binary {
                         op: BinaryOp::Add,
-                        left: Box::new(Expr::Variable("x".to_string())),
-                        right: Box::new(Expr::Variable("y".to_string())),
+                        left: Box::new(Expr::Variable {
+                            name: "x".to_string(),
+                            span: span(),
+                        }),
+                        right: Box::new(Expr::Variable {
+                            name: "y".to_string(),
+                            span: span(),
+                        }),
                     })],
                 ),
                 function(
                     "main",
                     vec![Statement::Return(Expr::Call {
+                        name_span: span(),
                         name: "add".to_string(),
                         args: vec![Expr::IntLiteral(1), Expr::IntLiteral(2)],
                     })],
                 ),
             ],
+            eof_span: span(),
         };
 
         check(&program).expect("semantic check should succeed");
@@ -585,16 +674,21 @@ mod tests {
                 function_with_params(
                     "add",
                     &["x", "y"],
-                    vec![Statement::Return(Expr::Variable("x".to_string()))],
+                    vec![Statement::Return(Expr::Variable {
+                        name: "x".to_string(),
+                        span: span(),
+                    })],
                 ),
                 function(
                     "main",
                     vec![Statement::Return(Expr::Call {
+                        name_span: span(),
                         name: "add".to_string(),
                         args: vec![Expr::IntLiteral(1)],
                     })],
                 ),
             ],
+            eof_span: span(),
         };
 
         let err = check(&program).expect_err("semantic check should fail");
@@ -612,16 +706,21 @@ mod tests {
                 function_with_params(
                     "id",
                     &["x"],
-                    vec![Statement::Return(Expr::Variable("x".to_string()))],
+                    vec![Statement::Return(Expr::Variable {
+                        name: "x".to_string(),
+                        span: span(),
+                    })],
                 ),
                 function(
                     "main",
                     vec![Statement::Return(Expr::Call {
+                        name_span: span(),
                         name: "id".to_string(),
                         args: vec![Expr::IntLiteral(1), Expr::IntLiteral(2)],
                     })],
                 ),
             ],
+            eof_span: span(),
         };
 
         let err = check(&program).expect_err("semantic check should fail");
@@ -640,6 +739,7 @@ mod tests {
                 &["a", "b", "c", "d", "e", "f", "g", "h", "i"],
                 vec![Statement::Return(Expr::IntLiteral(0))],
             )],
+            eof_span: span(),
         };
 
         let err = check(&program).expect_err("semantic check should fail");
@@ -658,6 +758,7 @@ mod tests {
                 function(
                     "main",
                     vec![Statement::Return(Expr::Call {
+                        name_span: span(),
                         name: "helper".to_string(),
                         args: vec![
                             Expr::IntLiteral(1),
@@ -673,6 +774,7 @@ mod tests {
                     })],
                 ),
             ],
+            eof_span: span(),
         };
 
         let err = check(&program).expect_err("semantic check should fail");
@@ -687,18 +789,26 @@ mod tests {
     fn accepts_declared_local_usage() {
         let program = main_program(vec![
             Statement::VarDecl {
+                name_span: span(),
                 name: "x".to_string(),
                 init: Some(Expr::IntLiteral(1)),
             },
             Statement::ExprStatement(Expr::Assign {
+                name_span: span(),
                 name: "x".to_string(),
                 value: Box::new(Expr::Binary {
                     op: BinaryOp::Add,
-                    left: Box::new(Expr::Variable("x".to_string())),
+                    left: Box::new(Expr::Variable {
+                        name: "x".to_string(),
+                        span: span(),
+                    }),
                     right: Box::new(Expr::IntLiteral(2)),
                 }),
             }),
-            Statement::Return(Expr::Variable("x".to_string())),
+            Statement::Return(Expr::Variable {
+                name: "x".to_string(),
+                span: span(),
+            }),
         ]);
 
         check(&program).expect("semantic check should succeed");
@@ -708,14 +818,19 @@ mod tests {
     fn accepts_declaration_without_initializer_assigned_before_use() {
         let program = main_program(vec![
             Statement::VarDecl {
+                name_span: span(),
                 name: "x".to_string(),
                 init: None,
             },
             Statement::ExprStatement(Expr::Assign {
+                name_span: span(),
                 name: "x".to_string(),
                 value: Box::new(Expr::IntLiteral(3)),
             }),
-            Statement::Return(Expr::Variable("x".to_string())),
+            Statement::Return(Expr::Variable {
+                name: "x".to_string(),
+                span: span(),
+            }),
         ]);
 
         check(&program).expect("semantic check should succeed");
@@ -725,10 +840,12 @@ mod tests {
     fn accepts_assignment_expression_in_return() {
         let program = main_program(vec![
             Statement::VarDecl {
+                name_span: span(),
                 name: "x".to_string(),
                 init: None,
             },
             Statement::Return(Expr::Assign {
+                name_span: span(),
                 name: "x".to_string(),
                 value: Box::new(Expr::IntLiteral(3)),
             }),
@@ -740,6 +857,7 @@ mod tests {
     #[test]
     fn rejects_assignment_expression_to_undeclared_local() {
         let program = main_program(vec![Statement::Return(Expr::Assign {
+            name_span: span(),
             name: "x".to_string(),
             value: Box::new(Expr::IntLiteral(3)),
         })]);
@@ -753,14 +871,22 @@ mod tests {
     fn accepts_initializer_using_earlier_local() {
         let program = main_program(vec![
             Statement::VarDecl {
+                name_span: span(),
                 name: "x".to_string(),
                 init: Some(Expr::IntLiteral(1)),
             },
             Statement::VarDecl {
+                name_span: span(),
                 name: "y".to_string(),
-                init: Some(Expr::Variable("x".to_string())),
+                init: Some(Expr::Variable {
+                    name: "x".to_string(),
+                    span: span(),
+                }),
             },
-            Statement::Return(Expr::Variable("y".to_string())),
+            Statement::Return(Expr::Variable {
+                name: "y".to_string(),
+                span: span(),
+            }),
         ]);
 
         check(&program).expect("semantic check should succeed");
@@ -770,10 +896,17 @@ mod tests {
     fn accepts_initializer_using_declared_name_itself() {
         let program = main_program(vec![
             Statement::VarDecl {
+                name_span: span(),
                 name: "x".to_string(),
-                init: Some(Expr::Variable("x".to_string())),
+                init: Some(Expr::Variable {
+                    name: "x".to_string(),
+                    span: span(),
+                }),
             },
-            Statement::Return(Expr::Variable("x".to_string())),
+            Statement::Return(Expr::Variable {
+                name: "x".to_string(),
+                span: span(),
+            }),
         ]);
 
         check(&program).expect("semantic check should succeed");
@@ -783,14 +916,19 @@ mod tests {
     fn rejects_duplicate_local_declaration() {
         let program = main_program(vec![
             Statement::VarDecl {
+                name_span: span(),
                 name: "x".to_string(),
                 init: Some(Expr::IntLiteral(1)),
             },
             Statement::VarDecl {
+                name_span: span(),
                 name: "x".to_string(),
                 init: Some(Expr::IntLiteral(2)),
             },
-            Statement::Return(Expr::Variable("x".to_string())),
+            Statement::Return(Expr::Variable {
+                name: "x".to_string(),
+                span: span(),
+            }),
         ]);
 
         let err = check(&program).expect_err("semantic check should fail");
@@ -802,6 +940,7 @@ mod tests {
     fn rejects_assignment_to_undeclared_local() {
         let program = main_program(vec![
             Statement::ExprStatement(Expr::Assign {
+                name_span: span(),
                 name: "x".to_string(),
                 value: Box::new(Expr::IntLiteral(1)),
             }),
@@ -815,7 +954,10 @@ mod tests {
 
     #[test]
     fn rejects_returning_undeclared_local() {
-        let program = main_program(vec![Statement::Return(Expr::Variable("x".to_string()))]);
+        let program = main_program(vec![Statement::Return(Expr::Variable {
+            name: "x".to_string(),
+            span: span(),
+        })]);
 
         let err = check(&program).expect_err("semantic check should fail");
 
@@ -826,14 +968,22 @@ mod tests {
     fn rejects_initializer_using_later_local() {
         let program = main_program(vec![
             Statement::VarDecl {
+                name_span: span(),
                 name: "y".to_string(),
-                init: Some(Expr::Variable("x".to_string())),
+                init: Some(Expr::Variable {
+                    name: "x".to_string(),
+                    span: span(),
+                }),
             },
             Statement::VarDecl {
+                name_span: span(),
                 name: "x".to_string(),
                 init: Some(Expr::IntLiteral(1)),
             },
-            Statement::Return(Expr::Variable("y".to_string())),
+            Statement::Return(Expr::Variable {
+                name: "y".to_string(),
+                span: span(),
+            }),
         ]);
 
         let err = check(&program).expect_err("semantic check should fail");
@@ -845,13 +995,20 @@ mod tests {
     fn rejects_undeclared_local_inside_nested_expression() {
         let program = main_program(vec![
             Statement::VarDecl {
+                name_span: span(),
                 name: "x".to_string(),
                 init: Some(Expr::IntLiteral(1)),
             },
             Statement::Return(Expr::Binary {
                 op: BinaryOp::Multiply,
-                left: Box::new(Expr::Variable("x".to_string())),
-                right: Box::new(Expr::Variable("y".to_string())),
+                left: Box::new(Expr::Variable {
+                    name: "x".to_string(),
+                    span: span(),
+                }),
+                right: Box::new(Expr::Variable {
+                    name: "y".to_string(),
+                    span: span(),
+                }),
             }),
         ]);
 
@@ -864,10 +1021,14 @@ mod tests {
     fn accepts_block_using_outer_local() {
         let program = main_program(vec![
             Statement::VarDecl {
+                name_span: span(),
                 name: "x".to_string(),
                 init: Some(Expr::IntLiteral(1)),
             },
-            Statement::Block(vec![Statement::Return(Expr::Variable("x".to_string()))]),
+            Statement::Block(vec![Statement::Return(Expr::Variable {
+                name: "x".to_string(),
+                span: span(),
+            })]),
         ]);
 
         check(&program).expect("semantic check should succeed");
@@ -877,10 +1038,14 @@ mod tests {
     fn rejects_use_of_local_after_block_scope_ends() {
         let program = main_program(vec![
             Statement::Block(vec![Statement::VarDecl {
+                name_span: span(),
                 name: "x".to_string(),
                 init: Some(Expr::IntLiteral(1)),
             }]),
-            Statement::Return(Expr::Variable("x".to_string())),
+            Statement::Return(Expr::Variable {
+                name: "x".to_string(),
+                span: span(),
+            }),
         ]);
 
         let err = check(&program).expect_err("semantic check should fail");
@@ -892,15 +1057,20 @@ mod tests {
     fn accepts_shadowing_in_inner_block() {
         let program = main_program(vec![
             Statement::VarDecl {
+                name_span: span(),
                 name: "x".to_string(),
                 init: Some(Expr::IntLiteral(1)),
             },
             Statement::Block(vec![
                 Statement::VarDecl {
+                    name_span: span(),
                     name: "x".to_string(),
                     init: Some(Expr::IntLiteral(2)),
                 },
-                Statement::Return(Expr::Variable("x".to_string())),
+                Statement::Return(Expr::Variable {
+                    name: "x".to_string(),
+                    span: span(),
+                }),
             ]),
         ]);
 
@@ -912,10 +1082,12 @@ mod tests {
         let program = main_program(vec![
             Statement::Block(vec![
                 Statement::VarDecl {
+                    name_span: span(),
                     name: "x".to_string(),
                     init: Some(Expr::IntLiteral(1)),
                 },
                 Statement::VarDecl {
+                    name_span: span(),
                     name: "x".to_string(),
                     init: Some(Expr::IntLiteral(2)),
                 },
@@ -932,28 +1104,46 @@ mod tests {
     fn accepts_if_else_with_locals_in_branches() {
         let program = main_program(vec![
             Statement::VarDecl {
+                name_span: span(),
                 name: "x".to_string(),
                 init: Some(Expr::IntLiteral(1)),
             },
             Statement::If {
                 cond: Expr::Binary {
                     op: BinaryOp::Less,
-                    left: Box::new(Expr::Variable("x".to_string())),
+                    left: Box::new(Expr::Variable {
+                        name: "x".to_string(),
+                        span: span(),
+                    }),
                     right: Box::new(Expr::IntLiteral(2)),
                 },
                 then_branch: Box::new(Statement::Block(vec![
                     Statement::VarDecl {
+                        name_span: span(),
                         name: "y".to_string(),
-                        init: Some(Expr::Variable("x".to_string())),
+                        init: Some(Expr::Variable {
+                            name: "x".to_string(),
+                            span: span(),
+                        }),
                     },
-                    Statement::Return(Expr::Variable("y".to_string())),
+                    Statement::Return(Expr::Variable {
+                        name: "y".to_string(),
+                        span: span(),
+                    }),
                 ])),
                 else_branch: Some(Box::new(Statement::Block(vec![
                     Statement::VarDecl {
+                        name_span: span(),
                         name: "z".to_string(),
-                        init: Some(Expr::Variable("x".to_string())),
+                        init: Some(Expr::Variable {
+                            name: "x".to_string(),
+                            span: span(),
+                        }),
                     },
-                    Statement::Return(Expr::Variable("z".to_string())),
+                    Statement::Return(Expr::Variable {
+                        name: "z".to_string(),
+                        span: span(),
+                    }),
                 ]))),
             },
         ]);
@@ -965,23 +1155,34 @@ mod tests {
     fn accepts_while_with_local_condition_and_body() {
         let program = main_program(vec![
             Statement::VarDecl {
+                name_span: span(),
                 name: "x".to_string(),
                 init: Some(Expr::IntLiteral(3)),
             },
             Statement::While {
-                cond: Expr::Variable("x".to_string()),
+                cond: Expr::Variable {
+                    name: "x".to_string(),
+                    span: span(),
+                },
                 body: Box::new(Statement::Block(vec![Statement::ExprStatement(
                     Expr::Assign {
+                        name_span: span(),
                         name: "x".to_string(),
                         value: Box::new(Expr::Binary {
                             op: BinaryOp::Subtract,
-                            left: Box::new(Expr::Variable("x".to_string())),
+                            left: Box::new(Expr::Variable {
+                                name: "x".to_string(),
+                                span: span(),
+                            }),
                             right: Box::new(Expr::IntLiteral(1)),
                         }),
                     },
                 )])),
             },
-            Statement::Return(Expr::Variable("x".to_string())),
+            Statement::Return(Expr::Variable {
+                name: "x".to_string(),
+                span: span(),
+            }),
         ]);
 
         check(&program).expect("semantic check should succeed");
@@ -993,8 +1194,8 @@ mod tests {
             Statement::While {
                 cond: Expr::IntLiteral(1),
                 body: Box::new(Statement::Block(vec![
-                    Statement::Continue,
-                    Statement::Break,
+                    Statement::Continue { span: span() },
+                    Statement::Break { span: span() },
                 ])),
             },
             Statement::Return(Expr::IntLiteral(0)),
@@ -1010,7 +1211,7 @@ mod tests {
                 cond: Expr::IntLiteral(1),
                 body: Box::new(Statement::If {
                     cond: Expr::IntLiteral(1),
-                    then_branch: Box::new(Statement::Break),
+                    then_branch: Box::new(Statement::Break { span: span() }),
                     else_branch: None,
                 }),
             },
@@ -1022,7 +1223,7 @@ mod tests {
 
     #[test]
     fn rejects_break_outside_loop() {
-        let program = main_program(vec![Statement::Break]);
+        let program = main_program(vec![Statement::Break { span: span() }]);
 
         let err = check(&program).expect_err("semantic check should fail");
 
@@ -1031,7 +1232,7 @@ mod tests {
 
     #[test]
     fn rejects_continue_outside_loop() {
-        let program = main_program(vec![Statement::Continue]);
+        let program = main_program(vec![Statement::Continue { span: span() }]);
 
         let err = check(&program).expect_err("semantic check should fail");
 
@@ -1042,7 +1243,10 @@ mod tests {
     fn rejects_while_condition_using_undeclared_local() {
         let program = main_program(vec![
             Statement::While {
-                cond: Expr::Variable("x".to_string()),
+                cond: Expr::Variable {
+                    name: "x".to_string(),
+                    span: span(),
+                },
                 body: Box::new(Statement::Return(Expr::IntLiteral(0))),
             },
             Statement::Return(Expr::IntLiteral(0)),

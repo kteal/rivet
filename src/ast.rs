@@ -1,11 +1,15 @@
+use crate::lexer::Span;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Program {
     pub functions: Vec<Function>,
+    pub eof_span: Span,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Function {
     pub name: String,
+    pub name_span: Span,
     pub params: Vec<String>,
     pub body: Vec<Statement>,
 }
@@ -14,6 +18,7 @@ pub struct Function {
 pub enum Statement {
     VarDecl {
         name: String,
+        name_span: Span,
         init: Option<Expr>,
     },
     Return(Expr),
@@ -29,8 +34,12 @@ pub enum Statement {
     },
     ExprStatement(Expr),
     Empty,
-    Break,
-    Continue,
+    Break {
+        span: Span,
+    },
+    Continue {
+        span: Span,
+    },
     For {
         init: Option<Box<Statement>>, // VarDecl, Assign, ExprStatement, Empty
         cond: Option<Expr>,
@@ -42,7 +51,10 @@ pub enum Statement {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Expr {
     IntLiteral(i32),
-    Variable(String),
+    Variable {
+        name: String,
+        span: Span,
+    },
     Binary {
         op: BinaryOp,
         left: Box<Expr>,
@@ -54,10 +66,12 @@ pub enum Expr {
     },
     Call {
         name: String,
+        name_span: Span,
         args: Vec<Expr>,
     },
     Assign {
         name: String,
+        name_span: Span,
         value: Box<Expr>,
     },
 }

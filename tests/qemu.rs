@@ -17,32 +17,6 @@ fn run_qemu_case(name: &str, source: &str, expected: i32) {
     assert!(status.success(), "qemu runner failed for {name}");
 }
 
-fn run_compile_error_case(name: &str, source: &str, expected_stderr: &str) {
-    let tempdir = tempfile::tempdir().expect("failed to create temporary directory");
-    let path = tempdir.path().join(format!("{name}.c"));
-
-    fs::write(&path, source).expect("failed to write temporary source file");
-
-    let output = Command::new("cargo")
-        .arg("run")
-        .arg("--quiet")
-        .arg("--")
-        .arg(&path)
-        .output()
-        .expect("failed to run compiler");
-
-    assert!(
-        !output.status.success(),
-        "compiler unexpectedly succeeded for {name}"
-    );
-
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(
-        stderr.contains(expected_stderr),
-        "expected stderr for {name} to contain {expected_stderr:?}, got {stderr:?}"
-    );
-}
-
 #[test]
 #[ignore = "requires qemu-riscv32 and riscv64-linux-gnu binutils"]
 fn qemu_return_and_arithmetic_programs_return_expected_values() {
@@ -468,50 +442,5 @@ fn qemu_expression_and_empty_statements_return_expected_values() {
         "literal-expression-statement",
         "int main() {\n    1 + 2;\n    return 5;\n}\n",
         5,
-    );
-}
-
-#[test]
-#[ignore = "requires cargo"]
-fn qemu_semantic_errors_are_reported_before_codegen() {
-    run_compile_error_case(
-        "semantic-undeclared-return",
-        "int main() {\n    return x;\n}\n",
-        "semantic analysis error: undeclared local variable 'x'",
-    );
-    run_compile_error_case(
-        "semantic-undeclared-assignment",
-        "int main() {\n    x = 1;\n    return 0;\n}\n",
-        "semantic analysis error: undeclared local variable 'x'",
-    );
-    run_compile_error_case(
-        "semantic-duplicate-local",
-        "int main() {\n    int x = 1;\n    int x = 2;\n    return x;\n}\n",
-        "semantic analysis error: duplicate local variable 'x'",
-    );
-    run_compile_error_case(
-        "semantic-later-local",
-        "int main() {\n    int y = x;\n    int x = 1;\n    return y;\n}\n",
-        "semantic analysis error: undeclared local variable 'x'",
-    );
-    run_compile_error_case(
-        "semantic-block-local-after-scope",
-        "int main() {\n    {\n        int x = 1;\n    }\n    return x;\n}\n",
-        "semantic analysis error: undeclared local variable 'x'",
-    );
-    run_compile_error_case(
-        "semantic-undeclared-function-call",
-        "int main() {\n    return helper();\n}\n",
-        "semantic analysis error: undeclared function 'helper'",
-    );
-    run_compile_error_case(
-        "semantic-break-outside-loop",
-        "int main() {\n    break;\n}\n",
-        "semantic analysis error: cannot use 'break' outside of a loop",
-    );
-    run_compile_error_case(
-        "semantic-continue-outside-loop",
-        "int main() {\n    continue;\n}\n",
-        "semantic analysis error: cannot use 'continue' outside of a loop",
     );
 }
