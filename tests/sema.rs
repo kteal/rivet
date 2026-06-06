@@ -940,6 +940,22 @@ fn accepts_break_and_continue_inside_loop() {
 }
 
 #[test]
+fn accepts_break_and_continue_inside_do_while_loop() {
+    let program = main_program(vec![
+        Statement::DoWhile {
+            body: Box::new(Statement::Block(vec![
+                Statement::Continue { span: span() },
+                Statement::Break { span: span() },
+            ])),
+            cond: Expr::IntLiteral(1),
+        },
+        Statement::Return(Expr::IntLiteral(0)),
+    ]);
+
+    check(&program).expect("semantic check should succeed");
+}
+
+#[test]
 fn accepts_break_inside_nested_if_in_loop() {
     let program = main_program(vec![
         Statement::While {
@@ -983,6 +999,24 @@ fn rejects_while_condition_using_undeclared_local() {
                 span: span(),
             },
             body: Box::new(Statement::Return(Expr::IntLiteral(0))),
+        },
+        Statement::Return(Expr::IntLiteral(0)),
+    ]);
+
+    let err = check(&program).expect_err("semantic check should fail");
+
+    assert_eq!(err.message, "undeclared local variable 'x'");
+}
+
+#[test]
+fn rejects_do_while_condition_using_undeclared_local() {
+    let program = main_program(vec![
+        Statement::DoWhile {
+            body: Box::new(Statement::Empty),
+            cond: Expr::Variable {
+                name: "x".to_string(),
+                span: span(),
+            },
         },
         Statement::Return(Expr::IntLiteral(0)),
     ]);

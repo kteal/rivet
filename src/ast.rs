@@ -38,6 +38,10 @@ pub enum Statement {
         cond: Expr,
         body: Box<Statement>,
     },
+    DoWhile {
+        body: Box<Statement>,
+        cond: Expr,
+    },
     ExprStatement(Expr),
     Empty,
     Break {

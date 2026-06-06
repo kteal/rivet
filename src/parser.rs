@@ -356,6 +356,18 @@ impl Parser {
         Ok(Statement::While { cond, body })
     }
 
+    fn parse_do_while_statement(&mut self) -> Result<Statement, ParseError> {
+        self.expect(TokenKind::KwDo)?;
+        let body = Box::new(self.parse_statement()?);
+        self.expect(TokenKind::KwWhile)?;
+        self.expect(TokenKind::LParen)?;
+        let cond = self.parse_expr()?;
+        self.expect(TokenKind::RParen)?;
+        self.expect(TokenKind::Semicolon)?;
+
+        Ok(Statement::DoWhile { body, cond })
+    }
+
     fn parse_expr_statement(&mut self) -> Result<Statement, ParseError> {
         let expr = self.parse_expr()?;
         self.expect(TokenKind::Semicolon)?;
@@ -437,6 +449,7 @@ impl Parser {
             }
             TokenKind::KwIf => self.parse_if_statement(),
             TokenKind::KwWhile => self.parse_while_statement(),
+            TokenKind::KwDo => self.parse_do_while_statement(),
             TokenKind::KwBreak => {
                 let token = self.expect(TokenKind::KwBreak)?;
                 self.expect(TokenKind::Semicolon)?;
@@ -1593,6 +1606,72 @@ mod tests {
                 })),
             }
         );
+    }
+
+    #[test]
+    fn parses_do_while_statement() {
+        let tokens = tokens![
+            TokenKind::KwDo,
+            TokenKind::Ident("x".to_string()),
+            TokenKind::Equal,
+            TokenKind::Ident("x".to_string()),
+            TokenKind::Minus,
+            TokenKind::IntLiteral(1),
+            TokenKind::Semicolon,
+            TokenKind::KwWhile,
+            TokenKind::LParen,
+            TokenKind::Ident("x".to_string()),
+            TokenKind::RParen,
+            TokenKind::Semicolon,
+        ];
+
+        let mut parser = Parser::new(tokens);
+
+        let statement = parser.parse_statement().expect("parsing should succeed");
+
+        assert_eq!(
+            statement,
+            Statement::DoWhile {
+                body: Box::new(Statement::ExprStatement(Expr::Assign {
+                    name_span: span(),
+                    name: "x".to_string(),
+                    value: Box::new(Expr::Binary {
+                        op: BinaryOp::Subtract,
+                        left: Box::new(Expr::Variable {
+                            name: "x".to_string(),
+                            span: span()
+                        }),
+                        right: Box::new(Expr::IntLiteral(1)),
+                    }),
+                })),
+                cond: Expr::Variable {
+                    name: "x".to_string(),
+                    span: span()
+                },
+            }
+        );
+    }
+
+    #[test]
+    fn rejects_do_while_without_trailing_semicolon() {
+        let tokens = tokens![
+            TokenKind::KwDo,
+            TokenKind::LBrace,
+            TokenKind::RBrace,
+            TokenKind::KwWhile,
+            TokenKind::LParen,
+            TokenKind::IntLiteral(0),
+            TokenKind::RParen,
+            TokenKind::Eof,
+        ];
+
+        let mut parser = Parser::new(tokens);
+
+        let err = parser
+            .parse_statement()
+            .expect_err("do while should require trailing semicolon");
+
+        assert!(err.message.contains("expected Semicolon"));
     }
 
     #[test]

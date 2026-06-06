@@ -10,6 +10,7 @@ pub enum TokenKind {
     KwBreak,
     KwContinue,
     KwFor,
+    KwDo,
     Ident(String),
     IntLiteral(i32),
     LParen,
@@ -210,6 +211,7 @@ impl<'a> Lexer<'a> {
             "break" => TokenKind::KwBreak,
             "continue" => TokenKind::KwContinue,
             "for" => TokenKind::KwFor,
+            "do" => TokenKind::KwDo,
             _ => TokenKind::Ident(text),
         };
 
@@ -558,6 +560,30 @@ mod tests {
                 TokenKind::RParen,
                 TokenKind::KwReturn,
                 TokenKind::Ident("x".to_string()),
+                TokenKind::Semicolon,
+                TokenKind::Eof,
+            ]
+        );
+    }
+
+    #[test]
+    fn lexes_do_keyword() {
+        let tokens = lex_with_struct("do x = x - 1; while (x);").expect("lexing should succeed");
+
+        assert_eq!(
+            token_kinds(&tokens),
+            vec![
+                TokenKind::KwDo,
+                TokenKind::Ident("x".to_string()),
+                TokenKind::Equal,
+                TokenKind::Ident("x".to_string()),
+                TokenKind::Minus,
+                TokenKind::IntLiteral(1),
+                TokenKind::Semicolon,
+                TokenKind::KwWhile,
+                TokenKind::LParen,
+                TokenKind::Ident("x".to_string()),
+                TokenKind::RParen,
                 TokenKind::Semicolon,
                 TokenKind::Eof,
             ]

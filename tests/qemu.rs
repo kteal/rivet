@@ -338,6 +338,21 @@ fn qemu_while_programs_return_expected_values() {
         "int main() {\n    int x = 0;\n    int sum = 0;\n    while (x < 5) {\n        x = x + 1;\n        if (x == 3) continue;\n        sum = sum + x;\n    }\n    return sum;\n}\n",
         12,
     );
+    run_qemu_case(
+        "do-while-runs-body-before-condition",
+        "int main() {\n    int x = 0;\n    do {\n        x = x + 1;\n    } while (0);\n    return x;\n}\n",
+        1,
+    );
+    run_qemu_case(
+        "do-while-countdown",
+        "int main() {\n    int x = 3;\n    do {\n        x = x - 1;\n    } while (x);\n    return x;\n}\n",
+        0,
+    );
+    run_qemu_case(
+        "continue-in-do-while-runs-condition",
+        "int main() {\n    int x = 0;\n    int sum = 0;\n    do {\n        x = x + 1;\n        if (x == 3) continue;\n        sum = sum + x;\n    } while (x < 5);\n    return sum;\n}\n",
+        12,
+    );
 }
 
 #[test]

@@ -35,6 +35,7 @@ impl FrameLayout {
                 sum
             }
             Statement::While { cond: _, body } => FrameLayout::count_locals_in_statement(body),
+            Statement::DoWhile { body, cond: _ } => FrameLayout::count_locals_in_statement(body),
             Statement::For {
                 init,
                 cond: _,
@@ -355,6 +356,23 @@ impl Codegen {
         self.pop_loop_labels();
     }
 
+    fn emit_do_while_statement(&mut self, body: &Statement, cond: &Expr) {
+        let start_label = self.new_label("do_while_start");
+        let continue_label = self.new_label("do_while_continue");
+        let end_label = self.new_label("do_while_end");
+
+        self.push_loop_labels(&continue_label, &end_label);
+
+        self.emit_label(&start_label);
+        self.emit_statement(body);
+        self.emit_label(&continue_label);
+        self.emit_expr(cond);
+        self.emit_line(format_args!("bnez a0, {start_label}"));
+        self.emit_label(&end_label);
+
+        self.pop_loop_labels();
+    }
+
     fn emit_for_statement(
         &mut self,
         init: Option<&Statement>,
@@ -426,6 +444,7 @@ impl Codegen {
                 else_branch,
             } => self.emit_if_statement(cond, then_branch, else_branch.as_deref()),
             Statement::While { cond, body } => self.emit_while_statement(cond, body),
+            Statement::DoWhile { body, cond } => self.emit_do_while_statement(body, cond),
             Statement::Empty => (),
             Statement::ExprStatement(expr) => self.emit_expr(expr),
             Statement::Break { .. } => {

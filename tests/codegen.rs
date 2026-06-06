@@ -1211,6 +1211,123 @@ fn generates_continue_jump_to_loop_start() {
 }
 
 #[test]
+fn generates_do_while_loop_with_body_before_condition() {
+    let program = Program {
+        functions: vec![Function {
+            name_span: span(),
+            name: "main".to_string(),
+            params: vec![],
+            body: vec![
+                Statement::VarDecl {
+                    name_span: span(),
+                    name: "x".to_string(),
+                    init: Some(Expr::IntLiteral(1)),
+                },
+                Statement::DoWhile {
+                    body: Box::new(Statement::Block(vec![Statement::ExprStatement(
+                        Expr::Assign {
+                            name_span: span(),
+                            name: "x".to_string(),
+                            value: Box::new(Expr::Binary {
+                                op: BinaryOp::Subtract,
+                                left: Box::new(Expr::Variable {
+                                    name: "x".to_string(),
+                                    span: span(),
+                                }),
+                                right: Box::new(Expr::IntLiteral(1)),
+                            }),
+                        },
+                    )])),
+                    cond: Expr::Variable {
+                        name: "x".to_string(),
+                        span: span(),
+                    },
+                },
+                Statement::Return(Expr::Variable {
+                    name: "x".to_string(),
+                    span: span(),
+                }),
+            ],
+        }],
+        eof_span: span(),
+    };
+
+    let asm = generate_raw_with_codegen(&program);
+
+    assert!(asm.contains("do_while_start_"));
+    assert!(asm.contains("do_while_continue_"));
+    assert!(asm.contains("do_while_end_"));
+    assert!(asm.contains("bnez a0, do_while_start_"));
+    assert!(
+        asm.find("do_while_start_").unwrap() < asm.find("do_while_continue_").unwrap(),
+        "do while should emit the body label before the condition label"
+    );
+}
+
+#[test]
+fn generates_continue_in_do_while_to_condition() {
+    let program = Program {
+        functions: vec![Function {
+            name_span: span(),
+            name: "main".to_string(),
+            params: vec![],
+            body: vec![
+                Statement::DoWhile {
+                    body: Box::new(Statement::Block(vec![Statement::Continue { span: span() }])),
+                    cond: Expr::IntLiteral(0),
+                },
+                Statement::Return(Expr::IntLiteral(0)),
+            ],
+        }],
+        eof_span: span(),
+    };
+
+    let asm = generate_raw_with_codegen(&program);
+
+    assert!(asm.contains("do_while_continue_"));
+    assert!(asm.contains("    j do_while_continue_"));
+}
+
+#[test]
+fn counts_locals_inside_do_while_body_for_frame_size() {
+    let program = Program {
+        functions: vec![Function {
+            name_span: span(),
+            name: "main".to_string(),
+            params: vec![],
+            body: vec![
+                Statement::DoWhile {
+                    body: Box::new(Statement::Block(vec![
+                        Statement::VarDecl {
+                            name_span: span(),
+                            name: "a".to_string(),
+                            init: Some(Expr::IntLiteral(1)),
+                        },
+                        Statement::VarDecl {
+                            name_span: span(),
+                            name: "b".to_string(),
+                            init: Some(Expr::IntLiteral(2)),
+                        },
+                        Statement::VarDecl {
+                            name_span: span(),
+                            name: "c".to_string(),
+                            init: Some(Expr::IntLiteral(3)),
+                        },
+                    ])),
+                    cond: Expr::IntLiteral(0),
+                },
+                Statement::Return(Expr::IntLiteral(0)),
+            ],
+        }],
+        eof_span: span(),
+    };
+
+    let asm = generate_raw_with_codegen(&program);
+
+    assert!(asm.contains("addi sp, sp, -32"));
+}
+
+#[test]
 fn nested_loop_break_uses_inner_loop_end() {
     let program = Program {
         functions: vec![Function {

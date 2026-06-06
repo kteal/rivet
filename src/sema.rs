@@ -221,6 +221,14 @@ impl Checker {
                 self.exit_loop();
                 res?;
             }
+            Statement::DoWhile { body, cond } => {
+                self.enter_loop();
+                let res = self
+                    .check_statement(body)
+                    .and_then(|_| self.check_expr(cond));
+                self.exit_loop();
+                res?;
+            }
             Statement::For {
                 init,
                 cond,
