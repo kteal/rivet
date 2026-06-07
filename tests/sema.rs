@@ -1,12 +1,13 @@
 mod common;
 
 use common::{param, param_with_span, span, span_from};
-use rivet::ast::{BinaryOp, Expr, Function, Program, Statement};
+use rivet::ast::{BinaryOp, Expr, Function, Program, Statement, Type};
 use rivet::sema::check;
 
 fn main_program(body: Vec<Statement>) -> Program {
     Program {
         functions: vec![Function {
+            return_type: Type::Int,
             name_span: span(),
             name: "main".to_string(),
             params: vec![],
@@ -18,6 +19,7 @@ fn main_program(body: Vec<Statement>) -> Program {
 
 fn function(name: &str, body: Vec<Statement>) -> Function {
     Function {
+        return_type: Type::Int,
         name_span: span(),
         name: name.to_string(),
         params: vec![],
@@ -27,6 +29,7 @@ fn function(name: &str, body: Vec<Statement>) -> Function {
 
 fn function_with_params(name: &str, params: &[&str], body: Vec<Statement>) -> Function {
     Function {
+        return_type: Type::Int,
         name_span: span(),
         name: name.to_string(),
         params: params.iter().map(|name| param(name)).collect(),
@@ -38,8 +41,20 @@ fn function_with_params(name: &str, params: &[&str], body: Vec<Statement>) -> Fu
 fn accepts_multiple_functions() {
     let program = Program {
         functions: vec![
-            function("helper", vec![Statement::Return(Expr::IntLiteral(1))]),
-            function("main", vec![Statement::Return(Expr::IntLiteral(0))]),
+            function(
+                "helper",
+                vec![Statement::Return(Expr::IntLiteral {
+                    value: 1,
+                    span: span(),
+                })],
+            ),
+            function(
+                "main",
+                vec![Statement::Return(Expr::IntLiteral {
+                    value: 0,
+                    span: span(),
+                })],
+            ),
         ],
         eof_span: span(),
     };
@@ -55,9 +70,13 @@ fn accepts_same_local_name_in_different_functions() {
                 "first",
                 vec![
                     Statement::VarDecl {
+                        ty: Type::Int,
                         name_span: span(),
                         name: "x".to_string(),
-                        init: Some(Expr::IntLiteral(1)),
+                        init: Some(Expr::IntLiteral {
+                            value: 1,
+                            span: span(),
+                        }),
                     },
                     Statement::Return(Expr::Variable {
                         name: "x".to_string(),
@@ -69,9 +88,13 @@ fn accepts_same_local_name_in_different_functions() {
                 "second",
                 vec![
                     Statement::VarDecl {
+                        ty: Type::Int,
                         name_span: span(),
                         name: "x".to_string(),
-                        init: Some(Expr::IntLiteral(2)),
+                        init: Some(Expr::IntLiteral {
+                            value: 2,
+                            span: span(),
+                        }),
                     },
                     Statement::Return(Expr::Variable {
                         name: "x".to_string(),
@@ -79,7 +102,13 @@ fn accepts_same_local_name_in_different_functions() {
                     }),
                 ],
             ),
-            function("main", vec![Statement::Return(Expr::IntLiteral(0))]),
+            function(
+                "main",
+                vec![Statement::Return(Expr::IntLiteral {
+                    value: 0,
+                    span: span(),
+                })],
+            ),
         ],
         eof_span: span(),
     };
@@ -91,8 +120,20 @@ fn accepts_same_local_name_in_different_functions() {
 fn rejects_duplicate_function_names() {
     let program = Program {
         functions: vec![
-            function("main", vec![Statement::Return(Expr::IntLiteral(0))]),
-            function("main", vec![Statement::Return(Expr::IntLiteral(1))]),
+            function(
+                "main",
+                vec![Statement::Return(Expr::IntLiteral {
+                    value: 0,
+                    span: span(),
+                })],
+            ),
+            function(
+                "main",
+                vec![Statement::Return(Expr::IntLiteral {
+                    value: 1,
+                    span: span(),
+                })],
+            ),
         ],
         eof_span: span(),
     };
@@ -107,7 +148,10 @@ fn rejects_program_without_main_function() {
     let program = Program {
         functions: vec![function(
             "helper",
-            vec![Statement::Return(Expr::IntLiteral(1))],
+            vec![Statement::Return(Expr::IntLiteral {
+                value: 1,
+                span: span(),
+            })],
         )],
         eof_span: span(),
     };
@@ -121,7 +165,13 @@ fn rejects_program_without_main_function() {
 fn accepts_call_to_declared_function() {
     let program = Program {
         functions: vec![
-            function("helper", vec![Statement::Return(Expr::IntLiteral(1))]),
+            function(
+                "helper",
+                vec![Statement::Return(Expr::IntLiteral {
+                    value: 1,
+                    span: span(),
+                })],
+            ),
             function(
                 "main",
                 vec![Statement::Return(Expr::Call {
@@ -149,7 +199,13 @@ fn accepts_forward_call_to_later_function() {
                     args: vec![],
                 })],
             ),
-            function("helper", vec![Statement::Return(Expr::IntLiteral(1))]),
+            function(
+                "helper",
+                vec![Statement::Return(Expr::IntLiteral {
+                    value: 1,
+                    span: span(),
+                })],
+            ),
         ],
         eof_span: span(),
     };
@@ -174,7 +230,10 @@ fn rejects_call_to_undeclared_function() {
 fn accepts_empty_statement() {
     let program = main_program(vec![
         Statement::Empty,
-        Statement::Return(Expr::IntLiteral(0)),
+        Statement::Return(Expr::IntLiteral {
+            value: 0,
+            span: span(),
+        }),
     ]);
 
     check(&program).expect("semantic check should succeed");
@@ -184,7 +243,13 @@ fn accepts_empty_statement() {
 fn accepts_expression_statement() {
     let program = Program {
         functions: vec![
-            function("helper", vec![Statement::Return(Expr::IntLiteral(1))]),
+            function(
+                "helper",
+                vec![Statement::Return(Expr::IntLiteral {
+                    value: 1,
+                    span: span(),
+                })],
+            ),
             function(
                 "main",
                 vec![
@@ -193,7 +258,10 @@ fn accepts_expression_statement() {
                         name: "helper".to_string(),
                         args: vec![],
                     }),
-                    Statement::Return(Expr::IntLiteral(0)),
+                    Statement::Return(Expr::IntLiteral {
+                        value: 0,
+                        span: span(),
+                    }),
                 ],
             ),
         ],
@@ -210,7 +278,10 @@ fn rejects_expression_statement_with_undeclared_variable() {
             name: "x".to_string(),
             span: span(),
         }),
-        Statement::Return(Expr::IntLiteral(0)),
+        Statement::Return(Expr::IntLiteral {
+            value: 0,
+            span: span(),
+        }),
     ]);
 
     let err = check(&program).expect_err("semantic check should fail");
@@ -226,6 +297,7 @@ fn accepts_parameter_usage_as_local() {
             &["x", "y"],
             vec![Statement::Return(Expr::Binary {
                 op: BinaryOp::Add,
+                op_span: span(),
                 left: Box::new(Expr::Variable {
                     name: "x".to_string(),
                     span: span(),
@@ -266,11 +338,12 @@ fn duplicate_parameter_errors_point_at_duplicate_parameter() {
     let duplicate_span = span_from(20, 21);
     let program = Program {
         functions: vec![Function {
+            return_type: Type::Int,
             name_span: span_from(4, 8),
             name: "main".to_string(),
             params: vec![
-                param_with_span("x", span_from(13, 14)),
-                param_with_span("x", duplicate_span),
+                param_with_span(Type::Int, "x", span_from(13, 14)),
+                param_with_span(Type::Int, "x", duplicate_span),
             ],
             body: vec![Statement::Return(Expr::Variable {
                 name: "x".to_string(),
@@ -294,9 +367,13 @@ fn rejects_local_redeclaring_parameter_in_function_scope() {
             &["x"],
             vec![
                 Statement::VarDecl {
+                    ty: Type::Int,
                     name_span: span(),
                     name: "x".to_string(),
-                    init: Some(Expr::IntLiteral(1)),
+                    init: Some(Expr::IntLiteral {
+                        value: 1,
+                        span: span(),
+                    }),
                 },
                 Statement::Return(Expr::Variable {
                     name: "x".to_string(),
@@ -320,9 +397,13 @@ fn accepts_inner_block_shadowing_parameter() {
             &["x"],
             vec![Statement::Block(vec![
                 Statement::VarDecl {
+                    ty: Type::Int,
                     name_span: span(),
                     name: "x".to_string(),
-                    init: Some(Expr::IntLiteral(1)),
+                    init: Some(Expr::IntLiteral {
+                        value: 1,
+                        span: span(),
+                    }),
                 },
                 Statement::Return(Expr::Variable {
                     name: "x".to_string(),
@@ -345,6 +426,7 @@ fn accepts_call_with_matching_argument_count() {
                 &["x", "y"],
                 vec![Statement::Return(Expr::Binary {
                     op: BinaryOp::Add,
+                    op_span: span(),
                     left: Box::new(Expr::Variable {
                         name: "x".to_string(),
                         span: span(),
@@ -360,7 +442,16 @@ fn accepts_call_with_matching_argument_count() {
                 vec![Statement::Return(Expr::Call {
                     name_span: span(),
                     name: "add".to_string(),
-                    args: vec![Expr::IntLiteral(1), Expr::IntLiteral(2)],
+                    args: vec![
+                        Expr::IntLiteral {
+                            value: 1,
+                            span: span(),
+                        },
+                        Expr::IntLiteral {
+                            value: 2,
+                            span: span(),
+                        },
+                    ],
                 })],
             ),
         ],
@@ -387,7 +478,10 @@ fn rejects_call_with_too_few_arguments() {
                 vec![Statement::Return(Expr::Call {
                     name_span: span(),
                     name: "add".to_string(),
-                    args: vec![Expr::IntLiteral(1)],
+                    args: vec![Expr::IntLiteral {
+                        value: 1,
+                        span: span(),
+                    }],
                 })],
             ),
         ],
@@ -419,7 +513,16 @@ fn rejects_call_with_too_many_arguments_for_signature() {
                 vec![Statement::Return(Expr::Call {
                     name_span: span(),
                     name: "id".to_string(),
-                    args: vec![Expr::IntLiteral(1), Expr::IntLiteral(2)],
+                    args: vec![
+                        Expr::IntLiteral {
+                            value: 1,
+                            span: span(),
+                        },
+                        Expr::IntLiteral {
+                            value: 2,
+                            span: span(),
+                        },
+                    ],
                 })],
             ),
         ],
@@ -440,7 +543,10 @@ fn rejects_function_with_more_than_eight_parameters() {
         functions: vec![function_with_params(
             "main",
             &["a", "b", "c", "d", "e", "f", "g", "h", "i"],
-            vec![Statement::Return(Expr::IntLiteral(0))],
+            vec![Statement::Return(Expr::IntLiteral {
+                value: 0,
+                span: span(),
+            })],
         )],
         eof_span: span(),
     };
@@ -458,20 +564,24 @@ fn too_many_parameter_errors_point_at_ninth_parameter() {
     let ninth_span = span_from(50, 51);
     let program = Program {
         functions: vec![Function {
+            return_type: Type::Int,
             name_span: span_from(4, 8),
             name: "main".to_string(),
             params: vec![
-                param_with_span("a", span_from(13, 14)),
-                param_with_span("b", span_from(18, 19)),
-                param_with_span("c", span_from(23, 24)),
-                param_with_span("d", span_from(28, 29)),
-                param_with_span("e", span_from(33, 34)),
-                param_with_span("f", span_from(38, 39)),
-                param_with_span("g", span_from(43, 44)),
-                param_with_span("h", span_from(48, 49)),
-                param_with_span("i", ninth_span),
+                param_with_span(Type::Int, "a", span_from(13, 14)),
+                param_with_span(Type::Int, "b", span_from(18, 19)),
+                param_with_span(Type::Int, "c", span_from(23, 24)),
+                param_with_span(Type::Int, "d", span_from(28, 29)),
+                param_with_span(Type::Int, "e", span_from(33, 34)),
+                param_with_span(Type::Int, "f", span_from(38, 39)),
+                param_with_span(Type::Int, "g", span_from(43, 44)),
+                param_with_span(Type::Int, "h", span_from(48, 49)),
+                param_with_span(Type::Int, "i", ninth_span),
             ],
-            body: vec![Statement::Return(Expr::IntLiteral(0))],
+            body: vec![Statement::Return(Expr::IntLiteral {
+                value: 0,
+                span: span(),
+            })],
         }],
         eof_span: span(),
     };
@@ -489,22 +599,55 @@ fn too_many_parameter_errors_point_at_ninth_parameter() {
 fn rejects_call_with_more_than_eight_arguments() {
     let program = Program {
         functions: vec![
-            function("helper", vec![Statement::Return(Expr::IntLiteral(0))]),
+            function(
+                "helper",
+                vec![Statement::Return(Expr::IntLiteral {
+                    value: 0,
+                    span: span(),
+                })],
+            ),
             function(
                 "main",
                 vec![Statement::Return(Expr::Call {
                     name_span: span(),
                     name: "helper".to_string(),
                     args: vec![
-                        Expr::IntLiteral(1),
-                        Expr::IntLiteral(2),
-                        Expr::IntLiteral(3),
-                        Expr::IntLiteral(4),
-                        Expr::IntLiteral(5),
-                        Expr::IntLiteral(6),
-                        Expr::IntLiteral(7),
-                        Expr::IntLiteral(8),
-                        Expr::IntLiteral(9),
+                        Expr::IntLiteral {
+                            value: 1,
+                            span: span(),
+                        },
+                        Expr::IntLiteral {
+                            value: 2,
+                            span: span(),
+                        },
+                        Expr::IntLiteral {
+                            value: 3,
+                            span: span(),
+                        },
+                        Expr::IntLiteral {
+                            value: 4,
+                            span: span(),
+                        },
+                        Expr::IntLiteral {
+                            value: 5,
+                            span: span(),
+                        },
+                        Expr::IntLiteral {
+                            value: 6,
+                            span: span(),
+                        },
+                        Expr::IntLiteral {
+                            value: 7,
+                            span: span(),
+                        },
+                        Expr::IntLiteral {
+                            value: 8,
+                            span: span(),
+                        },
+                        Expr::IntLiteral {
+                            value: 9,
+                            span: span(),
+                        },
                     ],
                 })],
             ),
@@ -524,20 +667,28 @@ fn rejects_call_with_more_than_eight_arguments() {
 fn accepts_declared_local_usage() {
     let program = main_program(vec![
         Statement::VarDecl {
+            ty: Type::Int,
             name_span: span(),
             name: "x".to_string(),
-            init: Some(Expr::IntLiteral(1)),
+            init: Some(Expr::IntLiteral {
+                value: 1,
+                span: span(),
+            }),
         },
         Statement::ExprStatement(Expr::Assign {
             name_span: span(),
             name: "x".to_string(),
             value: Box::new(Expr::Binary {
                 op: BinaryOp::Add,
+                op_span: span(),
                 left: Box::new(Expr::Variable {
                     name: "x".to_string(),
                     span: span(),
                 }),
-                right: Box::new(Expr::IntLiteral(2)),
+                right: Box::new(Expr::IntLiteral {
+                    value: 2,
+                    span: span(),
+                }),
             }),
         }),
         Statement::Return(Expr::Variable {
@@ -553,6 +704,7 @@ fn accepts_declared_local_usage() {
 fn accepts_declaration_without_initializer_assigned_before_use() {
     let program = main_program(vec![
         Statement::VarDecl {
+            ty: Type::Int,
             name_span: span(),
             name: "x".to_string(),
             init: None,
@@ -560,7 +712,10 @@ fn accepts_declaration_without_initializer_assigned_before_use() {
         Statement::ExprStatement(Expr::Assign {
             name_span: span(),
             name: "x".to_string(),
-            value: Box::new(Expr::IntLiteral(3)),
+            value: Box::new(Expr::IntLiteral {
+                value: 3,
+                span: span(),
+            }),
         }),
         Statement::Return(Expr::Variable {
             name: "x".to_string(),
@@ -575,6 +730,7 @@ fn accepts_declaration_without_initializer_assigned_before_use() {
 fn accepts_assignment_expression_in_return() {
     let program = main_program(vec![
         Statement::VarDecl {
+            ty: Type::Int,
             name_span: span(),
             name: "x".to_string(),
             init: None,
@@ -582,7 +738,10 @@ fn accepts_assignment_expression_in_return() {
         Statement::Return(Expr::Assign {
             name_span: span(),
             name: "x".to_string(),
-            value: Box::new(Expr::IntLiteral(3)),
+            value: Box::new(Expr::IntLiteral {
+                value: 3,
+                span: span(),
+            }),
         }),
     ]);
 
@@ -594,7 +753,10 @@ fn rejects_assignment_expression_to_undeclared_local() {
     let program = main_program(vec![Statement::Return(Expr::Assign {
         name_span: span(),
         name: "x".to_string(),
-        value: Box::new(Expr::IntLiteral(3)),
+        value: Box::new(Expr::IntLiteral {
+            value: 3,
+            span: span(),
+        }),
     })]);
 
     let err = check(&program).expect_err("semantic check should fail");
@@ -606,11 +768,16 @@ fn rejects_assignment_expression_to_undeclared_local() {
 fn accepts_initializer_using_earlier_local() {
     let program = main_program(vec![
         Statement::VarDecl {
+            ty: Type::Int,
             name_span: span(),
             name: "x".to_string(),
-            init: Some(Expr::IntLiteral(1)),
+            init: Some(Expr::IntLiteral {
+                value: 1,
+                span: span(),
+            }),
         },
         Statement::VarDecl {
+            ty: Type::Int,
             name_span: span(),
             name: "y".to_string(),
             init: Some(Expr::Variable {
@@ -631,6 +798,7 @@ fn accepts_initializer_using_earlier_local() {
 fn accepts_initializer_using_declared_name_itself() {
     let program = main_program(vec![
         Statement::VarDecl {
+            ty: Type::Int,
             name_span: span(),
             name: "x".to_string(),
             init: Some(Expr::Variable {
@@ -651,14 +819,22 @@ fn accepts_initializer_using_declared_name_itself() {
 fn rejects_duplicate_local_declaration() {
     let program = main_program(vec![
         Statement::VarDecl {
+            ty: Type::Int,
             name_span: span(),
             name: "x".to_string(),
-            init: Some(Expr::IntLiteral(1)),
+            init: Some(Expr::IntLiteral {
+                value: 1,
+                span: span(),
+            }),
         },
         Statement::VarDecl {
+            ty: Type::Int,
             name_span: span(),
             name: "x".to_string(),
-            init: Some(Expr::IntLiteral(2)),
+            init: Some(Expr::IntLiteral {
+                value: 2,
+                span: span(),
+            }),
         },
         Statement::Return(Expr::Variable {
             name: "x".to_string(),
@@ -677,9 +853,15 @@ fn rejects_assignment_to_undeclared_local() {
         Statement::ExprStatement(Expr::Assign {
             name_span: span(),
             name: "x".to_string(),
-            value: Box::new(Expr::IntLiteral(1)),
+            value: Box::new(Expr::IntLiteral {
+                value: 1,
+                span: span(),
+            }),
         }),
-        Statement::Return(Expr::IntLiteral(0)),
+        Statement::Return(Expr::IntLiteral {
+            value: 0,
+            span: span(),
+        }),
     ]);
 
     let err = check(&program).expect_err("semantic check should fail");
@@ -703,6 +885,7 @@ fn rejects_returning_undeclared_local() {
 fn rejects_initializer_using_later_local() {
     let program = main_program(vec![
         Statement::VarDecl {
+            ty: Type::Int,
             name_span: span(),
             name: "y".to_string(),
             init: Some(Expr::Variable {
@@ -711,9 +894,13 @@ fn rejects_initializer_using_later_local() {
             }),
         },
         Statement::VarDecl {
+            ty: Type::Int,
             name_span: span(),
             name: "x".to_string(),
-            init: Some(Expr::IntLiteral(1)),
+            init: Some(Expr::IntLiteral {
+                value: 1,
+                span: span(),
+            }),
         },
         Statement::Return(Expr::Variable {
             name: "y".to_string(),
@@ -730,12 +917,17 @@ fn rejects_initializer_using_later_local() {
 fn rejects_undeclared_local_inside_nested_expression() {
     let program = main_program(vec![
         Statement::VarDecl {
+            ty: Type::Int,
             name_span: span(),
             name: "x".to_string(),
-            init: Some(Expr::IntLiteral(1)),
+            init: Some(Expr::IntLiteral {
+                value: 1,
+                span: span(),
+            }),
         },
         Statement::Return(Expr::Binary {
             op: BinaryOp::Multiply,
+            op_span: span(),
             left: Box::new(Expr::Variable {
                 name: "x".to_string(),
                 span: span(),
@@ -753,12 +945,350 @@ fn rejects_undeclared_local_inside_nested_expression() {
 }
 
 #[test]
+fn accepts_char_function_return_used_as_char_initializer() {
+    let program = Program {
+        functions: vec![
+            Function {
+                return_type: Type::Char,
+                name_span: span(),
+                name: "id".to_string(),
+                params: vec![param_with_span(Type::Char, "x", span())],
+                body: vec![Statement::Return(Expr::Variable {
+                    name: "x".to_string(),
+                    span: span(),
+                })],
+            },
+            Function {
+                return_type: Type::Int,
+                name_span: span(),
+                name: "main".to_string(),
+                params: vec![param_with_span(Type::Char, "c", span())],
+                body: vec![
+                    Statement::VarDecl {
+                        ty: Type::Char,
+                        name_span: span(),
+                        name: "result".to_string(),
+                        init: Some(Expr::Call {
+                            name_span: span(),
+                            name: "id".to_string(),
+                            args: vec![Expr::Variable {
+                                name: "c".to_string(),
+                                span: span(),
+                            }],
+                        }),
+                    },
+                    Statement::Return(Expr::IntLiteral {
+                        value: 0,
+                        span: span(),
+                    }),
+                ],
+            },
+        ],
+        eof_span: span(),
+    };
+
+    check(&program).expect("semantic check should succeed");
+}
+
+#[test]
+fn accepts_char_initializer_from_int_literal() {
+    let program = main_program(vec![
+        Statement::VarDecl {
+            ty: Type::Char,
+            name_span: span(),
+            name: "c".to_string(),
+            init: Some(Expr::IntLiteral {
+                value: 1,
+                span: span(),
+            }),
+        },
+        Statement::Return(Expr::IntLiteral {
+            value: 0,
+            span: span(),
+        }),
+    ]);
+
+    check(&program).expect("semantic check should succeed");
+}
+
+#[test]
+fn accepts_char_initializer_from_int_expression() {
+    let program = main_program(vec![
+        Statement::VarDecl {
+            ty: Type::Char,
+            name_span: span(),
+            name: "c".to_string(),
+            init: Some(Expr::Binary {
+                op: BinaryOp::Add,
+                op_span: span(),
+                left: Box::new(Expr::IntLiteral {
+                    value: 1,
+                    span: span(),
+                }),
+                right: Box::new(Expr::IntLiteral {
+                    value: 2,
+                    span: span(),
+                }),
+            }),
+        },
+        Statement::Return(Expr::IntLiteral {
+            value: 0,
+            span: span(),
+        }),
+    ]);
+
+    check(&program).expect("semantic check should succeed");
+}
+
+#[test]
+fn accepts_char_assignment_from_int_expression() {
+    let program = main_program(vec![
+        Statement::VarDecl {
+            ty: Type::Char,
+            name_span: span(),
+            name: "c".to_string(),
+            init: None,
+        },
+        Statement::VarDecl {
+            ty: Type::Int,
+            name_span: span(),
+            name: "i".to_string(),
+            init: None,
+        },
+        Statement::ExprStatement(Expr::Assign {
+            name_span: span(),
+            name: "c".to_string(),
+            value: Box::new(Expr::Variable {
+                name: "i".to_string(),
+                span: span(),
+            }),
+        }),
+        Statement::Return(Expr::IntLiteral {
+            value: 0,
+            span: span(),
+        }),
+    ]);
+
+    check(&program).expect("semantic check should succeed");
+}
+
+#[test]
+fn accepts_int_initializer_from_char_expression() {
+    let program = main_program(vec![
+        Statement::VarDecl {
+            ty: Type::Char,
+            name_span: span(),
+            name: "c".to_string(),
+            init: Some(Expr::IntLiteral {
+                value: 65,
+                span: span(),
+            }),
+        },
+        Statement::VarDecl {
+            ty: Type::Int,
+            name_span: span(),
+            name: "i".to_string(),
+            init: Some(Expr::Variable {
+                name: "c".to_string(),
+                span: span(),
+            }),
+        },
+        Statement::Return(Expr::Variable {
+            name: "i".to_string(),
+            span: span(),
+        }),
+    ]);
+
+    check(&program).expect("semantic check should succeed");
+}
+
+#[test]
+fn accepts_char_argument_from_int_expression() {
+    let program = Program {
+        functions: vec![
+            Function {
+                return_type: Type::Int,
+                name_span: span(),
+                name: "takes_char".to_string(),
+                params: vec![param_with_span(Type::Char, "x", span())],
+                body: vec![Statement::Return(Expr::IntLiteral {
+                    value: 0,
+                    span: span(),
+                })],
+            },
+            Function {
+                return_type: Type::Int,
+                name_span: span(),
+                name: "main".to_string(),
+                params: vec![],
+                body: vec![
+                    Statement::VarDecl {
+                        ty: Type::Int,
+                        name_span: span(),
+                        name: "i".to_string(),
+                        init: None,
+                    },
+                    Statement::Return(Expr::Call {
+                        name_span: span(),
+                        name: "takes_char".to_string(),
+                        args: vec![Expr::Variable {
+                            name: "i".to_string(),
+                            span: span(),
+                        }],
+                    }),
+                ],
+            },
+        ],
+        eof_span: span(),
+    };
+
+    check(&program).expect("semantic check should succeed");
+}
+
+#[test]
+fn accepts_int_argument_from_char_expression() {
+    let program = Program {
+        functions: vec![
+            Function {
+                return_type: Type::Int,
+                name_span: span(),
+                name: "takes_int".to_string(),
+                params: vec![param_with_span(Type::Int, "x", span())],
+                body: vec![Statement::Return(Expr::Variable {
+                    name: "x".to_string(),
+                    span: span(),
+                })],
+            },
+            Function {
+                return_type: Type::Int,
+                name_span: span(),
+                name: "main".to_string(),
+                params: vec![],
+                body: vec![
+                    Statement::VarDecl {
+                        ty: Type::Char,
+                        name_span: span(),
+                        name: "c".to_string(),
+                        init: Some(Expr::IntLiteral {
+                            value: 65,
+                            span: span(),
+                        }),
+                    },
+                    Statement::Return(Expr::Call {
+                        name_span: span(),
+                        name: "takes_int".to_string(),
+                        args: vec![Expr::Variable {
+                            name: "c".to_string(),
+                            span: span(),
+                        }],
+                    }),
+                ],
+            },
+        ],
+        eof_span: span(),
+    };
+
+    check(&program).expect("semantic check should succeed");
+}
+
+#[test]
+fn accepts_char_return_from_int_expression() {
+    let program = Program {
+        functions: vec![Function {
+            return_type: Type::Char,
+            name_span: span(),
+            name: "main".to_string(),
+            params: vec![],
+            body: vec![Statement::Return(Expr::Binary {
+                op: BinaryOp::Add,
+                op_span: span(),
+                left: Box::new(Expr::IntLiteral {
+                    value: 1,
+                    span: span(),
+                }),
+                right: Box::new(Expr::IntLiteral {
+                    value: 2,
+                    span: span(),
+                }),
+            })],
+        }],
+        eof_span: span(),
+    };
+
+    check(&program).expect("semantic check should succeed");
+}
+
+#[test]
+fn accepts_int_return_from_char_expression() {
+    let program = Program {
+        functions: vec![Function {
+            return_type: Type::Int,
+            name_span: span(),
+            name: "main".to_string(),
+            params: vec![param_with_span(Type::Char, "c", span())],
+            body: vec![Statement::Return(Expr::Variable {
+                name: "c".to_string(),
+                span: span(),
+            })],
+        }],
+        eof_span: span(),
+    };
+
+    check(&program).expect("semantic check should succeed");
+}
+
+#[test]
+fn binary_type_errors_point_at_operator() {
+    let op_span = span_from(10, 11);
+    let program = main_program(vec![
+        Statement::VarDecl {
+            ty: Type::Char,
+            name_span: span(),
+            name: "c".to_string(),
+            init: None,
+        },
+        Statement::VarDecl {
+            ty: Type::Int,
+            name_span: span(),
+            name: "i".to_string(),
+            init: None,
+        },
+        Statement::Return(Expr::Binary {
+            op: BinaryOp::Add,
+            op_span,
+            left: Box::new(Expr::Variable {
+                name: "c".to_string(),
+                span: span(),
+            }),
+            right: Box::new(Expr::Variable {
+                name: "i".to_string(),
+                span: span(),
+            }),
+        }),
+    ]);
+
+    let err = check(&program).expect_err("semantic check should fail");
+
+    assert_eq!(err.span, op_span);
+    assert!(
+        err.message
+            .contains("invalid operands to binary operator 'Add'")
+    );
+    assert!(err.message.contains("left operand has type 'Char'"));
+    assert!(err.message.contains("right operand has type 'Int'"));
+}
+
+#[test]
 fn accepts_block_using_outer_local() {
     let program = main_program(vec![
         Statement::VarDecl {
+            ty: Type::Int,
             name_span: span(),
             name: "x".to_string(),
-            init: Some(Expr::IntLiteral(1)),
+            init: Some(Expr::IntLiteral {
+                value: 1,
+                span: span(),
+            }),
         },
         Statement::Block(vec![Statement::Return(Expr::Variable {
             name: "x".to_string(),
@@ -773,9 +1303,13 @@ fn accepts_block_using_outer_local() {
 fn rejects_use_of_local_after_block_scope_ends() {
     let program = main_program(vec![
         Statement::Block(vec![Statement::VarDecl {
+            ty: Type::Int,
             name_span: span(),
             name: "x".to_string(),
-            init: Some(Expr::IntLiteral(1)),
+            init: Some(Expr::IntLiteral {
+                value: 1,
+                span: span(),
+            }),
         }]),
         Statement::Return(Expr::Variable {
             name: "x".to_string(),
@@ -792,15 +1326,23 @@ fn rejects_use_of_local_after_block_scope_ends() {
 fn accepts_shadowing_in_inner_block() {
     let program = main_program(vec![
         Statement::VarDecl {
+            ty: Type::Int,
             name_span: span(),
             name: "x".to_string(),
-            init: Some(Expr::IntLiteral(1)),
+            init: Some(Expr::IntLiteral {
+                value: 1,
+                span: span(),
+            }),
         },
         Statement::Block(vec![
             Statement::VarDecl {
+                ty: Type::Int,
                 name_span: span(),
                 name: "x".to_string(),
-                init: Some(Expr::IntLiteral(2)),
+                init: Some(Expr::IntLiteral {
+                    value: 2,
+                    span: span(),
+                }),
             },
             Statement::Return(Expr::Variable {
                 name: "x".to_string(),
@@ -817,17 +1359,28 @@ fn rejects_duplicate_local_in_same_block() {
     let program = main_program(vec![
         Statement::Block(vec![
             Statement::VarDecl {
+                ty: Type::Int,
                 name_span: span(),
                 name: "x".to_string(),
-                init: Some(Expr::IntLiteral(1)),
+                init: Some(Expr::IntLiteral {
+                    value: 1,
+                    span: span(),
+                }),
             },
             Statement::VarDecl {
+                ty: Type::Int,
                 name_span: span(),
                 name: "x".to_string(),
-                init: Some(Expr::IntLiteral(2)),
+                init: Some(Expr::IntLiteral {
+                    value: 2,
+                    span: span(),
+                }),
             },
         ]),
-        Statement::Return(Expr::IntLiteral(0)),
+        Statement::Return(Expr::IntLiteral {
+            value: 0,
+            span: span(),
+        }),
     ]);
 
     let err = check(&program).expect_err("semantic check should fail");
@@ -839,21 +1392,30 @@ fn rejects_duplicate_local_in_same_block() {
 fn accepts_if_else_with_locals_in_branches() {
     let program = main_program(vec![
         Statement::VarDecl {
+            ty: Type::Int,
             name_span: span(),
             name: "x".to_string(),
-            init: Some(Expr::IntLiteral(1)),
+            init: Some(Expr::IntLiteral {
+                value: 1,
+                span: span(),
+            }),
         },
         Statement::If {
             cond: Expr::Binary {
                 op: BinaryOp::Less,
+                op_span: span(),
                 left: Box::new(Expr::Variable {
                     name: "x".to_string(),
                     span: span(),
                 }),
-                right: Box::new(Expr::IntLiteral(2)),
+                right: Box::new(Expr::IntLiteral {
+                    value: 2,
+                    span: span(),
+                }),
             },
             then_branch: Box::new(Statement::Block(vec![
                 Statement::VarDecl {
+                    ty: Type::Int,
                     name_span: span(),
                     name: "y".to_string(),
                     init: Some(Expr::Variable {
@@ -868,6 +1430,7 @@ fn accepts_if_else_with_locals_in_branches() {
             ])),
             else_branch: Some(Box::new(Statement::Block(vec![
                 Statement::VarDecl {
+                    ty: Type::Int,
                     name_span: span(),
                     name: "z".to_string(),
                     init: Some(Expr::Variable {
@@ -890,9 +1453,13 @@ fn accepts_if_else_with_locals_in_branches() {
 fn accepts_while_with_local_condition_and_body() {
     let program = main_program(vec![
         Statement::VarDecl {
+            ty: Type::Int,
             name_span: span(),
             name: "x".to_string(),
-            init: Some(Expr::IntLiteral(3)),
+            init: Some(Expr::IntLiteral {
+                value: 3,
+                span: span(),
+            }),
         },
         Statement::While {
             cond: Expr::Variable {
@@ -905,11 +1472,15 @@ fn accepts_while_with_local_condition_and_body() {
                     name: "x".to_string(),
                     value: Box::new(Expr::Binary {
                         op: BinaryOp::Subtract,
+                        op_span: span(),
                         left: Box::new(Expr::Variable {
                             name: "x".to_string(),
                             span: span(),
                         }),
-                        right: Box::new(Expr::IntLiteral(1)),
+                        right: Box::new(Expr::IntLiteral {
+                            value: 1,
+                            span: span(),
+                        }),
                     }),
                 },
             )])),
@@ -927,13 +1498,19 @@ fn accepts_while_with_local_condition_and_body() {
 fn accepts_break_and_continue_inside_loop() {
     let program = main_program(vec![
         Statement::While {
-            cond: Expr::IntLiteral(1),
+            cond: Expr::IntLiteral {
+                value: 1,
+                span: span(),
+            },
             body: Box::new(Statement::Block(vec![
                 Statement::Continue { span: span() },
                 Statement::Break { span: span() },
             ])),
         },
-        Statement::Return(Expr::IntLiteral(0)),
+        Statement::Return(Expr::IntLiteral {
+            value: 0,
+            span: span(),
+        }),
     ]);
 
     check(&program).expect("semantic check should succeed");
@@ -947,9 +1524,15 @@ fn accepts_break_and_continue_inside_do_while_loop() {
                 Statement::Continue { span: span() },
                 Statement::Break { span: span() },
             ])),
-            cond: Expr::IntLiteral(1),
+            cond: Expr::IntLiteral {
+                value: 1,
+                span: span(),
+            },
         },
-        Statement::Return(Expr::IntLiteral(0)),
+        Statement::Return(Expr::IntLiteral {
+            value: 0,
+            span: span(),
+        }),
     ]);
 
     check(&program).expect("semantic check should succeed");
@@ -959,14 +1542,23 @@ fn accepts_break_and_continue_inside_do_while_loop() {
 fn accepts_break_inside_nested_if_in_loop() {
     let program = main_program(vec![
         Statement::While {
-            cond: Expr::IntLiteral(1),
+            cond: Expr::IntLiteral {
+                value: 1,
+                span: span(),
+            },
             body: Box::new(Statement::If {
-                cond: Expr::IntLiteral(1),
+                cond: Expr::IntLiteral {
+                    value: 1,
+                    span: span(),
+                },
                 then_branch: Box::new(Statement::Break { span: span() }),
                 else_branch: None,
             }),
         },
-        Statement::Return(Expr::IntLiteral(0)),
+        Statement::Return(Expr::IntLiteral {
+            value: 0,
+            span: span(),
+        }),
     ]);
 
     check(&program).expect("semantic check should succeed");
@@ -998,9 +1590,15 @@ fn rejects_while_condition_using_undeclared_local() {
                 name: "x".to_string(),
                 span: span(),
             },
-            body: Box::new(Statement::Return(Expr::IntLiteral(0))),
+            body: Box::new(Statement::Return(Expr::IntLiteral {
+                value: 0,
+                span: span(),
+            })),
         },
-        Statement::Return(Expr::IntLiteral(0)),
+        Statement::Return(Expr::IntLiteral {
+            value: 0,
+            span: span(),
+        }),
     ]);
 
     let err = check(&program).expect_err("semantic check should fail");
@@ -1018,7 +1616,10 @@ fn rejects_do_while_condition_using_undeclared_local() {
                 span: span(),
             },
         },
-        Statement::Return(Expr::IntLiteral(0)),
+        Statement::Return(Expr::IntLiteral {
+            value: 0,
+            span: span(),
+        }),
     ]);
 
     let err = check(&program).expect_err("semantic check should fail");

@@ -1,4 +1,4 @@
-use crate::ast::{BinaryOp, Expr, Function, Param, Program, Statement, UnaryOp};
+use crate::ast::{BinaryOp, Expr, Function, Param, Program, Statement, Type, UnaryOp};
 use crate::lexer::{Span, Token, TokenKind};
 
 const MULTIPLICATIVE_OPS: &[(TokenKind, BinaryOp)] = &[
@@ -87,10 +87,11 @@ impl Parser {
     ) -> Result<Expr, ParseError> {
         let mut left = parse_operand(self)?;
 
-        while let Some(op) = self.parse_binary_op_from(ops) {
+        while let Some((op, op_span)) = self.parse_binary_op_from(ops) {
             let right = parse_operand(self)?;
             left = Expr::Binary {
                 op,
+                op_span,
                 left: Box::new(left),
                 right: Box::new(right),
             }
@@ -99,11 +100,11 @@ impl Parser {
         Ok(left)
     }
 
-    fn parse_binary_op_from(&mut self, ops: &[(TokenKind, BinaryOp)]) -> Option<BinaryOp> {
+    fn parse_binary_op_from(&mut self, ops: &[(TokenKind, BinaryOp)]) -> Option<(BinaryOp, Span)> {
         for (token_kind, op) in ops {
             if self.peek_kind() == token_kind {
-                self.advance();
-                return Some(*op);
+                let token = self.advance();
+                return Some((*op, token.span));
             }
         }
 
@@ -138,13 +139,31 @@ impl Parser {
         self.parse_expr()
     }
 
+    fn is_type_decl(token_kind: &TokenKind) -> bool {
+        matches!(token_kind, TokenKind::KwInt | TokenKind::KwChar)
+    }
+
+    fn parse_type(&mut self) -> Result<Type, ParseError> {
+        let token = self.advance();
+
+        match token.kind {
+            TokenKind::KwInt => Ok(Type::Int),
+            TokenKind::KwChar => Ok(Type::Char),
+            found => Err(ParseError {
+                message: format!("expected type declaration, found {found:?}"),
+                span: token.span,
+            }),
+        }
+    }
+
     fn parse_param(&mut self) -> Result<Param, ParseError> {
-        self.expect(TokenKind::KwInt)?;
+        let ty = self.parse_type()?;
 
         let token = self.advance();
 
         match token.kind {
             TokenKind::Ident(name) => Ok(Param {
+                ty,
                 name,
                 name_span: token.span,
             }),
@@ -159,7 +178,10 @@ impl Parser {
         let token = self.advance();
 
         match token.kind {
-            TokenKind::IntLiteral(value) => Ok(Expr::IntLiteral(value)),
+            TokenKind::IntLiteral(value) | TokenKind::CharLiteral(value) => Ok(Expr::IntLiteral {
+                value,
+                span: token.span,
+            }),
             TokenKind::Ident(name) => {
                 if *self.peek_kind() == TokenKind::LParen {
                     self.expect(TokenKind::LParen)?;
@@ -191,29 +213,30 @@ impl Parser {
         }
     }
 
-    fn parse_unary_op(&mut self) -> Option<UnaryOp> {
+    fn parse_unary_op(&mut self) -> Option<(UnaryOp, Span)> {
         match self.peek_kind() {
             TokenKind::Minus => {
-                self.advance();
-                Some(UnaryOp::Negate)
+                let token = self.advance();
+                Some((UnaryOp::Negate, token.span))
             }
             TokenKind::Bang => {
-                self.advance();
-                Some(UnaryOp::LogicalNot)
+                let token = self.advance();
+                Some((UnaryOp::LogicalNot, token.span))
             }
             TokenKind::Tilde => {
-                self.advance();
-                Some(UnaryOp::BitwiseNot)
+                let token = self.advance();
+                Some((UnaryOp::BitwiseNot, token.span))
             }
             _ => None,
         }
     }
 
     fn parse_unary(&mut self) -> Result<Expr, ParseError> {
-        if let Some(op) = self.parse_unary_op() {
+        if let Some((op, op_span)) = self.parse_unary_op() {
             let right = self.parse_unary()?;
             return Ok(Expr::Unary {
                 op,
+                op_span,
                 expr: Box::new(right),
             });
         }
@@ -289,7 +312,7 @@ impl Parser {
     }
 
     fn parse_var_decl(&mut self) -> Result<Statement, ParseError> {
-        self.expect(TokenKind::KwInt)?;
+        let ty = self.parse_type()?;
         let token = self.advance();
         let name = match token.kind {
             TokenKind::Ident(name) => name,
@@ -303,6 +326,7 @@ impl Parser {
         if *self.peek_kind() == TokenKind::Semicolon {
             self.expect(TokenKind::Semicolon)?;
             return Ok(Statement::VarDecl {
+                ty,
                 name,
                 name_span: token.span,
                 init: None,
@@ -312,6 +336,7 @@ impl Parser {
         let expr = self.parse_expr()?;
         self.expect(TokenKind::Semicolon)?;
         Ok(Statement::VarDecl {
+            ty,
             name,
             name_span: token.span,
             init: Some(expr),
@@ -377,7 +402,7 @@ impl Parser {
     fn parse_for_statement_init(&mut self) -> Result<Statement, ParseError> {
         match self.peek_kind() {
             // Variable declaration
-            TokenKind::KwInt => self.parse_var_decl(),
+            token_kind if Self::is_type_decl(token_kind) => self.parse_var_decl(),
             // Empty
             TokenKind::Semicolon => {
                 self.expect(TokenKind::Semicolon)?;
@@ -462,7 +487,7 @@ impl Parser {
             }
             TokenKind::KwFor => self.parse_for_statement(),
             // Variable declaration
-            TokenKind::KwInt => self.parse_var_decl(),
+            token_kind if Self::is_type_decl(token_kind) => self.parse_var_decl(),
             // Block
             TokenKind::LBrace => {
                 self.expect(TokenKind::LBrace)?;
@@ -485,7 +510,7 @@ impl Parser {
     }
 
     fn parse_function(&mut self) -> Result<Function, ParseError> {
-        self.expect(TokenKind::KwInt)?;
+        let ty = self.parse_type()?;
 
         let token = self.advance();
 
@@ -510,6 +535,7 @@ impl Parser {
         self.parse_through_rbrace(&mut body)?;
 
         Ok(Function {
+            return_type: ty,
             name,
             name_span: token.span,
             params,
@@ -643,6 +669,26 @@ mod tests {
     }
 
     #[test]
+    fn binary_expression_preserves_operator_span() {
+        let tokens = vec![
+            token_with_span(TokenKind::Ident("x".to_string()), 0, 1),
+            token_with_span(TokenKind::Plus, 2, 3),
+            token_with_span(TokenKind::Ident("y".to_string()), 4, 5),
+            token_with_span(TokenKind::Semicolon, 5, 6),
+        ];
+
+        let mut parser = Parser::new(tokens);
+        let statement = parser.parse_statement().expect("parsing should succeed");
+
+        let Statement::ExprStatement(Expr::Binary { op, op_span, .. }) = statement else {
+            panic!("expected binary expression statement");
+        };
+
+        assert_eq!(op, BinaryOp::Add);
+        assert_eq!(op_span, Span { start: 2, end: 3 });
+    }
+
+    #[test]
     fn basic_parse() {
         let tokens = tokens![
             TokenKind::KwInt,
@@ -663,10 +709,14 @@ mod tests {
             program,
             Program {
                 functions: vec![Function {
+                    return_type: Type::Int,
                     name_span: span(),
                     name: "main".to_string(),
                     params: vec![],
-                    body: vec![Statement::Return(Expr::IntLiteral(42))],
+                    body: vec![Statement::Return(Expr::IntLiteral {
+                        value: 42,
+                        span: span()
+                    })],
                 }],
                 eof_span: span(),
             }
@@ -691,8 +741,15 @@ mod tests {
             statement,
             Statement::Return(Expr::Binary {
                 op: BinaryOp::Add,
-                left: Box::new(Expr::IntLiteral(1)),
-                right: Box::new(Expr::IntLiteral(2)),
+                op_span: span(),
+                left: Box::new(Expr::IntLiteral {
+                    value: 1,
+                    span: span()
+                }),
+                right: Box::new(Expr::IntLiteral {
+                    value: 2,
+                    span: span()
+                }),
             })
         )
     }
@@ -720,13 +777,21 @@ mod tests {
             program,
             Program {
                 functions: vec![Function {
+                    return_type: Type::Int,
                     name_span: span(),
                     name: "main".to_string(),
                     params: vec![],
                     body: vec![Statement::Return(Expr::Binary {
                         op: BinaryOp::Add,
-                        left: Box::new(Expr::IntLiteral(1)),
-                        right: Box::new(Expr::IntLiteral(2)),
+                        op_span: span(),
+                        left: Box::new(Expr::IntLiteral {
+                            value: 1,
+                            span: span()
+                        }),
+                        right: Box::new(Expr::IntLiteral {
+                            value: 2,
+                            span: span()
+                        }),
                     })],
                 }],
                 eof_span: span(),
@@ -778,12 +843,16 @@ mod tests {
             statement,
             Statement::Return(Expr::Binary {
                 op: BinaryOp::Add,
+                op_span: span(),
                 left: Box::new(Expr::Call {
                     name_span: span(),
                     name: "helper".to_string(),
                     args: vec![],
                 }),
-                right: Box::new(Expr::IntLiteral(2)),
+                right: Box::new(Expr::IntLiteral {
+                    value: 2,
+                    span: span()
+                }),
             })
         );
     }
@@ -844,13 +913,67 @@ mod tests {
             statement,
             Statement::ExprStatement(Expr::Binary {
                 op: BinaryOp::Add,
-                left: Box::new(Expr::IntLiteral(1)),
-                right: Box::new(Expr::IntLiteral(2)),
+                op_span: span(),
+                left: Box::new(Expr::IntLiteral {
+                    value: 1,
+                    span: span()
+                }),
+                right: Box::new(Expr::IntLiteral {
+                    value: 2,
+                    span: span()
+                }),
             })
         );
         assert_eq!(
             parser.pos, 4,
             "expression statement should consume semicolon"
+        );
+    }
+
+    #[test]
+    fn parses_char_literal_as_int_literal() {
+        let tokens = vec![
+            token_with_span(TokenKind::KwReturn, 0, 6),
+            token_with_span(TokenKind::CharLiteral(65), 7, 10),
+            token_with_span(TokenKind::Semicolon, 10, 11),
+        ];
+
+        let mut parser = Parser::new(tokens);
+        let statement = parser.parse_statement().expect("parsing should succeed");
+
+        assert_eq!(
+            statement,
+            Statement::Return(Expr::IntLiteral {
+                value: 65,
+                span: Span { start: 7, end: 10 },
+            })
+        );
+    }
+
+    #[test]
+    fn parses_char_literal_in_char_initializer_as_int_literal() {
+        let tokens = vec![
+            token_with_span(TokenKind::KwChar, 0, 4),
+            token_with_span(TokenKind::Ident("c".to_string()), 5, 6),
+            token_with_span(TokenKind::Equal, 7, 8),
+            token_with_span(TokenKind::CharLiteral(10), 9, 13),
+            token_with_span(TokenKind::Semicolon, 13, 14),
+        ];
+
+        let mut parser = Parser::new(tokens);
+        let statement = parser.parse_statement().expect("parsing should succeed");
+
+        assert_eq!(
+            statement,
+            Statement::VarDecl {
+                ty: Type::Char,
+                name: "c".to_string(),
+                name_span: Span { start: 5, end: 6 },
+                init: Some(Expr::IntLiteral {
+                    value: 10,
+                    span: Span { start: 9, end: 13 },
+                }),
+            }
         );
     }
 
@@ -870,7 +993,11 @@ mod tests {
             statement,
             Statement::ExprStatement(Expr::Unary {
                 op: UnaryOp::LogicalNot,
-                expr: Box::new(Expr::IntLiteral(0)),
+                op_span: span(),
+                expr: Box::new(Expr::IntLiteral {
+                    value: 0,
+                    span: span()
+                }),
             })
         );
         assert_eq!(
@@ -919,20 +1046,24 @@ mod tests {
             program,
             Program {
                 functions: vec![Function {
+                    return_type: Type::Int,
                     name_span: span(),
                     name: "add".to_string(),
                     params: vec![
                         Param {
+                            ty: Type::Int,
                             name: "x".to_string(),
                             name_span: span()
                         },
                         Param {
+                            ty: Type::Int,
                             name: "y".to_string(),
                             name_span: span()
                         }
                     ],
                     body: vec![Statement::Return(Expr::Binary {
                         op: BinaryOp::Add,
+                        op_span: span(),
                         left: Box::new(Expr::Variable {
                             name: "x".to_string(),
                             span: span()
@@ -944,6 +1075,41 @@ mod tests {
                     })],
                 }],
                 eof_span: span(),
+            }
+        );
+    }
+
+    #[test]
+    fn parses_char_function_parameter_and_local_types() {
+        let tokens = tokens![
+            TokenKind::KwChar,
+            TokenKind::Ident("id".to_string()),
+            TokenKind::LParen,
+            TokenKind::KwChar,
+            TokenKind::Ident("x".to_string()),
+            TokenKind::RParen,
+            TokenKind::LBrace,
+            TokenKind::KwChar,
+            TokenKind::Ident("y".to_string()),
+            TokenKind::Semicolon,
+            TokenKind::KwReturn,
+            TokenKind::Ident("x".to_string()),
+            TokenKind::Semicolon,
+            TokenKind::RBrace,
+            TokenKind::Eof,
+        ];
+
+        let program = parse(tokens).expect("parsing should succeed");
+
+        assert_eq!(program.functions[0].return_type, Type::Char);
+        assert_eq!(program.functions[0].params[0].ty, Type::Char);
+        assert_eq!(
+            program.functions[0].body[0],
+            Statement::VarDecl {
+                ty: Type::Char,
+                name: "y".to_string(),
+                name_span: span(),
+                init: None,
             }
         );
     }
@@ -1002,11 +1168,21 @@ mod tests {
                 name_span: span(),
                 name: "add".to_string(),
                 args: vec![
-                    Expr::IntLiteral(1),
+                    Expr::IntLiteral {
+                        value: 1,
+                        span: span()
+                    },
                     Expr::Binary {
                         op: BinaryOp::Add,
-                        left: Box::new(Expr::IntLiteral(2)),
-                        right: Box::new(Expr::IntLiteral(3)),
+                        op_span: span(),
+                        left: Box::new(Expr::IntLiteral {
+                            value: 2,
+                            span: span()
+                        }),
+                        right: Box::new(Expr::IntLiteral {
+                            value: 3,
+                            span: span()
+                        }),
                     },
                 ],
             })
@@ -1077,12 +1253,23 @@ mod tests {
             statement,
             Statement::Return(Expr::Binary {
                 op: BinaryOp::Add,
+                op_span: span(),
                 left: Box::new(Expr::Binary {
                     op: BinaryOp::Add,
-                    left: Box::new(Expr::IntLiteral(1)),
-                    right: Box::new(Expr::IntLiteral(2)),
+                    op_span: span(),
+                    left: Box::new(Expr::IntLiteral {
+                        value: 1,
+                        span: span()
+                    }),
+                    right: Box::new(Expr::IntLiteral {
+                        value: 2,
+                        span: span()
+                    }),
                 }),
-                right: Box::new(Expr::IntLiteral(3)),
+                right: Box::new(Expr::IntLiteral {
+                    value: 3,
+                    span: span()
+                }),
             })
         )
     }
@@ -1105,8 +1292,15 @@ mod tests {
             statement,
             Statement::Return(Expr::Binary {
                 op: BinaryOp::Subtract,
-                left: Box::new(Expr::IntLiteral(5)),
-                right: Box::new(Expr::IntLiteral(2)),
+                op_span: span(),
+                left: Box::new(Expr::IntLiteral {
+                    value: 5,
+                    span: span()
+                }),
+                right: Box::new(Expr::IntLiteral {
+                    value: 2,
+                    span: span()
+                }),
             })
         )
     }
@@ -1131,12 +1325,23 @@ mod tests {
             statement,
             Statement::Return(Expr::Binary {
                 op: BinaryOp::Subtract,
+                op_span: span(),
                 left: Box::new(Expr::Binary {
                     op: BinaryOp::Subtract,
-                    left: Box::new(Expr::IntLiteral(5)),
-                    right: Box::new(Expr::IntLiteral(2)),
+                    op_span: span(),
+                    left: Box::new(Expr::IntLiteral {
+                        value: 5,
+                        span: span()
+                    }),
+                    right: Box::new(Expr::IntLiteral {
+                        value: 2,
+                        span: span()
+                    }),
                 }),
-                right: Box::new(Expr::IntLiteral(1)),
+                right: Box::new(Expr::IntLiteral {
+                    value: 1,
+                    span: span()
+                }),
             })
         )
     }
@@ -1159,8 +1364,15 @@ mod tests {
             statement,
             Statement::Return(Expr::Binary {
                 op: BinaryOp::Multiply,
-                left: Box::new(Expr::IntLiteral(2)),
-                right: Box::new(Expr::IntLiteral(3)),
+                op_span: span(),
+                left: Box::new(Expr::IntLiteral {
+                    value: 2,
+                    span: span()
+                }),
+                right: Box::new(Expr::IntLiteral {
+                    value: 3,
+                    span: span()
+                }),
             })
         )
     }
@@ -1182,7 +1394,11 @@ mod tests {
             statement,
             Statement::Return(Expr::Unary {
                 op: UnaryOp::Negate,
-                expr: Box::new(Expr::IntLiteral(5)),
+                op_span: span(),
+                expr: Box::new(Expr::IntLiteral {
+                    value: 5,
+                    span: span()
+                }),
             })
         )
     }
@@ -1204,7 +1420,11 @@ mod tests {
             statement,
             Statement::Return(Expr::Unary {
                 op: UnaryOp::LogicalNot,
-                expr: Box::new(Expr::IntLiteral(0)),
+                op_span: span(),
+                expr: Box::new(Expr::IntLiteral {
+                    value: 0,
+                    span: span()
+                }),
             })
         )
     }
@@ -1226,7 +1446,11 @@ mod tests {
             statement,
             Statement::Return(Expr::Unary {
                 op: UnaryOp::BitwiseNot,
-                expr: Box::new(Expr::IntLiteral(1)),
+                op_span: span(),
+                expr: Box::new(Expr::IntLiteral {
+                    value: 1,
+                    span: span()
+                }),
             })
         )
     }
@@ -1250,14 +1474,19 @@ mod tests {
             statement,
             Statement::Return(Expr::Binary {
                 op: BinaryOp::Multiply,
+                op_span: span(),
                 left: Box::new(Expr::Unary {
                     op: UnaryOp::Negate,
+                    op_span: span(),
                     expr: Box::new(Expr::Variable {
                         name: "x".to_string(),
                         span: span()
                     }),
                 }),
-                right: Box::new(Expr::IntLiteral(2)),
+                right: Box::new(Expr::IntLiteral {
+                    value: 2,
+                    span: span()
+                }),
             })
         )
     }
@@ -1279,9 +1508,13 @@ mod tests {
         assert_eq!(
             statement,
             Statement::VarDecl {
+                ty: Type::Int,
                 name_span: span(),
                 name: "x".to_string(),
-                init: Some(Expr::IntLiteral(5)),
+                init: Some(Expr::IntLiteral {
+                    value: 5,
+                    span: span()
+                }),
             }
         )
     }
@@ -1301,6 +1534,7 @@ mod tests {
         assert_eq!(
             statement,
             Statement::VarDecl {
+                ty: Type::Int,
                 name_span: span(),
                 name: "x".to_string(),
                 init: None,
@@ -1344,25 +1578,34 @@ mod tests {
             program,
             Program {
                 functions: vec![Function {
+                    return_type: Type::Int,
                     name_span: span(),
                     name: "main".to_string(),
                     params: vec![],
                     body: vec![
                         Statement::VarDecl {
+                            ty: Type::Int,
                             name_span: span(),
                             name: "x".to_string(),
-                            init: Some(Expr::IntLiteral(1)),
+                            init: Some(Expr::IntLiteral {
+                                value: 1,
+                                span: span()
+                            }),
                         },
                         Statement::ExprStatement(Expr::Assign {
                             name_span: span(),
                             name: "x".to_string(),
                             value: Box::new(Expr::Binary {
                                 op: BinaryOp::Add,
+                                op_span: span(),
                                 left: Box::new(Expr::Variable {
                                     name: "x".to_string(),
                                     span: span()
                                 }),
-                                right: Box::new(Expr::IntLiteral(2)),
+                                right: Box::new(Expr::IntLiteral {
+                                    value: 2,
+                                    span: span()
+                                }),
                             }),
                         }),
                         Statement::Return(Expr::Variable {
@@ -1394,7 +1637,10 @@ mod tests {
             Statement::ExprStatement(Expr::Assign {
                 name_span: span(),
                 name: "x".to_string(),
-                value: Box::new(Expr::IntLiteral(3)),
+                value: Box::new(Expr::IntLiteral {
+                    value: 3,
+                    span: span()
+                }),
             })
         );
     }
@@ -1418,7 +1664,10 @@ mod tests {
             Statement::Return(Expr::Assign {
                 name_span: span(),
                 name: "x".to_string(),
-                value: Box::new(Expr::IntLiteral(3)),
+                value: Box::new(Expr::IntLiteral {
+                    value: 3,
+                    span: span()
+                }),
             })
         );
     }
@@ -1447,7 +1696,10 @@ mod tests {
                 value: Box::new(Expr::Assign {
                     name_span: span(),
                     name: "y".to_string(),
-                    value: Box::new(Expr::IntLiteral(4)),
+                    value: Box::new(Expr::IntLiteral {
+                        value: 4,
+                        span: span()
+                    }),
                 }),
             })
         );
@@ -1499,12 +1751,16 @@ mod tests {
             program,
             Program {
                 functions: vec![Function {
+                    return_type: Type::Int,
                     name_span: span(),
                     name: "main".to_string(),
                     params: vec![],
-                    body: vec![Statement::Block(vec![Statement::Return(Expr::IntLiteral(
-                        1
-                    ))])],
+                    body: vec![Statement::Block(vec![Statement::Return(
+                        Expr::IntLiteral {
+                            value: 1,
+                            span: span()
+                        }
+                    )])],
                 }],
                 eof_span: span(),
             }
@@ -1536,11 +1792,15 @@ mod tests {
             program,
             Program {
                 functions: vec![Function {
+                    return_type: Type::Int,
                     name_span: span(),
                     name: "main".to_string(),
                     params: vec![],
                     body: vec![Statement::Block(vec![Statement::Block(vec![
-                        Statement::Return(Expr::IntLiteral(1))
+                        Statement::Return(Expr::IntLiteral {
+                            value: 1,
+                            span: span()
+                        })
                     ])])],
                 }],
                 eof_span: span(),
@@ -1597,11 +1857,15 @@ mod tests {
                     name: "x".to_string(),
                     value: Box::new(Expr::Binary {
                         op: BinaryOp::Subtract,
+                        op_span: span(),
                         left: Box::new(Expr::Variable {
                             name: "x".to_string(),
                             span: span()
                         }),
-                        right: Box::new(Expr::IntLiteral(1)),
+                        right: Box::new(Expr::IntLiteral {
+                            value: 1,
+                            span: span()
+                        }),
                     }),
                 })),
             }
@@ -1637,11 +1901,15 @@ mod tests {
                     name: "x".to_string(),
                     value: Box::new(Expr::Binary {
                         op: BinaryOp::Subtract,
+                        op_span: span(),
                         left: Box::new(Expr::Variable {
                             name: "x".to_string(),
                             span: span()
                         }),
-                        right: Box::new(Expr::IntLiteral(1)),
+                        right: Box::new(Expr::IntLiteral {
+                            value: 1,
+                            span: span()
+                        }),
                     }),
                 })),
                 cond: Expr::Variable {
@@ -1768,17 +2036,29 @@ mod tests {
             program,
             Program {
                 functions: vec![Function {
+                    return_type: Type::Int,
                     name_span: span(),
                     name: "main".to_string(),
                     params: vec![],
                     body: vec![Statement::Return(Expr::Binary {
                         op: BinaryOp::Multiply,
+                        op_span: span(),
                         left: Box::new(Expr::Binary {
                             op: BinaryOp::Add,
-                            left: Box::new(Expr::IntLiteral(1)),
-                            right: Box::new(Expr::IntLiteral(2)),
+                            op_span: span(),
+                            left: Box::new(Expr::IntLiteral {
+                                value: 1,
+                                span: span()
+                            }),
+                            right: Box::new(Expr::IntLiteral {
+                                value: 2,
+                                span: span()
+                            }),
                         }),
-                        right: Box::new(Expr::IntLiteral(3)),
+                        right: Box::new(Expr::IntLiteral {
+                            value: 3,
+                            span: span()
+                        }),
                     })],
                 }],
                 eof_span: span(),
@@ -1811,17 +2091,29 @@ mod tests {
             program,
             Program {
                 functions: vec![Function {
+                    return_type: Type::Int,
                     name_span: span(),
                     name: "main".to_string(),
                     params: vec![],
                     body: vec![Statement::Return(Expr::Binary {
                         op: BinaryOp::Less,
+                        op_span: span(),
                         left: Box::new(Expr::Binary {
                             op: BinaryOp::Add,
-                            left: Box::new(Expr::IntLiteral(1)),
-                            right: Box::new(Expr::IntLiteral(2)),
+                            op_span: span(),
+                            left: Box::new(Expr::IntLiteral {
+                                value: 1,
+                                span: span()
+                            }),
+                            right: Box::new(Expr::IntLiteral {
+                                value: 2,
+                                span: span()
+                            }),
                         }),
-                        right: Box::new(Expr::IntLiteral(4)),
+                        right: Box::new(Expr::IntLiteral {
+                            value: 4,
+                            span: span()
+                        }),
                     })],
                 }],
                 eof_span: span(),
@@ -1849,12 +2141,23 @@ mod tests {
             statement,
             Statement::Return(Expr::Binary {
                 op: BinaryOp::ShiftLeft,
+                op_span: span(),
                 left: Box::new(Expr::Binary {
                     op: BinaryOp::Add,
-                    left: Box::new(Expr::IntLiteral(1)),
-                    right: Box::new(Expr::IntLiteral(2)),
+                    op_span: span(),
+                    left: Box::new(Expr::IntLiteral {
+                        value: 1,
+                        span: span()
+                    }),
+                    right: Box::new(Expr::IntLiteral {
+                        value: 2,
+                        span: span()
+                    }),
                 }),
-                right: Box::new(Expr::IntLiteral(3)),
+                right: Box::new(Expr::IntLiteral {
+                    value: 3,
+                    span: span()
+                }),
             })
         )
     }
@@ -1879,12 +2182,23 @@ mod tests {
             statement,
             Statement::Return(Expr::Binary {
                 op: BinaryOp::Less,
+                op_span: span(),
                 left: Box::new(Expr::Binary {
                     op: BinaryOp::ShiftLeft,
-                    left: Box::new(Expr::IntLiteral(1)),
-                    right: Box::new(Expr::IntLiteral(2)),
+                    op_span: span(),
+                    left: Box::new(Expr::IntLiteral {
+                        value: 1,
+                        span: span()
+                    }),
+                    right: Box::new(Expr::IntLiteral {
+                        value: 2,
+                        span: span()
+                    }),
                 }),
-                right: Box::new(Expr::IntLiteral(8)),
+                right: Box::new(Expr::IntLiteral {
+                    value: 8,
+                    span: span()
+                }),
             })
         )
     }
@@ -1909,12 +2223,14 @@ mod tests {
             statement,
             Statement::Return(Expr::Binary {
                 op: BinaryOp::BitAnd,
+                op_span: span(),
                 left: Box::new(Expr::Variable {
                     name: "a".to_string(),
                     span: span()
                 }),
                 right: Box::new(Expr::Binary {
                     op: BinaryOp::Equal,
+                    op_span: span(),
                     left: Box::new(Expr::Variable {
                         name: "b".to_string(),
                         span: span()
@@ -1948,12 +2264,14 @@ mod tests {
             statement,
             Statement::Return(Expr::Binary {
                 op: BinaryOp::BitXor,
+                op_span: span(),
                 left: Box::new(Expr::Variable {
                     name: "a".to_string(),
                     span: span()
                 }),
                 right: Box::new(Expr::Binary {
                     op: BinaryOp::BitAnd,
+                    op_span: span(),
                     left: Box::new(Expr::Variable {
                         name: "b".to_string(),
                         span: span()
@@ -1987,12 +2305,14 @@ mod tests {
             statement,
             Statement::Return(Expr::Binary {
                 op: BinaryOp::BitOr,
+                op_span: span(),
                 left: Box::new(Expr::Variable {
                     name: "a".to_string(),
                     span: span()
                 }),
                 right: Box::new(Expr::Binary {
                     op: BinaryOp::BitXor,
+                    op_span: span(),
                     left: Box::new(Expr::Variable {
                         name: "b".to_string(),
                         span: span()
@@ -2033,17 +2353,29 @@ mod tests {
             program,
             Program {
                 functions: vec![Function {
+                    return_type: Type::Int,
                     name_span: span(),
                     name: "main".to_string(),
                     params: vec![],
                     body: vec![Statement::Return(Expr::Binary {
                         op: BinaryOp::Equal,
+                        op_span: span(),
                         left: Box::new(Expr::Binary {
                             op: BinaryOp::Add,
-                            left: Box::new(Expr::IntLiteral(1)),
-                            right: Box::new(Expr::IntLiteral(2)),
+                            op_span: span(),
+                            left: Box::new(Expr::IntLiteral {
+                                value: 1,
+                                span: span()
+                            }),
+                            right: Box::new(Expr::IntLiteral {
+                                value: 2,
+                                span: span()
+                            }),
                         }),
-                        right: Box::new(Expr::IntLiteral(3)),
+                        right: Box::new(Expr::IntLiteral {
+                            value: 3,
+                            span: span()
+                        }),
                     })],
                 }],
                 eof_span: span(),
@@ -2074,16 +2406,21 @@ mod tests {
             program,
             Program {
                 functions: vec![Function {
+                    return_type: Type::Int,
                     name_span: span(),
                     name: "main".to_string(),
                     params: vec![],
                     body: vec![Statement::Return(Expr::Binary {
                         op: BinaryOp::GreaterEqual,
+                        op_span: span(),
                         left: Box::new(Expr::Variable {
                             name: "x".to_string(),
                             span: span()
                         }),
-                        right: Box::new(Expr::IntLiteral(10)),
+                        right: Box::new(Expr::IntLiteral {
+                            value: 10,
+                            span: span()
+                        }),
                     })],
                 }],
                 eof_span: span(),
@@ -2116,17 +2453,29 @@ mod tests {
             program,
             Program {
                 functions: vec![Function {
+                    return_type: Type::Int,
                     name_span: span(),
                     name: "main".to_string(),
                     params: vec![],
                     body: vec![Statement::Return(Expr::Binary {
                         op: BinaryOp::Less,
+                        op_span: span(),
                         left: Box::new(Expr::Binary {
                             op: BinaryOp::Less,
-                            left: Box::new(Expr::IntLiteral(1)),
-                            right: Box::new(Expr::IntLiteral(2)),
+                            op_span: span(),
+                            left: Box::new(Expr::IntLiteral {
+                                value: 1,
+                                span: span()
+                            }),
+                            right: Box::new(Expr::IntLiteral {
+                                value: 2,
+                                span: span()
+                            }),
                         }),
-                        right: Box::new(Expr::IntLiteral(3)),
+                        right: Box::new(Expr::IntLiteral {
+                            value: 3,
+                            span: span()
+                        }),
                     })],
                 }],
                 eof_span: span(),
@@ -2160,16 +2509,24 @@ mod tests {
             program,
             Program {
                 functions: vec![Function {
+                    return_type: Type::Int,
                     name_span: span(),
                     name: "main".to_string(),
                     params: vec![],
                     body: vec![
                         Statement::VarDecl {
+                            ty: Type::Int,
                             name_span: span(),
                             name: "x".to_string(),
-                            init: Some(Expr::IntLiteral(5)),
+                            init: Some(Expr::IntLiteral {
+                                value: 5,
+                                span: span()
+                            }),
                         },
-                        Statement::Return(Expr::IntLiteral(42)),
+                        Statement::Return(Expr::IntLiteral {
+                            value: 42,
+                            span: span()
+                        }),
                     ],
                 }],
                 eof_span: span(),
@@ -2203,14 +2560,19 @@ mod tests {
             program,
             Program {
                 functions: vec![Function {
+                    return_type: Type::Int,
                     name_span: span(),
                     name: "main".to_string(),
                     params: vec![],
                     body: vec![
                         Statement::VarDecl {
+                            ty: Type::Int,
                             name_span: span(),
                             name: "x".to_string(),
-                            init: Some(Expr::IntLiteral(5)),
+                            init: Some(Expr::IntLiteral {
+                                value: 5,
+                                span: span()
+                            }),
                         },
                         Statement::Return(Expr::Variable {
                             name: "x".to_string(),
@@ -2243,11 +2605,22 @@ mod tests {
             statement,
             Statement::Return(Expr::Binary {
                 op: BinaryOp::Add,
-                left: Box::new(Expr::IntLiteral(1)),
+                op_span: span(),
+                left: Box::new(Expr::IntLiteral {
+                    value: 1,
+                    span: span()
+                }),
                 right: Box::new(Expr::Binary {
                     op: BinaryOp::Multiply,
-                    left: Box::new(Expr::IntLiteral(2)),
-                    right: Box::new(Expr::IntLiteral(3)),
+                    op_span: span(),
+                    left: Box::new(Expr::IntLiteral {
+                        value: 2,
+                        span: span()
+                    }),
+                    right: Box::new(Expr::IntLiteral {
+                        value: 3,
+                        span: span()
+                    }),
                 }),
             })
         )
@@ -2299,11 +2672,22 @@ mod tests {
             statement,
             Statement::Return(Expr::Binary {
                 op: BinaryOp::LogicalOr,
-                left: Box::new(Expr::IntLiteral(1)),
+                op_span: span(),
+                left: Box::new(Expr::IntLiteral {
+                    value: 1,
+                    span: span()
+                }),
                 right: Box::new(Expr::Binary {
                     op: BinaryOp::LogicalAnd,
-                    left: Box::new(Expr::IntLiteral(0)),
-                    right: Box::new(Expr::IntLiteral(2)),
+                    op_span: span(),
+                    left: Box::new(Expr::IntLiteral {
+                        value: 0,
+                        span: span()
+                    }),
+                    right: Box::new(Expr::IntLiteral {
+                        value: 2,
+                        span: span()
+                    }),
                 }),
             })
         );
@@ -2329,12 +2713,23 @@ mod tests {
             statement,
             Statement::Return(Expr::Binary {
                 op: BinaryOp::LogicalAnd,
+                op_span: span(),
                 left: Box::new(Expr::Binary {
                     op: BinaryOp::BitOr,
-                    left: Box::new(Expr::IntLiteral(1)),
-                    right: Box::new(Expr::IntLiteral(2)),
+                    op_span: span(),
+                    left: Box::new(Expr::IntLiteral {
+                        value: 1,
+                        span: span()
+                    }),
+                    right: Box::new(Expr::IntLiteral {
+                        value: 2,
+                        span: span()
+                    }),
                 }),
-                right: Box::new(Expr::IntLiteral(3)),
+                right: Box::new(Expr::IntLiteral {
+                    value: 3,
+                    span: span()
+                }),
             })
         );
     }
@@ -2359,12 +2754,23 @@ mod tests {
             statement,
             Statement::Return(Expr::Binary {
                 op: BinaryOp::LogicalAnd,
+                op_span: span(),
                 left: Box::new(Expr::Binary {
                     op: BinaryOp::LogicalAnd,
-                    left: Box::new(Expr::IntLiteral(1)),
-                    right: Box::new(Expr::IntLiteral(2)),
+                    op_span: span(),
+                    left: Box::new(Expr::IntLiteral {
+                        value: 1,
+                        span: span()
+                    }),
+                    right: Box::new(Expr::IntLiteral {
+                        value: 2,
+                        span: span()
+                    }),
                 }),
-                right: Box::new(Expr::IntLiteral(3)),
+                right: Box::new(Expr::IntLiteral {
+                    value: 3,
+                    span: span()
+                }),
             })
         );
     }
@@ -2401,26 +2807,37 @@ mod tests {
                 init: Some(Box::new(Statement::ExprStatement(Expr::Assign {
                     name_span: span(),
                     name: "i".to_string(),
-                    value: Box::new(Expr::IntLiteral(0)),
+                    value: Box::new(Expr::IntLiteral {
+                        value: 0,
+                        span: span()
+                    }),
                 }))),
                 cond: Some(Expr::Binary {
                     op: BinaryOp::Less,
+                    op_span: span(),
                     left: Box::new(Expr::Variable {
                         name: "i".to_string(),
                         span: span()
                     }),
-                    right: Box::new(Expr::IntLiteral(10)),
+                    right: Box::new(Expr::IntLiteral {
+                        value: 10,
+                        span: span()
+                    }),
                 }),
                 post: Some(Expr::Assign {
                     name_span: span(),
                     name: "i".to_string(),
                     value: Box::new(Expr::Binary {
                         op: BinaryOp::Add,
+                        op_span: span(),
                         left: Box::new(Expr::Variable {
                             name: "i".to_string(),
                             span: span()
                         }),
-                        right: Box::new(Expr::IntLiteral(1)),
+                        right: Box::new(Expr::IntLiteral {
+                            value: 1,
+                            span: span()
+                        }),
                     }),
                 }),
                 body: Box::new(Statement::Empty),
@@ -2459,28 +2876,40 @@ mod tests {
             statement,
             Statement::For {
                 init: Some(Box::new(Statement::VarDecl {
+                    ty: Type::Int,
                     name_span: span(),
                     name: "i".to_string(),
-                    init: Some(Expr::IntLiteral(0)),
+                    init: Some(Expr::IntLiteral {
+                        value: 0,
+                        span: span()
+                    }),
                 })),
                 cond: Some(Expr::Binary {
                     op: BinaryOp::Less,
+                    op_span: span(),
                     left: Box::new(Expr::Variable {
                         name: "i".to_string(),
                         span: span()
                     }),
-                    right: Box::new(Expr::IntLiteral(10)),
+                    right: Box::new(Expr::IntLiteral {
+                        value: 10,
+                        span: span()
+                    }),
                 }),
                 post: Some(Expr::Assign {
                     name_span: span(),
                     name: "i".to_string(),
                     value: Box::new(Expr::Binary {
                         op: BinaryOp::Add,
+                        op_span: span(),
                         left: Box::new(Expr::Variable {
                             name: "i".to_string(),
                             span: span()
                         }),
-                        right: Box::new(Expr::IntLiteral(1)),
+                        right: Box::new(Expr::IntLiteral {
+                            value: 1,
+                            span: span()
+                        }),
                     }),
                 }),
                 body: Box::new(Statement::Empty),
@@ -2512,11 +2941,15 @@ mod tests {
                 init: None,
                 cond: Some(Expr::Binary {
                     op: BinaryOp::Less,
+                    op_span: span(),
                     left: Box::new(Expr::Variable {
                         name: "i".to_string(),
                         span: span()
                     }),
-                    right: Box::new(Expr::IntLiteral(10)),
+                    right: Box::new(Expr::IntLiteral {
+                        value: 10,
+                        span: span()
+                    }),
                 }),
                 post: None,
                 body: Box::new(Statement::Empty),

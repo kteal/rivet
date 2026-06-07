@@ -1,6 +1,6 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
-use crate::ast::{Expr, Function, Program, Statement};
+use crate::ast::{Expr, Function, Param, Program, Statement, Type};
 use crate::lexer::Span;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -10,21 +10,25 @@ pub struct SemanticError {
 }
 
 pub struct FunctionInfo {
-    param_count: usize,
+    return_type: Type,
+    name: String,
+    params: Vec<Param>,
 }
 
 struct Checker {
-    scopes: Vec<HashSet<String>>,
+    scopes: Vec<HashMap<String, Type>>,
     functions: HashMap<String, FunctionInfo>,
     loop_depth: usize,
+    current_function_return_type: Option<Type>,
 }
 
 impl Checker {
     fn new() -> Self {
         Self {
-            scopes: vec![HashSet::new()],
+            scopes: vec![HashMap::new()],
             functions: HashMap::new(),
             loop_depth: 0,
+            current_function_return_type: None,
         }
     }
 
@@ -44,40 +48,46 @@ impl Checker {
     }
 
     fn enter_scope(&mut self) {
-        self.scopes.push(HashSet::new());
+        self.scopes.push(HashMap::new());
     }
 
     fn exit_scope(&mut self) {
         self.scopes.pop();
     }
 
-    fn current_scope(&self) -> &HashSet<String> {
+    fn current_scope(&self) -> &HashMap<String, Type> {
         self.scopes
             .last()
             .expect("semantic checker should have an active scope")
     }
 
-    fn current_scope_mut(&mut self) -> &mut HashSet<String> {
+    fn current_scope_mut(&mut self) -> &mut HashMap<String, Type> {
         self.scopes
             .last_mut()
             .expect("semantic checker should have an active scope")
     }
 
-    fn declare_local(&mut self, name: &str, span: Span) -> Result<(), SemanticError> {
-        if self.current_scope().contains(name) {
+    fn is_assignable(target: Type, value: Type) -> bool {
+        target == value
+            || (target == Type::Char && value == Type::Int)
+            || (target == Type::Int && value == Type::Char)
+    }
+
+    fn declare_local(&mut self, ty: Type, name: &str, span: Span) -> Result<(), SemanticError> {
+        if self.current_scope().contains_key(name) {
             return Err(SemanticError {
                 message: format!("duplicate local variable '{name}'"),
                 span,
             });
         }
-        self.current_scope_mut().insert(name.to_string());
+        self.current_scope_mut().insert(name.to_string(), ty);
         Ok(())
     }
 
-    fn check_local_declared(&self, name: &str, span: Span) -> Result<(), SemanticError> {
+    fn resolve_local(&self, name: &str, span: Span) -> Result<Type, SemanticError> {
         for scope in self.scopes.iter().rev() {
-            if scope.contains(name) {
-                return Ok(());
+            if let Some(ty) = scope.get(name) {
+                return Ok(*ty);
             }
         }
         return Err(SemanticError {
@@ -107,59 +117,101 @@ impl Checker {
         self.functions.insert(
             function.name.to_string(),
             FunctionInfo {
-                param_count: function.params.len(),
+                return_type: function.return_type,
+                name: function.name.to_string(),
+                params: function.params.clone(),
             },
         );
         Ok(())
     }
 
-    fn check_function_declared(&self, name: &str, span: Span) -> Result<(), SemanticError> {
-        if !self.functions.contains_key(name) {
-            return Err(SemanticError {
-                message: format!("undeclared function '{name}'"),
-                span,
-            });
-        }
-        Ok(())
-    }
-
-    fn check_function_param_count(
+    fn check_function_declared(
         &self,
         name: &str,
-        actual_arg_count: usize,
+        span: Span,
+    ) -> Result<&FunctionInfo, SemanticError> {
+        self.functions.get(name).ok_or_else(|| SemanticError {
+            message: format!("undeclared function '{name}'"),
+            span,
+        })
+    }
+
+    fn check_function_params(
+        &self,
+        function_info: &FunctionInfo,
+        args: &[Expr],
         span: Span,
     ) -> Result<(), SemanticError> {
-        let num_args = self
-            .functions
-            .get(name)
-            .expect(&format!("function {name} does not exist"))
-            .param_count;
-        if num_args != actual_arg_count {
+        // Check number of arguments
+        if function_info.params.len() != args.len() {
             return Err(SemanticError {
                 message: format!(
-                    "function call of '{name}' has {actual_arg_count} arguments, declaration has {num_args}"
+                    "function call of '{}' has {} arguments, declaration has {}",
+                    function_info.name,
+                    args.len(),
+                    function_info.params.len()
                 ),
                 span,
             });
         }
+
+        // Check argument types
+        for (param, arg) in function_info.params.iter().zip(args) {
+            let arg_type = self.check_expr(arg)?;
+            if !Self::is_assignable(param.ty, arg_type) {
+                return Err(SemanticError {
+                    message: format!(
+                        "cannot pass value of type '{arg_type:?}' to parameter of type '{:?}'",
+                        param.ty
+                    ),
+                    span: arg.diagnostic_span(),
+                });
+            }
+        }
         Ok(())
     }
 
-    fn check_expr(&mut self, expr: &Expr) -> Result<(), SemanticError> {
+    fn check_expr(&self, expr: &Expr) -> Result<Type, SemanticError> {
         match expr {
-            Expr::IntLiteral(_) => (),
-            Expr::Variable { name, span } => self.check_local_declared(name, *span)?,
-            Expr::Unary { op: _, expr } => self.check_expr(expr)?,
-            Expr::Binary { op: _, left, right } => {
-                self.check_expr(left)?;
-                self.check_expr(right)?;
+            Expr::IntLiteral { .. } => Ok(Type::Int),
+            Expr::Variable { name, span } => self.resolve_local(name, *span),
+            Expr::Unary {
+                op: _,
+                op_span: _,
+                expr,
+            } => {
+                let _expr_type = self.check_expr(expr)?;
+                Ok(Type::Int)
+            }
+            Expr::Binary {
+                op,
+                op_span,
+                left,
+                right,
+            } => {
+                let left_type = self.check_expr(left)?;
+                let right_type = self.check_expr(right)?;
+
+                if left_type != right_type {
+                    return Err(SemanticError {
+                        message: format!(
+                            "invalid operands to binary operator '{:?}'\n\
+                             left operand has type '{:?}'\n\
+                             right operand has type '{:?}'",
+                            op, left_type, right_type
+                        ),
+                        span: *op_span,
+                    });
+                }
+
+                Ok(Type::Int)
             }
             Expr::Call {
                 name,
                 name_span,
                 args,
             } => {
-                self.check_function_declared(name, *name_span)?;
+                let function_info = self.check_function_declared(name, *name_span)?;
                 // For now, limit to 8 args (no stack-passed arguments)
                 if args.len() > 8 {
                     return Err(SemanticError {
@@ -171,34 +223,67 @@ impl Checker {
                         span: *name_span,
                     });
                 }
-                self.check_function_param_count(name, args.len(), *name_span)?;
-                for arg in args {
-                    self.check_expr(arg)?;
-                }
+                self.check_function_params(function_info, args, *name_span)?;
+
+                Ok(function_info.return_type)
             }
             Expr::Assign {
                 name,
                 name_span,
                 value,
             } => {
-                self.check_local_declared(name, *name_span)?;
-                self.check_expr(value)?;
+                let target_type = self.resolve_local(name, *name_span)?;
+                let value_type = self.check_expr(value)?;
+
+                if !Self::is_assignable(target_type, value_type) {
+                    return Err(SemanticError {
+                        message: format!(
+                            "cannot assign value of type '{value_type:?}' to variable of type '{target_type:?}'"
+                        ),
+                        span: *name_span,
+                    });
+                }
+
+                Ok(target_type)
             }
         }
-        Ok(())
     }
 
     fn check_statement(&mut self, statement: &Statement) -> Result<(), SemanticError> {
         match statement {
-            Statement::Return(expr) => self.check_expr(expr)?,
+            Statement::Return(expr) => {
+                let expr_type = self.check_expr(expr)?;
+
+                let return_type = self
+                    .current_function_return_type
+                    .expect("return statement checked outside function");
+
+                if !Self::is_assignable(return_type, expr_type) {
+                    return Err(SemanticError {
+                        message: format!(
+                            "cannot return value of type '{expr_type:?}' from function returning '{return_type:?}'"
+                        ),
+                        span: expr.diagnostic_span(),
+                    });
+                }
+            }
             Statement::VarDecl {
+                ty,
                 name,
                 name_span,
                 init,
             } => {
-                self.declare_local(name, *name_span)?;
+                self.declare_local(*ty, name, *name_span)?;
                 if let Some(init_expr) = init {
-                    self.check_expr(init_expr)?;
+                    let init_type = self.check_expr(init_expr)?;
+                    if !Self::is_assignable(*ty, init_type) {
+                        return Err(SemanticError {
+                            message: format!(
+                                "cannot assign value of type '{init_type:?}' to variable of type '{ty:?}'"
+                            ),
+                            span: init_expr.diagnostic_span(),
+                        });
+                    }
                 }
             }
             Statement::Block(body) => self.check_block(body)?,
@@ -256,7 +341,9 @@ impl Checker {
                 res?
             }
             Statement::Empty => (),
-            Statement::ExprStatement(expr) => self.check_expr(expr)?,
+            Statement::ExprStatement(expr) => {
+                self.check_expr(expr)?;
+            }
             Statement::Break { span } => {
                 if !self.in_loop() {
                     return Err(SemanticError {
@@ -292,12 +379,21 @@ impl Checker {
     }
 
     fn check_function(&mut self, function: &Function) -> Result<(), SemanticError> {
+        let old_return_type = self
+            .current_function_return_type
+            .replace(function.return_type);
+
         self.enter_scope();
-        for param in &function.params {
-            self.declare_local(&param.name, param.name_span)?;
-        }
-        let res = self.check_statements(&function.body);
+
+        let res = (|| -> Result<(), SemanticError> {
+            for param in &function.params {
+                self.declare_local(param.ty, &param.name, param.name_span)?;
+            }
+            self.check_statements(&function.body)
+        })();
+
         self.exit_scope();
+        self.current_function_return_type = old_return_type;
         res
     }
 

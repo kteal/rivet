@@ -257,6 +257,56 @@ fn qemu_local_variable_programs_return_expected_values() {
 
 #[test]
 #[ignore = "requires qemu-riscv32 and riscv64-linux-gnu binutils"]
+fn qemu_char_narrowing_programs_return_expected_values() {
+    run_qemu_case(
+        "char-local-initializer-narrows",
+        "int main() {\n    char c = 300;\n    return c;\n}\n",
+        44,
+    );
+    run_qemu_case(
+        "char-assignment-narrows",
+        "int main() {\n    char c;\n    c = 300;\n    return c;\n}\n",
+        44,
+    );
+    run_qemu_case(
+        "char-return-narrows",
+        "char main() {\n    return 300;\n}\n",
+        44,
+    );
+    run_qemu_case(
+        "char-parameter-narrows",
+        "int id(char x) {\n    return x;\n}\n\nint main() {\n    return id(300);\n}\n",
+        44,
+    );
+}
+
+#[test]
+#[ignore = "requires qemu-riscv32 and riscv64-linux-gnu binutils"]
+fn qemu_char_literal_programs_return_expected_values() {
+    run_qemu_case(
+        "char-literal-return",
+        "int main() {\n    return 'A';\n}\n",
+        65,
+    );
+    run_qemu_case(
+        "char-literal-in-char-local",
+        "int main() {\n    char c = 'A';\n    return c;\n}\n",
+        65,
+    );
+    run_qemu_case(
+        "escaped-newline-char-literal",
+        "int main() {\n    char c = '\\n';\n    return c;\n}\n",
+        10,
+    );
+    run_qemu_case(
+        "escaped-quote-char-literal",
+        "int main() {\n    return '\\'';\n}\n",
+        39,
+    );
+}
+
+#[test]
+#[ignore = "requires qemu-riscv32 and riscv64-linux-gnu binutils"]
 fn qemu_block_scope_programs_return_expected_values() {
     run_qemu_case(
         "block-uses-outer-local",

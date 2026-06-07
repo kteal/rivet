@@ -1,4 +1,4 @@
-use crate::ast::{BinaryOp, Expr, Function, Program, Statement, UnaryOp};
+use crate::ast::{BinaryOp, Expr, Function, Program, Statement, Type, UnaryOp};
 use std::collections::HashMap;
 use std::fmt::{self, Write};
 
@@ -73,14 +73,21 @@ impl FrameLayout {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct LocalInfo {
+    offset: i32,
+    ty: Type,
+}
+
 struct Codegen {
     out: String,
     frame: FrameLayout,
-    scopes: Vec<HashMap<String, i32>>,
+    scopes: Vec<HashMap<String, LocalInfo>>,
     next_local_offset: i32,
     label_counter: usize,
     return_label: Option<String>,
     loop_stack: Vec<LoopLabels>,
+    current_function_return_type: Option<Type>,
     #[allow(dead_code)]
     target: CodegenTarget,
 }
@@ -95,6 +102,7 @@ impl Codegen {
             label_counter: 0,
             return_label: None,
             loop_stack: vec![],
+            current_function_return_type: None,
             target,
         }
     }
@@ -143,22 +151,23 @@ impl Codegen {
         self.scopes.pop();
     }
 
-    fn current_scope_mut(&mut self) -> &mut HashMap<String, i32> {
+    fn current_scope_mut(&mut self) -> &mut HashMap<String, LocalInfo> {
         self.scopes
             .last_mut()
             .expect("codegen should have an active scope")
     }
 
-    fn resolve_local(&mut self, name: &str) -> Option<i32> {
+    fn resolve_local(&mut self, name: &str) -> Option<LocalInfo> {
         self.scopes
             .iter()
             .rev()
             .find_map(|scope| scope.get(name).copied())
     }
 
-    fn declare_local(&mut self, name: &str) -> i32 {
+    fn declare_local(&mut self, ty: &Type, name: &str) -> i32 {
         let offset = self.next_local_offset;
-        self.current_scope_mut().insert(name.to_string(), offset);
+        self.current_scope_mut()
+            .insert(name.to_string(), LocalInfo { offset, ty: *ty });
         self.next_local_offset -= 4;
         offset
     }
@@ -173,6 +182,40 @@ impl Codegen {
 
     fn emit_label(&mut self, label: &str) {
         self.emit(format_args!("{label}:\n"));
+    }
+
+    fn emit_narrow_to_type(&mut self, ty: Type) {
+        match ty {
+            Type::Int => (),
+            Type::Char => self.emit_line(format_args!("andi a0, a0, 255")),
+        };
+    }
+
+    fn emit_load_local(&mut self, local: LocalInfo) {
+        match local.ty {
+            Type::Int => self.emit_line(format_args!("lw a0, {}(s0)", local.offset)),
+            Type::Char => self.emit_line(format_args!("lbu a0, {}(s0)", local.offset)),
+        }
+    }
+
+    fn emit_store_local(&mut self, local: LocalInfo) {
+        match local.ty {
+            Type::Int => self.emit_line(format_args!("sw a0, {}(s0)", local.offset)),
+            Type::Char => {
+                self.emit_narrow_to_type(Type::Char);
+                self.emit_line(format_args!("sb a0, {}(s0)", local.offset));
+            }
+        }
+    }
+
+    fn emit_store_param(&mut self, reg: usize, local: LocalInfo) {
+        match local.ty {
+            Type::Int => self.emit_line(format_args!("sw a{reg}, {}(s0)", local.offset)),
+            Type::Char => {
+                self.emit_line(format_args!("andi a{reg}, a{reg}, 255"));
+                self.emit_line(format_args!("sb a{reg}, {}(s0)", local.offset));
+            }
+        }
     }
 
     fn emit_logical_and(&mut self, left: &Expr, right: &Expr) {
@@ -266,15 +309,24 @@ impl Codegen {
 
     fn emit_expr(&mut self, expr: &Expr) {
         match expr {
-            Expr::IntLiteral(value) => self.emit_line(format_args!("li a0, {value}")),
-            Expr::Binary { op, left, right } => self.emit_binary(op, left, right),
+            Expr::IntLiteral { value, .. } => self.emit_line(format_args!("li a0, {value}")),
+            Expr::Binary {
+                op,
+                op_span: _,
+                left,
+                right,
+            } => self.emit_binary(op, left, right),
             Expr::Variable { name, .. } => {
-                let offset = self
+                let local = self
                     .resolve_local(name)
                     .expect("usage of undefined variable");
-                self.emit_line(format_args!("lw a0, {offset}(s0)"));
+                self.emit_load_local(local);
             }
-            Expr::Unary { op, expr } => {
+            Expr::Unary {
+                op,
+                op_span: _,
+                expr,
+            } => {
                 self.emit_expr(expr);
                 match op {
                     UnaryOp::Negate => self.emit_line(format_args!("neg a0, a0")),
@@ -307,10 +359,10 @@ impl Codegen {
             } => {
                 self.emit_expr(value);
 
-                let offset = self
+                let local = self
                     .resolve_local(name)
                     .expect("assignment to undefined variable");
-                self.emit_line(format_args!("sw a0, {offset}(s0)"));
+                self.emit_store_local(local);
             }
         }
     }
@@ -418,6 +470,13 @@ impl Codegen {
         match statement {
             Statement::Return(expr) => {
                 self.emit_expr(expr);
+                match self
+                    .current_function_return_type
+                    .expect("codegen should have a function return type")
+                {
+                    Type::Int => (),
+                    Type::Char => self.emit_line(format_args!("andi a0, a0, 255")),
+                };
                 let return_label = self
                     .return_label
                     .clone()
@@ -425,14 +484,16 @@ impl Codegen {
                 self.emit_line(format_args!("j {return_label}"));
             }
             Statement::VarDecl {
+                ty,
                 name,
                 name_span: _,
                 init,
             } => {
-                let offset = self.declare_local(name);
+                let offset = self.declare_local(ty, name);
                 if let Some(init_expr) = init {
                     self.emit_expr(init_expr);
-                    self.emit_line(format_args!("sw a0, {offset}(s0)"));
+                    let local = LocalInfo { offset, ty: *ty };
+                    self.emit_store_local(local);
                 }
             }
             Statement::Block(body) => {
@@ -507,11 +568,17 @@ impl Codegen {
 
         // Store the argument registers a0-a7 onto the stack, declaring as local vars
         for (i, param) in function.params.iter().enumerate() {
-            let offset = self.declare_local(&param.name);
-            self.emit_line(format_args!("sw a{i}, {offset}(s0)"));
+            let offset = self.declare_local(&param.ty, &param.name);
+            let local = LocalInfo {
+                offset,
+                ty: param.ty,
+            };
+            self.emit_store_param(i, local);
         }
 
+        self.current_function_return_type = Some(function.return_type);
         self.emit_statements(&function.body);
+        self.current_function_return_type = None;
         self.emit_epilogue();
     }
 

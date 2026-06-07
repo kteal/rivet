@@ -8,6 +8,7 @@ pub struct Program {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Function {
+    pub return_type: Type,
     pub name: String,
     pub name_span: Span,
     pub params: Vec<Param>,
@@ -16,6 +17,7 @@ pub struct Function {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Param {
+    pub ty: Type,
     pub name: String,
     pub name_span: Span,
 }
@@ -23,6 +25,7 @@ pub struct Param {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Statement {
     VarDecl {
+        ty: Type,
         name: String,
         name_span: Span,
         init: Option<Expr>,
@@ -60,18 +63,23 @@ pub enum Statement {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Expr {
-    IntLiteral(i32),
+    IntLiteral {
+        value: i32,
+        span: Span,
+    },
     Variable {
         name: String,
         span: Span,
     },
     Binary {
         op: BinaryOp,
+        op_span: Span,
         left: Box<Expr>,
         right: Box<Expr>,
     },
     Unary {
         op: UnaryOp,
+        op_span: Span,
         expr: Box<Expr>,
     },
     Call {
@@ -84,6 +92,19 @@ pub enum Expr {
         name_span: Span,
         value: Box<Expr>,
     },
+}
+
+impl Expr {
+    pub fn diagnostic_span(&self) -> Span {
+        match self {
+            Expr::IntLiteral { span, .. } => *span,
+            Expr::Variable { span, .. } => *span,
+            Expr::Unary { op_span, .. } => *op_span,
+            Expr::Binary { op_span, .. } => *op_span,
+            Expr::Call { name_span, .. } => *name_span,
+            Expr::Assign { name_span, .. } => *name_span,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -113,4 +134,10 @@ pub enum UnaryOp {
     Negate,
     LogicalNot,
     BitwiseNot,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Type {
+    Int,
+    Char,
 }

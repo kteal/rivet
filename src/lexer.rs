@@ -3,6 +3,7 @@ use std::{iter::Peekable, str::Chars};
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TokenKind {
     KwInt,
+    KwChar,
     KwReturn,
     KwIf,
     KwElse,
@@ -13,6 +14,7 @@ pub enum TokenKind {
     KwDo,
     Ident(String),
     IntLiteral(i32),
+    CharLiteral(i32),
     LParen,
     RParen,
     LBrace,
@@ -94,6 +96,10 @@ impl<'a> Lexer<'a> {
                 }
                 'a'..='z' | 'A'..='Z' | '_' => {
                     let token = self.lex_word();
+                    self.push_token(token);
+                }
+                '\'' => {
+                    let token = self.lex_char_literal()?;
                     self.push_token(token);
                 }
                 '+' => self.advance_and_push(TokenKind::Plus),
@@ -193,6 +199,83 @@ impl<'a> Lexer<'a> {
         })
     }
 
+    fn lex_char_literal(&mut self) -> Result<Token, LexError> {
+        let start = self.offset;
+        self.advance();
+
+        if self.eof() {
+            return Err(self.error(start, "unterminated character constant"));
+        }
+
+        if self.peek() == Some('\'') {
+            self.advance();
+            return Err(self.error(start, "empty character constant"));
+        }
+
+        let value = if self.peek() == Some('\\') {
+            self.advance();
+
+            let Some(escaped) = self.peek() else {
+                return Err(self.error(start, "unterminated character constant"));
+            };
+
+            let value = match escaped {
+                'n' => '\n' as i32,
+                't' => '\t' as i32,
+                'r' => '\r' as i32,
+                '0' => '\0' as i32,
+                '\'' => '\'' as i32,
+                '"' => '"' as i32,
+                '\\' => '\\' as i32,
+                c => {
+                    self.advance();
+                    return Err(LexError {
+                        message: format!("unknown escape sequence '\\{c}'"),
+                        span: Span {
+                            start,
+                            end: self.offset,
+                        },
+                    });
+                }
+            };
+
+            self.advance();
+            value
+        } else {
+            let Some(ch) = self.peek() else {
+                return Err(self.error(start, "unterminated character constant"));
+            };
+            self.advance();
+            ch as i32
+        };
+
+        if self.eof() {
+            return Err(self.error(start, "unterminated character constant"));
+        }
+
+        if self.peek() != Some('\'') {
+            while !self.eof() && self.peek() != Some('\'') {
+                self.advance();
+            }
+
+            if self.peek() == Some('\'') {
+                self.advance();
+            }
+
+            return Err(self.error(start, "multi-character constants are not supported"));
+        }
+
+        self.advance();
+
+        Ok(Token {
+            kind: TokenKind::CharLiteral(value),
+            span: Span {
+                start,
+                end: self.offset,
+            },
+        })
+    }
+
     fn lex_word(&mut self) -> Token {
         let start = self.offset;
         let mut text = String::new();
@@ -204,6 +287,7 @@ impl<'a> Lexer<'a> {
         let end = self.offset;
         let kind = match text.as_str() {
             "int" => TokenKind::KwInt,
+            "char" => TokenKind::KwChar,
             "return" => TokenKind::KwReturn,
             "if" => TokenKind::KwIf,
             "else" => TokenKind::KwElse,
@@ -291,6 +375,20 @@ impl<'a> Lexer<'a> {
 
         let end = self.offset;
         self.push(kind, Span { start, end })
+    }
+
+    fn error(&self, start: usize, message: &str) -> LexError {
+        LexError {
+            message: message.to_string(),
+            span: Span {
+                start,
+                end: self.offset,
+            },
+        }
+    }
+
+    fn eof(&mut self) -> bool {
+        self.chars.peek().is_none()
     }
 }
 
@@ -588,6 +686,102 @@ mod tests {
                 TokenKind::Eof,
             ]
         );
+    }
+
+    #[test]
+    fn lexes_char_keyword() {
+        let tokens = lex_with_struct("char x;").expect("lexing should succeed");
+
+        assert_eq!(
+            token_kinds(&tokens),
+            vec![
+                TokenKind::KwChar,
+                TokenKind::Ident("x".to_string()),
+                TokenKind::Semicolon,
+                TokenKind::Eof,
+            ]
+        );
+    }
+
+    #[test]
+    fn lexes_char_literals() {
+        let tokens = lex_with_struct("return 'A';").expect("lexing should succeed");
+
+        assert_eq!(
+            token_kinds(&tokens),
+            vec![
+                TokenKind::KwReturn,
+                TokenKind::CharLiteral(65),
+                TokenKind::Semicolon,
+                TokenKind::Eof,
+            ]
+        );
+    }
+
+    #[test]
+    fn lexes_char_literal_escapes() {
+        let tokens = lex_with_struct("'\\n' '\\0' '\\'' '\\\\' '\\t' '\\r' '\"'")
+            .expect("lexing should succeed");
+
+        assert_eq!(
+            token_kinds(&tokens),
+            vec![
+                TokenKind::CharLiteral(10),
+                TokenKind::CharLiteral(0),
+                TokenKind::CharLiteral(39),
+                TokenKind::CharLiteral(92),
+                TokenKind::CharLiteral(9),
+                TokenKind::CharLiteral(13),
+                TokenKind::CharLiteral(34),
+                TokenKind::Eof,
+            ]
+        );
+    }
+
+    #[test]
+    fn lexes_char_literal_spans() {
+        let tokens = lex_with_struct("'A' '\\n'").expect("lexing should succeed");
+
+        assert_eq!(
+            token_spans(&tokens),
+            vec![
+                Span { start: 0, end: 3 },
+                Span { start: 4, end: 8 },
+                Span { start: 8, end: 8 },
+            ]
+        );
+    }
+
+    #[test]
+    fn rejects_empty_char_literal() {
+        let err = lex_with_struct("''").expect_err("lexing should fail");
+
+        assert_eq!(err.message, "empty character constant");
+        assert_eq!(err.span, Span { start: 0, end: 2 });
+    }
+
+    #[test]
+    fn rejects_unterminated_char_literal() {
+        let err = lex_with_struct("'A").expect_err("lexing should fail");
+
+        assert_eq!(err.message, "unterminated character constant");
+        assert_eq!(err.span, Span { start: 0, end: 2 });
+    }
+
+    #[test]
+    fn rejects_unknown_char_literal_escape() {
+        let err = lex_with_struct("'\\q'").expect_err("lexing should fail");
+
+        assert_eq!(err.message, "unknown escape sequence '\\q'");
+        assert_eq!(err.span, Span { start: 0, end: 3 });
+    }
+
+    #[test]
+    fn rejects_multi_character_literal() {
+        let err = lex_with_struct("'ab'").expect_err("lexing should fail");
+
+        assert_eq!(err.message, "multi-character constants are not supported");
+        assert_eq!(err.span, Span { start: 0, end: 4 });
     }
 
     #[test]

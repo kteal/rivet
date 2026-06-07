@@ -2,7 +2,7 @@
 
 `rivet` is a C compiler written in Rust that targets RV32IM assembly. It is working toward a C23 implementation and currently implements a small C23 subset.
 
-It currently supports integer literals, local variables, assignment expressions, blocks, expression statements, empty statements, `if` / `else`, `while`, `do` / `while`, `for`, `break`, `continue`, return statements, comments, arithmetic, unary, comparison, bitwise, and short-circuiting logical operators with C-like precedence. It also supports multiple `int` functions, parameters, and calls with up to 8 `int` arguments passed in RISC-V argument registers.
+It currently supports integer and character literals, `int` and `char` local variables, assignment expressions, blocks, expression statements, empty statements, `if` / `else`, `while`, `do` / `while`, `for`, `break`, `continue`, return statements, comments, arithmetic, unary, comparison, bitwise, and short-circuiting logical operators with C-like precedence. It also supports multiple functions, parameters, and calls with up to 8 arguments passed in RISC-V argument registers.
 
 The current language subset supports programs shaped like:
 
@@ -26,11 +26,13 @@ int triangular_until(int x, int stop) {
 }
 
 int adjust(int value, int mask) {
+    char newline = '\n';
+
     do {
         value = value + 1;
     } while (value < 6);
 
-    if ((value & mask) == 6) {
+    if ((value & mask) == 6 && newline == 10) {
         return value;
     } else {
         return 0;
@@ -126,8 +128,8 @@ sudo apt install qemu-user binutils-riscv64-linux-gnu
 Lexing and preprocessing:
 
 - [x] integer literals
+- [x] character constants
 - [x] comments
-- [ ] character constants
 - [ ] string literals
 - [ ] preprocessing tokens and macro expansion
 - [ ] `#include`
@@ -175,10 +177,11 @@ Expressions and operators:
 Types and semantic analysis:
 
 - [x] semantic errors for undeclared and duplicate locals
-- [ ] type checking and implicit conversions
+- [x] basic type checking and implicit conversions for `int` and `char`
 - [ ] full integer conversion rules
 - [ ] signedness: `signed`, `unsigned`
-- [ ] non-`int` scalar types: `char`, `short`, `long`
+- [x] `char`
+- [ ] other non-`int` scalar types: `short`, `long`
 - [ ] fixed-width and standard integer typedef compatibility
 - [ ] `bool`, `true`, `false`
 - [ ] enum types and enumerators
@@ -198,7 +201,7 @@ Functions:
 - [x] function definitions beyond `main`
 - [x] zero-argument function calls
 - [x] function parameters
-- [x] function calls with up to 8 `int` arguments
+- [x] function calls with up to 8 register arguments
 - [x] register argument passing with `a0`-`a7`
 - [ ] stack-passed function arguments beyond 8
 - [ ] full call ABI handling
