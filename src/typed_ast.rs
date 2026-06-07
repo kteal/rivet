@@ -32,18 +32,18 @@ pub enum TypedStatement {
         init: Option<TypedExpr>,
     },
     Return(TypedExpr),
-    Block(Vec<TypedStatement>),
+    Block(Vec<Self>),
     If {
         cond: TypedExpr,
-        then_branch: Box<TypedStatement>,
-        else_branch: Option<Box<TypedStatement>>,
+        then_branch: Box<Self>,
+        else_branch: Option<Box<Self>>,
     },
     While {
         cond: TypedExpr,
-        body: Box<TypedStatement>,
+        body: Box<Self>,
     },
     DoWhile {
-        body: Box<TypedStatement>,
+        body: Box<Self>,
         cond: TypedExpr,
     },
     ExprStatement(TypedExpr),
@@ -55,10 +55,10 @@ pub enum TypedStatement {
         span: Span,
     },
     For {
-        init: Option<Box<TypedStatement>>, // VarDecl, Assign, ExprStatement, Empty
+        init: Option<Box<Self>>, // VarDecl, Assign, ExprStatement, Empty
         cond: Option<TypedExpr>,
         post: Option<TypedExpr>,
-        body: Box<TypedStatement>,
+        body: Box<Self>,
     },
 }
 
@@ -69,19 +69,19 @@ pub struct TypedExpr {
 }
 
 impl TypedExpr {
-    pub fn diagnostic_span(&self) -> Span {
+    #[must_use]
+    pub const fn diagnostic_span(&self) -> Span {
         match &self.kind {
-            TypedExprKind::IntLiteral { span, .. } => *span,
-            TypedExprKind::Variable { span, .. } => *span,
-            TypedExprKind::Unary { op_span, .. } => *op_span,
-            TypedExprKind::Binary { op_span, .. } => *op_span,
+            TypedExprKind::IntLiteral { span, .. } | TypedExprKind::Variable { span, .. } => *span,
+            TypedExprKind::Unary { op_span, .. }
+            | TypedExprKind::Binary { op_span, .. }
+            | TypedExprKind::Assign { op_span, .. }
+            | TypedExprKind::CompoundAssign { op_span, .. }
+            | TypedExprKind::PrefixInc { op_span, .. }
+            | TypedExprKind::PrefixDec { op_span, .. }
+            | TypedExprKind::PostfixInc { op_span, .. }
+            | TypedExprKind::PostfixDec { op_span, .. } => *op_span,
             TypedExprKind::Call { name_span, .. } => *name_span,
-            TypedExprKind::Assign { op_span, .. } => *op_span,
-            TypedExprKind::CompoundAssign { op_span, .. } => *op_span,
-            TypedExprKind::PrefixInc { op_span, .. } => *op_span,
-            TypedExprKind::PrefixDec { op_span, .. } => *op_span,
-            TypedExprKind::PostfixInc { op_span, .. } => *op_span,
-            TypedExprKind::PostfixDec { op_span, .. } => *op_span,
         }
     }
 }

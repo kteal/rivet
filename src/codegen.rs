@@ -23,21 +23,20 @@ impl FrameLayout {
     fn count_locals_in_statement(statement: &TypedStatement) -> i32 {
         match statement {
             TypedStatement::VarDecl { .. } => 1,
-            TypedStatement::Block(body) => FrameLayout::count_locals_in_statements(body),
+            TypedStatement::Block(body) => Self::count_locals_in_statements(body),
             TypedStatement::If {
                 cond: _,
                 then_branch,
                 else_branch,
             } => {
-                let mut sum = FrameLayout::count_locals_in_statement(then_branch);
+                let mut sum = Self::count_locals_in_statement(then_branch);
                 if let Some(else_statement) = else_branch {
-                    sum += FrameLayout::count_locals_in_statement(else_statement);
+                    sum += Self::count_locals_in_statement(else_statement);
                 }
                 sum
             }
-            TypedStatement::While { cond: _, body } => FrameLayout::count_locals_in_statement(body),
-            TypedStatement::DoWhile { body, cond: _ } => {
-                FrameLayout::count_locals_in_statement(body)
+            TypedStatement::While { cond: _, body } | TypedStatement::DoWhile { body, cond: _ } => {
+                Self::count_locals_in_statement(body)
             }
             TypedStatement::For {
                 init,
@@ -45,9 +44,9 @@ impl FrameLayout {
                 post: _,
                 body,
             } => {
-                let mut sum = FrameLayout::count_locals_in_statement(body);
+                let mut sum = Self::count_locals_in_statement(body);
                 if let Some(init_statement) = init {
-                    sum += FrameLayout::count_locals_in_statement(init_statement);
+                    sum += Self::count_locals_in_statement(init_statement);
                 }
                 // C does not allow VarDecl in post
                 sum
@@ -59,13 +58,13 @@ impl FrameLayout {
     fn count_locals_in_statements(statements: &[TypedStatement]) -> i32 {
         let mut sum = 0;
         for statement in statements {
-            sum += FrameLayout::count_locals_in_statement(statement);
+            sum += Self::count_locals_in_statement(statement);
         }
         sum
     }
 
     fn for_function(function: &TypedFunction) -> Self {
-        let num_locals = FrameLayout::count_locals_in_statements(&function.body);
+        let num_locals = Self::count_locals_in_statements(&function.body);
         let mut size = (num_locals * 4) + 8;
         // Add space for parameters
         size += 4 * i32::try_from(function.params.len()).expect("too many arguments");
@@ -76,7 +75,7 @@ impl FrameLayout {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 struct LocalInfo {
     offset: i32,
     ty: Type,
@@ -162,7 +161,7 @@ impl Codegen {
 
     fn resolve_lvalue_local(&self, expr: &TypedExpr) -> LocalInfo {
         match &expr.kind {
-            TypedExprKind::Variable { name, .. } => self.resolve_local(&name).unwrap(),
+            TypedExprKind::Variable { name, .. } => self.resolve_local(name).unwrap(),
             _ => panic!("semantic analysis should reject non-variable lvalue"),
         }
     }
@@ -171,13 +170,18 @@ impl Codegen {
         self.scopes
             .iter()
             .rev()
-            .find_map(|scope| scope.get(name).copied())
+            .find_map(|scope| scope.get(name).cloned())
     }
 
-    fn declare_local(&mut self, ty: Type, name: &str) -> i32 {
+    fn declare_local(&mut self, ty: &Type, name: &str) -> i32 {
         let offset = self.next_local_offset;
-        self.current_scope_mut()
-            .insert(name.to_string(), LocalInfo { offset, ty });
+        self.current_scope_mut().insert(
+            name.to_string(),
+            LocalInfo {
+                offset,
+                ty: ty.clone(),
+            },
+        );
         self.next_local_offset -= 4;
         offset
     }
@@ -209,17 +213,17 @@ impl Codegen {
         self.emit(format_args!("{label}:\n"));
     }
 
-    fn emit_narrow_to_type(&mut self, ty: Type) {
+    fn emit_narrow_to_type(&mut self, ty: &Type) {
         match ty {
             Type::Int | Type::UnsignedInt => (),
             Type::Char => self.emit_line(format_args!("andi a0, a0, 255")),
-        };
+        }
     }
 
     fn emit_load_local(&mut self, local: &LocalInfo) {
         match local.ty {
             Type::Int | Type::UnsignedInt => {
-                self.emit_line(format_args!("lw a0, {}(s0)", local.offset))
+                self.emit_line(format_args!("lw a0, {}(s0)", local.offset));
             }
             Type::Char => self.emit_line(format_args!("lbu a0, {}(s0)", local.offset)),
         }
@@ -228,10 +232,10 @@ impl Codegen {
     fn emit_store_local(&mut self, local: &LocalInfo) {
         match local.ty {
             Type::Int | Type::UnsignedInt => {
-                self.emit_line(format_args!("sw a0, {}(s0)", local.offset))
+                self.emit_line(format_args!("sw a0, {}(s0)", local.offset));
             }
             Type::Char => {
-                self.emit_narrow_to_type(Type::Char);
+                self.emit_narrow_to_type(&Type::Char);
                 self.emit_line(format_args!("sb a0, {}(s0)", local.offset));
             }
         }
@@ -240,7 +244,7 @@ impl Codegen {
     fn emit_store_param(&mut self, reg: usize, local: &LocalInfo) {
         match local.ty {
             Type::Int | Type::UnsignedInt => {
-                self.emit_line(format_args!("sw a{reg}, {}(s0)", local.offset))
+                self.emit_line(format_args!("sw a{reg}, {}(s0)", local.offset));
             }
             Type::Char => {
                 self.emit_line(format_args!("andi a{reg}, a{reg}, 255"));
@@ -283,7 +287,7 @@ impl Codegen {
         self.emit_label(&end_label);
     }
 
-    fn emit_binary_op(&mut self, op: &BinaryOp, ty: Type) {
+    fn emit_binary_op(&mut self, op: BinaryOp, ty: &Type) {
         match op {
             BinaryOp::Add => self.emit_line(format_args!("add a0, t0, a0")),
             BinaryOp::Subtract => self.emit_line(format_args!("sub a0, t0, a0")),
@@ -341,10 +345,10 @@ impl Codegen {
                 Type::UnsignedInt => self.emit_line(format_args!("srl a0, t0, a0")),
             },
             BinaryOp::LogicalAnd | BinaryOp::LogicalOr => unreachable!(),
-        };
+        }
     }
 
-    fn emit_binary(&mut self, op: &BinaryOp, ty: Type, left: &TypedExpr, right: &TypedExpr) {
+    fn emit_binary(&mut self, op: BinaryOp, ty: &Type, left: &TypedExpr, right: &TypedExpr) {
         // Short-circuit binary operations
         match op {
             BinaryOp::LogicalAnd => {
@@ -370,8 +374,8 @@ impl Codegen {
     fn emit_compound_assign(
         &mut self,
         local: &LocalInfo,
-        op: &BinaryOp,
-        ty: Type,
+        op: BinaryOp,
+        ty: &Type,
         value: &TypedExpr,
     ) {
         self.emit_load_local(local);
@@ -403,7 +407,7 @@ impl Codegen {
     fn emit_expr(&mut self, expr: &TypedExpr) {
         match &expr.kind {
             TypedExprKind::IntLiteral { value, .. } => {
-                self.emit_line(format_args!("li a0, {value}"))
+                self.emit_line(format_args!("li a0, {value}"));
             }
             TypedExprKind::Binary {
                 op,
@@ -411,10 +415,10 @@ impl Codegen {
                 operand_ty,
                 left,
                 right,
-            } => self.emit_binary(&op, *operand_ty, &left, &right),
+            } => self.emit_binary(*op, operand_ty, left, right),
             TypedExprKind::Variable { name, .. } => {
                 let local = self
-                    .resolve_local(&name)
+                    .resolve_local(name)
                     .expect("usage of undefined variable");
                 self.emit_load_local(&local);
             }
@@ -423,7 +427,7 @@ impl Codegen {
                 op_span: _,
                 expr,
             } => {
-                self.emit_expr(&expr);
+                self.emit_expr(expr);
                 match op {
                     UnaryOp::Negate => self.emit_line(format_args!("neg a0, a0")),
                     UnaryOp::LogicalNot => self.emit_line(format_args!("seqz a0, a0")),
@@ -436,7 +440,7 @@ impl Codegen {
                 args,
             } => {
                 for arg in args {
-                    self.emit_expr(&arg);
+                    self.emit_expr(arg);
                     // Push a0 onto the stack
                     self.emit_line(format_args!("addi sp, sp, -4"));
                     self.emit_line(format_args!("sw a0, 0(sp)"));
@@ -453,9 +457,9 @@ impl Codegen {
                 op_span: _,
                 value,
             } => {
-                self.emit_expr(&value);
+                self.emit_expr(value);
 
-                let local = self.resolve_lvalue_local(&target);
+                let local = self.resolve_lvalue_local(target);
                 self.emit_store_local(&local);
             }
             TypedExprKind::CompoundAssign {
@@ -465,13 +469,13 @@ impl Codegen {
                 operand_ty,
                 value,
             } => {
-                let local = self.resolve_lvalue_local(&target);
-                self.emit_compound_assign(&local, &op, *operand_ty, &value);
+                let local = self.resolve_lvalue_local(target);
+                self.emit_compound_assign(&local, *op, operand_ty, value);
             }
-            TypedExprKind::PrefixInc { expr, op_span: _ } => self.emit_inc_dec(&expr, 1, false),
-            TypedExprKind::PrefixDec { expr, op_span: _ } => self.emit_inc_dec(&expr, -1, false),
-            TypedExprKind::PostfixInc { expr, op_span: _ } => self.emit_inc_dec(&expr, 1, true),
-            TypedExprKind::PostfixDec { expr, op_span: _ } => self.emit_inc_dec(&expr, -1, true),
+            TypedExprKind::PrefixInc { expr, op_span: _ } => self.emit_inc_dec(expr, 1, false),
+            TypedExprKind::PrefixDec { expr, op_span: _ } => self.emit_inc_dec(expr, -1, false),
+            TypedExprKind::PostfixInc { expr, op_span: _ } => self.emit_inc_dec(expr, 1, true),
+            TypedExprKind::PostfixDec { expr, op_span: _ } => self.emit_inc_dec(expr, -1, true),
         }
     }
 
@@ -496,7 +500,7 @@ impl Codegen {
             self.emit_line(format_args!("beqz a0, {end_label}"));
 
             self.emit_statement(then_branch);
-        };
+        }
         self.emit_label(&end_label);
     }
 
@@ -578,10 +582,11 @@ impl Codegen {
         match statement {
             TypedStatement::Return(expr) => {
                 self.emit_expr(expr);
-                self.emit_narrow_to_type(
-                    self.current_function_return_type
-                        .expect("codegen should have a function return type"),
-                );
+                let return_type = self
+                    .current_function_return_type
+                    .clone()
+                    .expect("codegen should have a function return type");
+                self.emit_narrow_to_type(&return_type);
                 let return_label = self
                     .return_label
                     .clone()
@@ -594,10 +599,13 @@ impl Codegen {
                 name_span: _,
                 init,
             } => {
-                let offset = self.declare_local(*ty, name);
+                let offset = self.declare_local(ty, name);
                 if let Some(init_expr) = init {
                     self.emit_expr(init_expr);
-                    let local = LocalInfo { offset, ty: *ty };
+                    let local = LocalInfo {
+                        offset,
+                        ty: ty.clone(),
+                    };
                     self.emit_store_local(&local);
                 }
             }
@@ -647,7 +655,7 @@ impl Codegen {
     fn emit_prologue(&mut self, name: &str) {
         let frame_size = self.frame.size;
         self.emit(format_args!(".globl {name}\n"));
-        self.emit_label(&name);
+        self.emit_label(name);
         self.emit_line(format_args!("addi sp, sp, -{frame_size}"));
         self.emit_line(format_args!("sw ra, {}(sp)", frame_size - 4));
         self.emit_line(format_args!("sw s0, {}(sp)", frame_size - 8));
@@ -673,15 +681,15 @@ impl Codegen {
 
         // Store the argument registers a0-a7 onto the stack, declaring as local vars
         for (i, param) in function.params.iter().enumerate() {
-            let offset = self.declare_local(param.ty, &param.name);
+            let offset = self.declare_local(&param.ty, &param.name);
             let local = LocalInfo {
                 offset,
-                ty: param.ty,
+                ty: param.ty.clone(),
             };
             self.emit_store_param(i, &local);
         }
 
-        self.current_function_return_type = Some(function.return_type);
+        self.current_function_return_type = Some(function.return_type.clone());
         self.emit_statements(&function.body);
         self.current_function_return_type = None;
         self.emit_epilogue();
@@ -696,6 +704,7 @@ impl Codegen {
     }
 }
 
+#[must_use]
 pub fn generate(program: &TypedProgram, target: CodegenTarget) -> String {
     let mut codegen = Codegen::new(target);
     codegen.emit_program(program)

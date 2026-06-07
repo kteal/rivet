@@ -40,18 +40,16 @@ impl Checker {
         }
     }
 
-    fn enter_loop(&mut self) {
-        self.loop_depth += 1
+    const fn enter_loop(&mut self) {
+        self.loop_depth += 1;
     }
 
     fn exit_loop(&mut self) {
-        if self.loop_depth == 0 {
-            panic!("cannot have negative loop depth")
-        }
-        self.loop_depth -= 1
+        assert!(self.loop_depth != 0, "cannot have negative loop depth");
+        self.loop_depth -= 1;
     }
 
-    fn in_loop(&self) -> bool {
+    const fn in_loop(&self) -> bool {
         self.loop_depth > 0
     }
 
@@ -75,49 +73,49 @@ impl Checker {
             .expect("semantic checker should have an active scope")
     }
 
-    fn is_assignable(target: Type, value: Type) -> bool {
+    fn is_assignable(target: &Type, value: &Type) -> bool {
         target == value
-            || (target == Type::Char && value == Type::Int)
-            || (target == Type::Char && value == Type::UnsignedInt)
-            || (target == Type::Int && value == Type::Char)
-            || (target == Type::Int && value == Type::UnsignedInt)
-            || (target == Type::UnsignedInt && value == Type::Char)
-            || (target == Type::UnsignedInt && value == Type::Int)
+            || (*target == Type::Char && *value == Type::Int)
+            || (*target == Type::Char && *value == Type::UnsignedInt)
+            || (*target == Type::Int && *value == Type::Char)
+            || (*target == Type::Int && *value == Type::UnsignedInt)
+            || (*target == Type::UnsignedInt && *value == Type::Char)
+            || (*target == Type::UnsignedInt && *value == Type::Int)
     }
 
-    fn is_integer(ty: Type) -> bool {
+    const fn is_integer(ty: &Type) -> bool {
         matches!(ty, Type::Int | Type::Char | Type::UnsignedInt)
     }
 
-    fn promoted_type(ty: Type) -> Type {
+    const fn promoted_type(ty: &Type) -> Type {
         match ty {
-            Type::Char => Type::Int,
-            Type::Int => Type::Int,
+            Type::Int | Type::Char => Type::Int,
             Type::UnsignedInt => Type::UnsignedInt,
         }
     }
 
-    fn declare_local(&mut self, ty: Type, name: &str, span: Span) -> Result<(), SemanticError> {
+    fn declare_local(&mut self, ty: &Type, name: &str, span: Span) -> Result<(), SemanticError> {
         if self.current_scope().contains_key(name) {
             return Err(SemanticError {
                 message: format!("duplicate local variable '{name}'"),
                 span,
             });
         }
-        self.current_scope_mut().insert(name.to_string(), ty);
+        self.current_scope_mut()
+            .insert(name.to_string(), ty.clone());
         Ok(())
     }
 
     fn resolve_local(&self, name: &str, span: Span) -> Result<Type, SemanticError> {
         for scope in self.scopes.iter().rev() {
             if let Some(ty) = scope.get(name) {
-                return Ok(*ty);
+                return Ok(ty.clone());
             }
         }
-        return Err(SemanticError {
+        Err(SemanticError {
             message: format!("undeclared local variable '{name}'"),
             span,
-        });
+        })
     }
 
     fn declare_function(&mut self, function: &Function) -> Result<(), SemanticError> {
@@ -139,10 +137,10 @@ impl Checker {
             });
         }
         self.functions.insert(
-            function.name.to_string(),
+            function.name.clone(),
             FunctionInfo {
-                return_type: function.return_type,
-                name: function.name.to_string(),
+                return_type: function.return_type.clone(),
+                name: function.name.clone(),
                 params: function.params.clone(),
             },
         );
@@ -160,8 +158,8 @@ impl Checker {
         })
     }
 
-    fn usual_arithmetic_type(left: Type, right: Type) -> Type {
-        if left == Type::UnsignedInt || right == Type::UnsignedInt {
+    fn usual_arithmetic_type(left: &Type, right: &Type) -> Type {
+        if *left == Type::UnsignedInt || *right == Type::UnsignedInt {
             Type::UnsignedInt
         } else {
             Type::Int
@@ -169,39 +167,40 @@ impl Checker {
     }
 
     fn check_binary_op_types(
-        &self,
-        op: &BinaryOp,
+        op: BinaryOp,
         op_span: &Span,
-        left_type: Type,
-        right_type: Type,
+        left_type: &Type,
+        right_type: &Type,
     ) -> Result<BinaryTypeInfo, SemanticError> {
         if !Self::is_integer(left_type) || !Self::is_integer(right_type) {
             return Err(SemanticError {
                 message: format!(
-                    "invalid operands to binary operator '{:?}'\n\
-                     left operand has type '{:?}'\n\
-                     right operand has type '{:?}'",
-                    op, left_type, right_type
+                    "invalid operands to binary operator '{op:?}'\n\
+                     left operand has type '{left_type:?}'\n\
+                     right operand has type '{right_type:?}'"
                 ),
                 span: *op_span,
             });
         }
         let mut operand_ty = Self::usual_arithmetic_type(left_type, right_type);
-        let mut result_ty = match op {
-            BinaryOp::Equal
-            | BinaryOp::NotEqual
-            | BinaryOp::Less
-            | BinaryOp::LessEqual
-            | BinaryOp::Greater
-            | BinaryOp::GreaterEqual
-            | BinaryOp::LogicalAnd
-            | BinaryOp::LogicalOr => Type::Int,
+        let result_ty = if op == BinaryOp::ShiftLeft || op == BinaryOp::ShiftRight {
+            Self::promoted_type(left_type)
+        } else {
+            match op {
+                BinaryOp::Equal
+                | BinaryOp::NotEqual
+                | BinaryOp::Less
+                | BinaryOp::LessEqual
+                | BinaryOp::Greater
+                | BinaryOp::GreaterEqual
+                | BinaryOp::LogicalAnd
+                | BinaryOp::LogicalOr => Type::Int,
 
-            _ => operand_ty,
+                _ => operand_ty.clone(),
+            }
         };
-        if *op == BinaryOp::ShiftLeft || *op == BinaryOp::ShiftRight {
+        if op == BinaryOp::ShiftLeft || op == BinaryOp::ShiftRight {
             operand_ty = Self::promoted_type(left_type);
-            result_ty = Self::promoted_type(left_type);
         }
 
         Ok(BinaryTypeInfo {
@@ -237,7 +236,7 @@ impl Checker {
         make_kind: impl FnOnce(Box<TypedExpr>, Span) -> TypedExprKind,
     ) -> Result<TypedExpr, SemanticError> {
         let typed_lvalue = self.check_lvalue(expr, op_span)?;
-        let ty = typed_lvalue.ty;
+        let ty = typed_lvalue.ty.clone();
         Ok(TypedExpr {
             kind: make_kind(Box::new(typed_lvalue), op_span),
             ty,
@@ -268,7 +267,7 @@ impl Checker {
                 let typed_expr = self.check_expr(expr)?;
                 let ty = match op {
                     UnaryOp::LogicalNot => Type::Int,
-                    UnaryOp::BitwiseNot | UnaryOp::Negate => Self::promoted_type(typed_expr.ty),
+                    UnaryOp::BitwiseNot | UnaryOp::Negate => Self::promoted_type(&typed_expr.ty),
                 };
                 Ok(TypedExpr {
                     kind: TypedExprKind::Unary {
@@ -289,7 +288,7 @@ impl Checker {
                 let typed_right = self.check_expr(right)?;
 
                 let type_info =
-                    self.check_binary_op_types(op, op_span, typed_left.ty, typed_right.ty)?;
+                    Self::check_binary_op_types(*op, op_span, &typed_left.ty, &typed_right.ty)?;
 
                 Ok(TypedExpr {
                     kind: TypedExprKind::Binary {
@@ -338,7 +337,7 @@ impl Checker {
                     .collect::<Result<Vec<_>, _>>()?;
 
                 for (param, typed_arg) in function_info.params.iter().zip(&typed_args) {
-                    if !Self::is_assignable(param.ty, typed_arg.ty) {
+                    if !Self::is_assignable(&param.ty, &typed_arg.ty) {
                         return Err(SemanticError {
                             message: format!(
                                 "cannot pass value of type '{:?}' to parameter of type '{:?}'",
@@ -350,7 +349,7 @@ impl Checker {
                 }
 
                 Ok(TypedExpr {
-                    ty: function_info.return_type,
+                    ty: function_info.return_type.clone(),
                     kind: TypedExprKind::Call {
                         name: name.clone(),
                         name_span: *name_span,
@@ -366,7 +365,7 @@ impl Checker {
                 let typed_target = self.check_lvalue(target, *op_span)?;
                 let typed_value = self.check_expr(value)?;
 
-                if !Self::is_assignable(typed_target.ty, typed_value.ty) {
+                if !Self::is_assignable(&typed_target.ty, &typed_value.ty) {
                     return Err(SemanticError {
                         message: format!(
                             "cannot assign value of type '{:?}' to variable of type '{:?}'",
@@ -376,7 +375,7 @@ impl Checker {
                     });
                 }
 
-                let ty = typed_target.ty;
+                let ty = typed_target.ty.clone();
                 Ok(TypedExpr {
                     kind: TypedExprKind::Assign {
                         target: Box::new(typed_target),
@@ -396,9 +395,9 @@ impl Checker {
                 let typed_value = self.check_expr(value)?;
 
                 let type_info =
-                    self.check_binary_op_types(op, op_span, typed_target.ty, typed_value.ty)?;
+                    Self::check_binary_op_types(*op, op_span, &typed_target.ty, &typed_value.ty)?;
 
-                if !Self::is_assignable(typed_target.ty, type_info.result_ty) {
+                if !Self::is_assignable(&typed_target.ty, &type_info.result_ty) {
                     return Err(SemanticError {
                         message: format!(
                             "cannot assign value of type '{:?}' to variable of type '{:?}'",
@@ -408,7 +407,7 @@ impl Checker {
                     });
                 }
 
-                let ty = typed_target.ty;
+                let ty = typed_target.ty.clone();
                 Ok(TypedExpr {
                     kind: TypedExprKind::CompoundAssign {
                         target: Box::new(typed_target),
@@ -457,9 +456,10 @@ impl Checker {
 
                 let return_type = self
                     .current_function_return_type
+                    .as_ref()
                     .expect("return statement checked outside function");
 
-                if !Self::is_assignable(return_type, typed_expr.ty) {
+                if !Self::is_assignable(return_type, &typed_expr.ty) {
                     return Err(SemanticError {
                         message: format!(
                             "cannot return value of type '{:?}' from function returning '{return_type:?}'",
@@ -476,11 +476,11 @@ impl Checker {
                 name_span,
                 init,
             } => {
-                self.declare_local(*ty, name, *name_span)?;
+                self.declare_local(ty, name, *name_span)?;
                 let typed_init = if let Some(init_expr) = init {
                     let typed_init = self.check_expr(init_expr)?;
 
-                    if !Self::is_assignable(*ty, typed_init.ty) {
+                    if !Self::is_assignable(ty, &typed_init.ty) {
                         return Err(SemanticError {
                             message: format!(
                                 "cannot assign value of type '{:?}' to variable of type '{ty:?}'",
@@ -496,7 +496,7 @@ impl Checker {
                 };
 
                 Ok(TypedStatement::VarDecl {
-                    ty: *ty,
+                    ty: ty.clone(),
                     name: name.clone(),
                     name_span: *name_span,
                     init: typed_init,
@@ -596,7 +596,7 @@ impl Checker {
             Statement::Break { span } => {
                 if !self.in_loop() {
                     return Err(SemanticError {
-                        message: format!("cannot use 'break' outside of a loop"),
+                        message: "cannot use 'break' outside of a loop".to_string(),
                         span: *span,
                     });
                 }
@@ -605,7 +605,7 @@ impl Checker {
             Statement::Continue { span } => {
                 if !self.in_loop() {
                     return Err(SemanticError {
-                        message: format!("cannot use 'continue' outside of a loop"),
+                        message: "cannot use 'continue' outside of a loop".to_string(),
                         span: *span,
                     });
                 }
@@ -632,15 +632,15 @@ impl Checker {
         self.enter_scope();
         let old_return_type = self
             .current_function_return_type
-            .replace(function.return_type);
+            .replace(function.return_type.clone());
 
         let res = (|| -> Result<TypedFunction, SemanticError> {
             let mut typed_params = vec![];
             for param in &function.params {
-                self.declare_local(param.ty, &param.name, param.name_span)?;
+                self.declare_local(&param.ty, &param.name, param.name_span)?;
 
                 typed_params.push(TypedParam {
-                    ty: param.ty,
+                    ty: param.ty.clone(),
                     name: param.name.clone(),
                     name_span: param.name_span,
                 });
@@ -651,7 +651,7 @@ impl Checker {
             }
 
             Ok(TypedFunction {
-                return_type: function.return_type,
+                return_type: function.return_type.clone(),
                 name: function.name.clone(),
                 name_span: function.name_span,
                 params: typed_params,
@@ -664,7 +664,7 @@ impl Checker {
         res
     }
 
-    fn check_main_function(&mut self, span: Span) -> Result<(), SemanticError> {
+    fn check_main_function(&self, span: Span) -> Result<(), SemanticError> {
         if !self.functions.contains_key("main") {
             return Err(SemanticError {
                 message: "no 'main' function found".to_string(),

@@ -29,7 +29,7 @@ fn line_col(source: &str, offset: usize) -> (usize, usize) {
 
 fn print_error(path: &str, source: &str, span: Span, message: &str) {
     let (line, col) = line_col(source, span.start);
-    eprintln!("{path}:{line}:{col}: error: {message}")
+    eprintln!("{path}:{line}:{col}: error: {message}");
 }
 
 fn main() {

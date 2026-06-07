@@ -1,12 +1,12 @@
 use rivet::ast::{Param, Type};
 use rivet::lexer::Span;
 
-pub fn span() -> Span {
+pub const fn span() -> Span {
     Span { start: 0, end: 0 }
 }
 
 #[allow(dead_code)]
-pub fn span_from(start: usize, end: usize) -> Span {
+pub const fn span_from(start: usize, end: usize) -> Span {
     Span { start, end }
 }
 

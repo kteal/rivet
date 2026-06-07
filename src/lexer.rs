@@ -131,13 +131,13 @@ impl<'a> Lexer<'a> {
                     if self.consume_if('/') {
                         self.skip_line_comment();
                     } else if self.consume_if('*') {
-                        self.skip_block_comment(start)?
+                        self.skip_block_comment(start)?;
                     } else if self.consume_if('=') {
                         let end = self.offset;
                         self.push(TokenKind::SlashEqual, Span { start, end });
                     } else {
                         let end = self.offset;
-                        self.push(TokenKind::Slash, Span { start, end })
+                        self.push(TokenKind::Slash, Span { start, end });
                     }
                 }
                 '%' => self.lex_one_or_two_char_operator(
@@ -346,7 +346,7 @@ impl<'a> Lexer<'a> {
         }
 
         Err(LexError {
-            message: format!("unterminated block comment"),
+            message: "unterminated block comment".to_string(),
             span: Span {
                 start,
                 end: self.offset,
@@ -377,7 +377,7 @@ impl<'a> Lexer<'a> {
     }
 
     fn push_token(&mut self, token: Token) {
-        self.tokens.push(token)
+        self.tokens.push(token);
     }
 
     fn advance_and_push(&mut self, kind: TokenKind) {
@@ -419,19 +419,16 @@ impl<'a> Lexer<'a> {
         let start = self.offset;
         self.advance();
 
+        let end = self.offset;
         if self.consume_if('=') {
-            let end = self.offset;
             self.push(equal, Span { start, end });
         } else if self.consume_if(ch) {
             if self.consume_if('=') {
-                let end = self.offset;
                 self.push(shift_equal, Span { start, end });
             } else {
-                let end = self.offset;
                 self.push(shift, Span { start, end });
             }
         } else {
-            let end = self.offset;
             self.push(single, Span { start, end });
         }
     }

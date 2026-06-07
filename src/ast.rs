@@ -31,18 +31,18 @@ pub enum Statement {
         init: Option<Expr>,
     },
     Return(Expr),
-    Block(Vec<Statement>),
+    Block(Vec<Self>),
     If {
         cond: Expr,
-        then_branch: Box<Statement>,
-        else_branch: Option<Box<Statement>>,
+        then_branch: Box<Self>,
+        else_branch: Option<Box<Self>>,
     },
     While {
         cond: Expr,
-        body: Box<Statement>,
+        body: Box<Self>,
     },
     DoWhile {
-        body: Box<Statement>,
+        body: Box<Self>,
         cond: Expr,
     },
     ExprStatement(Expr),
@@ -54,10 +54,10 @@ pub enum Statement {
         span: Span,
     },
     For {
-        init: Option<Box<Statement>>, // VarDecl, Assign, ExprStatement, Empty
+        init: Option<Box<Self>>, // VarDecl, Assign, ExprStatement, Empty
         cond: Option<Expr>,
         post: Option<Expr>,
-        body: Box<Statement>,
+        body: Box<Self>,
     },
 }
 
@@ -74,62 +74,62 @@ pub enum Expr {
     Binary {
         op: BinaryOp,
         op_span: Span,
-        left: Box<Expr>,
-        right: Box<Expr>,
+        left: Box<Self>,
+        right: Box<Self>,
     },
     Unary {
         op: UnaryOp,
         op_span: Span,
-        expr: Box<Expr>,
+        expr: Box<Self>,
     },
     Call {
         name: String,
         name_span: Span,
-        args: Vec<Expr>,
+        args: Vec<Self>,
     },
     Assign {
-        target: Box<Expr>,
+        target: Box<Self>,
         op_span: Span,
-        value: Box<Expr>,
+        value: Box<Self>,
     },
     CompoundAssign {
-        target: Box<Expr>,
+        target: Box<Self>,
         op: BinaryOp,
         op_span: Span,
-        value: Box<Expr>,
+        value: Box<Self>,
     },
     PrefixInc {
-        expr: Box<Expr>,
+        expr: Box<Self>,
         op_span: Span,
     },
     PrefixDec {
-        expr: Box<Expr>,
+        expr: Box<Self>,
         op_span: Span,
     },
     PostfixInc {
-        expr: Box<Expr>,
+        expr: Box<Self>,
         op_span: Span,
     },
     PostfixDec {
-        expr: Box<Expr>,
+        expr: Box<Self>,
         op_span: Span,
     },
 }
 
 impl Expr {
-    pub fn diagnostic_span(&self) -> Span {
+    #[must_use]
+    pub const fn diagnostic_span(&self) -> Span {
         match self {
-            Expr::IntLiteral { span, .. } => *span,
-            Expr::Variable { span, .. } => *span,
-            Expr::Unary { op_span, .. } => *op_span,
-            Expr::Binary { op_span, .. } => *op_span,
-            Expr::Call { name_span, .. } => *name_span,
-            Expr::Assign { op_span, .. } => *op_span,
-            Expr::CompoundAssign { op_span, .. } => *op_span,
-            Expr::PrefixInc { op_span, .. } => *op_span,
-            Expr::PrefixDec { op_span, .. } => *op_span,
-            Expr::PostfixInc { op_span, .. } => *op_span,
-            Expr::PostfixDec { op_span, .. } => *op_span,
+            Self::IntLiteral { span, .. } | Self::Variable { span, .. } => *span,
+            Self::Unary { op_span, .. }
+            | Self::Binary { op_span, .. }
+            | Self::Assign { op_span, .. }
+            | Self::CompoundAssign { op_span, .. }
+            | Self::PrefixInc { op_span, .. }
+            | Self::PrefixDec { op_span, .. }
+            | Self::PostfixInc { op_span, .. }
+            | Self::PostfixDec { op_span, .. } => *op_span,
+            Self::Call { name_span, .. } => *name_span,
         }
     }
 }
@@ -163,7 +163,7 @@ pub enum UnaryOp {
     BitwiseNot,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Type {
     Int,
     Char,

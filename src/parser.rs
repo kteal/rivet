@@ -49,7 +49,7 @@ struct Parser {
 }
 
 impl Parser {
-    fn new(tokens: Vec<Token>) -> Self {
+    const fn new(tokens: Vec<Token>) -> Self {
         Self { tokens, pos: 0 }
     }
 
@@ -67,10 +67,10 @@ impl Parser {
         token
     }
 
-    fn expect(&mut self, expected: TokenKind) -> Result<Token, ParseError> {
+    fn expect(&mut self, expected: &TokenKind) -> Result<Token, ParseError> {
         let token = self.advance();
 
-        if token.kind == expected {
+        if &token.kind == expected {
             Ok(token)
         } else {
             Err(ParseError {
@@ -121,7 +121,7 @@ impl Parser {
             items.push(parse_item(self)?);
 
             if *self.peek_kind() == TokenKind::Comma {
-                self.expect(TokenKind::Comma)?;
+                self.expect(&TokenKind::Comma)?;
 
                 if *self.peek_kind() == TokenKind::RParen {
                     return Err(ParseError {
@@ -139,7 +139,7 @@ impl Parser {
         self.parse_expr()
     }
 
-    fn is_type_decl(token_kind: &TokenKind) -> bool {
+    const fn is_type_decl(token_kind: &TokenKind) -> bool {
         matches!(
             token_kind,
             TokenKind::KwInt | TokenKind::KwChar | TokenKind::KwUnsigned
@@ -153,7 +153,7 @@ impl Parser {
             TokenKind::KwInt => Ok(Type::Int),
             TokenKind::KwChar => Ok(Type::Char),
             TokenKind::KwUnsigned => {
-                self.expect(TokenKind::KwInt)?;
+                self.expect(&TokenKind::KwInt)?;
                 Ok(Type::UnsignedInt)
             }
             found => Err(ParseError {
@@ -191,9 +191,9 @@ impl Parser {
             }),
             TokenKind::Ident(name) => {
                 if *self.peek_kind() == TokenKind::LParen {
-                    self.expect(TokenKind::LParen)?;
+                    self.expect(&TokenKind::LParen)?;
                     let args = self.parse_comma_separated_until_rparen(Self::parse_call_arg)?;
-                    self.expect(TokenKind::RParen)?;
+                    self.expect(&TokenKind::RParen)?;
                     Ok(Expr::Call {
                         name,
                         name_span: token.span,
@@ -208,15 +208,13 @@ impl Parser {
             }
             TokenKind::LParen => {
                 let expr = self.parse_expr()?;
-                self.expect(TokenKind::RParen)?;
+                self.expect(&TokenKind::RParen)?;
                 Ok(expr)
             }
-            found => {
-                return Err(ParseError {
-                    message: format!("expected expression, found {found:?}"),
-                    span: token.span,
-                });
-            }
+            found => Err(ParseError {
+                message: format!("expected expression, found {found:?}"),
+                span: token.span,
+            }),
         }
     }
 
@@ -394,7 +392,7 @@ impl Parser {
             }
         };
         if *self.peek_kind() == TokenKind::Semicolon {
-            self.expect(TokenKind::Semicolon)?;
+            self.expect(&TokenKind::Semicolon)?;
             return Ok(Statement::VarDecl {
                 ty,
                 name,
@@ -402,9 +400,9 @@ impl Parser {
                 init: None,
             });
         }
-        self.expect(TokenKind::Equal)?;
+        self.expect(&TokenKind::Equal)?;
         let expr = self.parse_expr()?;
-        self.expect(TokenKind::Semicolon)?;
+        self.expect(&TokenKind::Semicolon)?;
         Ok(Statement::VarDecl {
             ty,
             name,
@@ -417,18 +415,18 @@ impl Parser {
         while *self.peek_kind() != TokenKind::RBrace {
             vec.push(self.parse_statement()?);
         }
-        self.expect(TokenKind::RBrace)?;
+        self.expect(&TokenKind::RBrace)?;
         Ok(())
     }
 
     fn parse_if_statement(&mut self) -> Result<Statement, ParseError> {
-        self.expect(TokenKind::KwIf)?;
-        self.expect(TokenKind::LParen)?;
+        self.expect(&TokenKind::KwIf)?;
+        self.expect(&TokenKind::LParen)?;
         let cond = self.parse_expr()?;
-        self.expect(TokenKind::RParen)?;
+        self.expect(&TokenKind::RParen)?;
         let then_statement = self.parse_statement()?;
         let else_statement = if *self.peek_kind() == TokenKind::KwElse {
-            self.expect(TokenKind::KwElse)?;
+            self.expect(&TokenKind::KwElse)?;
             Some(self.parse_statement()?)
         } else {
             None
@@ -442,10 +440,10 @@ impl Parser {
     }
 
     fn parse_while_statement(&mut self) -> Result<Statement, ParseError> {
-        self.expect(TokenKind::KwWhile)?;
-        self.expect(TokenKind::LParen)?;
+        self.expect(&TokenKind::KwWhile)?;
+        self.expect(&TokenKind::LParen)?;
         let cond = self.parse_expr()?;
-        self.expect(TokenKind::RParen)?;
+        self.expect(&TokenKind::RParen)?;
         let body = self.parse_statement()?;
 
         Ok(Statement::While {
@@ -455,13 +453,13 @@ impl Parser {
     }
 
     fn parse_do_while_statement(&mut self) -> Result<Statement, ParseError> {
-        self.expect(TokenKind::KwDo)?;
+        self.expect(&TokenKind::KwDo)?;
         let body = self.parse_statement()?;
-        self.expect(TokenKind::KwWhile)?;
-        self.expect(TokenKind::LParen)?;
+        self.expect(&TokenKind::KwWhile)?;
+        self.expect(&TokenKind::LParen)?;
         let cond = self.parse_expr()?;
-        self.expect(TokenKind::RParen)?;
-        self.expect(TokenKind::Semicolon)?;
+        self.expect(&TokenKind::RParen)?;
+        self.expect(&TokenKind::Semicolon)?;
 
         Ok(Statement::DoWhile {
             body: Box::new(body),
@@ -471,7 +469,7 @@ impl Parser {
 
     fn parse_expr_statement(&mut self) -> Result<Statement, ParseError> {
         let expr = self.parse_expr()?;
-        self.expect(TokenKind::Semicolon)?;
+        self.expect(&TokenKind::Semicolon)?;
         Ok(Statement::ExprStatement(expr))
     }
 
@@ -481,7 +479,7 @@ impl Parser {
             token_kind if Self::is_type_decl(token_kind) => self.parse_var_decl(),
             // Empty
             TokenKind::Semicolon => {
-                self.expect(TokenKind::Semicolon)?;
+                self.expect(&TokenKind::Semicolon)?;
                 Ok(Statement::Empty)
             }
             // Expression-start tokens
@@ -494,15 +492,15 @@ impl Parser {
     }
 
     fn parse_for_statement(&mut self) -> Result<Statement, ParseError> {
-        self.expect(TokenKind::KwFor)?;
-        self.expect(TokenKind::LParen)?;
+        self.expect(&TokenKind::KwFor)?;
+        self.expect(&TokenKind::LParen)?;
 
         let mut init = None;
         let mut cond = None;
         let mut post = None;
 
         if *self.peek_kind() == TokenKind::Semicolon {
-            self.expect(TokenKind::Semicolon)?;
+            self.expect(&TokenKind::Semicolon)?;
         } else {
             init = Some(self.parse_for_statement_init()?);
         }
@@ -510,12 +508,12 @@ impl Parser {
         if *self.peek_kind() != TokenKind::Semicolon {
             cond = Some(self.parse_expr()?);
         }
-        self.expect(TokenKind::Semicolon)?;
+        self.expect(&TokenKind::Semicolon)?;
 
         if *self.peek_kind() != TokenKind::RParen {
-            post = Some(self.parse_expr()?)
+            post = Some(self.parse_expr()?);
         }
-        self.expect(TokenKind::RParen)?;
+        self.expect(&TokenKind::RParen)?;
 
         let body = self.parse_statement()?;
 
@@ -527,7 +525,7 @@ impl Parser {
         })
     }
 
-    fn is_expr_start(token_kind: &TokenKind) -> bool {
+    const fn is_expr_start(token_kind: &TokenKind) -> bool {
         matches!(
             token_kind,
             TokenKind::Ident(_)
@@ -546,22 +544,22 @@ impl Parser {
         match self.peek_kind() {
             // Control flow
             TokenKind::KwReturn => {
-                self.expect(TokenKind::KwReturn)?;
+                self.expect(&TokenKind::KwReturn)?;
                 let expr = self.parse_expr()?;
-                self.expect(TokenKind::Semicolon)?;
+                self.expect(&TokenKind::Semicolon)?;
                 Ok(Statement::Return(expr))
             }
             TokenKind::KwIf => self.parse_if_statement(),
             TokenKind::KwWhile => self.parse_while_statement(),
             TokenKind::KwDo => self.parse_do_while_statement(),
             TokenKind::KwBreak => {
-                let token = self.expect(TokenKind::KwBreak)?;
-                self.expect(TokenKind::Semicolon)?;
+                let token = self.expect(&TokenKind::KwBreak)?;
+                self.expect(&TokenKind::Semicolon)?;
                 Ok(Statement::Break { span: token.span })
             }
             TokenKind::KwContinue => {
-                let token = self.expect(TokenKind::KwContinue)?;
-                self.expect(TokenKind::Semicolon)?;
+                let token = self.expect(&TokenKind::KwContinue)?;
+                self.expect(&TokenKind::Semicolon)?;
                 Ok(Statement::Continue { span: token.span })
             }
             TokenKind::KwFor => self.parse_for_statement(),
@@ -569,14 +567,14 @@ impl Parser {
             token_kind if Self::is_type_decl(token_kind) => self.parse_var_decl(),
             // Block
             TokenKind::LBrace => {
-                self.expect(TokenKind::LBrace)?;
+                self.expect(&TokenKind::LBrace)?;
                 let mut body = vec![];
                 self.parse_through_rbrace(&mut body)?;
                 Ok(Statement::Block(body))
             }
             // Empty
             TokenKind::Semicolon => {
-                self.expect(TokenKind::Semicolon)?;
+                self.expect(&TokenKind::Semicolon)?;
                 Ok(Statement::Empty)
             }
             // Expression-start tokens
@@ -603,12 +601,12 @@ impl Parser {
             }
         };
 
-        self.expect(TokenKind::LParen)?;
+        self.expect(&TokenKind::LParen)?;
 
         let params = self.parse_comma_separated_until_rparen(Self::parse_param)?;
-        self.expect(TokenKind::RParen)?;
+        self.expect(&TokenKind::RParen)?;
 
-        self.expect(TokenKind::LBrace)?;
+        self.expect(&TokenKind::LBrace)?;
 
         let mut body = vec![];
         self.parse_through_rbrace(&mut body)?;
@@ -628,7 +626,7 @@ impl Parser {
         while *self.peek_kind() != TokenKind::Eof {
             functions.push(self.parse_function()?);
         }
-        let token = self.expect(TokenKind::Eof)?;
+        let token = self.expect(&TokenKind::Eof)?;
 
         Ok(Program {
             functions,
@@ -890,7 +888,7 @@ mod tests {
                     span: span()
                 }),
             })
-        )
+        );
     }
 
     #[test]
@@ -935,7 +933,7 @@ mod tests {
                 }],
                 eof_span: span(),
             }
-        )
+        );
     }
 
     #[test]
@@ -1410,7 +1408,7 @@ mod tests {
                     span: span()
                 }),
             })
-        )
+        );
     }
 
     #[test]
@@ -1441,7 +1439,7 @@ mod tests {
                     span: span()
                 }),
             })
-        )
+        );
     }
 
     #[test]
@@ -1482,7 +1480,7 @@ mod tests {
                     span: span()
                 }),
             })
-        )
+        );
     }
 
     #[test]
@@ -1513,7 +1511,7 @@ mod tests {
                     span: span()
                 }),
             })
-        )
+        );
     }
 
     #[test]
@@ -1539,7 +1537,7 @@ mod tests {
                     span: span()
                 }),
             })
-        )
+        );
     }
 
     #[test]
@@ -1565,7 +1563,7 @@ mod tests {
                     span: span()
                 }),
             })
-        )
+        );
     }
 
     #[test]
@@ -1591,7 +1589,7 @@ mod tests {
                     span: span()
                 }),
             })
-        )
+        );
     }
 
     #[test]
@@ -1627,7 +1625,7 @@ mod tests {
                     span: span()
                 }),
             })
-        )
+        );
     }
 
     #[test]
@@ -1655,7 +1653,7 @@ mod tests {
                     span: span()
                 }),
             }
-        )
+        );
     }
 
     #[test]
@@ -1758,7 +1756,7 @@ mod tests {
                 }],
                 eof_span: span(),
             }
-        )
+        );
     }
 
     #[test]
@@ -2100,7 +2098,7 @@ mod tests {
                 }],
                 eof_span: span(),
             }
-        )
+        );
     }
 
     #[test]
@@ -2141,7 +2139,7 @@ mod tests {
                 }],
                 eof_span: span(),
             }
-        )
+        );
     }
 
     #[test]
@@ -2405,7 +2403,7 @@ mod tests {
                 }],
                 eof_span: span(),
             }
-        )
+        );
     }
 
     #[test]
@@ -2460,7 +2458,7 @@ mod tests {
                 }],
                 eof_span: span(),
             }
-        )
+        );
     }
 
     #[test]
@@ -2501,7 +2499,7 @@ mod tests {
                     span: span()
                 }),
             })
-        )
+        );
     }
 
     #[test]
@@ -2542,7 +2540,7 @@ mod tests {
                     span: span()
                 }),
             })
-        )
+        );
     }
 
     #[test]
@@ -2583,7 +2581,7 @@ mod tests {
                     }),
                 }),
             })
-        )
+        );
     }
 
     #[test]
@@ -2624,7 +2622,7 @@ mod tests {
                     }),
                 }),
             })
-        )
+        );
     }
 
     #[test]
@@ -2665,7 +2663,7 @@ mod tests {
                     }),
                 }),
             })
-        )
+        );
     }
 
     #[test]
@@ -2722,7 +2720,7 @@ mod tests {
                 }],
                 eof_span: span(),
             }
-        )
+        );
     }
 
     #[test]
@@ -2767,7 +2765,7 @@ mod tests {
                 }],
                 eof_span: span(),
             }
-        )
+        );
     }
 
     #[test]
@@ -2873,7 +2871,7 @@ mod tests {
                 }],
                 eof_span: span(),
             }
-        )
+        );
     }
 
     #[test]
@@ -2924,7 +2922,7 @@ mod tests {
                 }],
                 eof_span: span(),
             }
-        )
+        );
     }
 
     #[test]
@@ -2965,7 +2963,7 @@ mod tests {
                     }),
                 }),
             })
-        )
+        );
     }
 
     #[test]
