@@ -74,23 +74,16 @@ impl Checker {
     }
 
     fn is_assignable(target: &Type, value: &Type) -> bool {
-        target == value
-            || (*target == Type::Char && *value == Type::Int)
-            || (*target == Type::Char && *value == Type::UnsignedInt)
-            || (*target == Type::Int && *value == Type::Char)
-            || (*target == Type::Int && *value == Type::UnsignedInt)
-            || (*target == Type::UnsignedInt && *value == Type::Char)
-            || (*target == Type::UnsignedInt && *value == Type::Int)
-    }
-
-    const fn is_integer(ty: &Type) -> bool {
-        matches!(ty, Type::Int | Type::Char | Type::UnsignedInt)
+        target == value || (is_integer(target) && is_integer(value))
     }
 
     const fn promoted_type(ty: &Type) -> Type {
         match ty {
             Type::Int | Type::Char => Type::Int,
             Type::UnsignedInt => Type::UnsignedInt,
+            Type::Pointer(_) => {
+                panic!("semantic checker should not be trying to promote a pointer")
+            }
         }
     }
 
@@ -172,7 +165,41 @@ impl Checker {
         left_type: &Type,
         right_type: &Type,
     ) -> Result<BinaryTypeInfo, SemanticError> {
-        if !Self::is_integer(left_type) || !Self::is_integer(right_type) {
+        if let Type::Pointer(inner) = left_type
+            && is_integer(right_type)
+        {
+            if op == BinaryOp::Add || op == BinaryOp::Subtract {
+                return Ok(BinaryTypeInfo {
+                    operand_ty: Type::Pointer(inner.clone()),
+                    result_ty: Type::Pointer(inner.clone()),
+                });
+            }
+            return Err(SemanticError {
+                message: format!(
+                    "cannot perform binary operation '{op:?}' on types '{left_type:?}' and '{right_type:?}'"
+                ),
+                span: *op_span,
+            });
+        }
+
+        if let Type::Pointer(inner) = right_type
+            && is_integer(left_type)
+        {
+            if op == BinaryOp::Add {
+                return Ok(BinaryTypeInfo {
+                    operand_ty: Type::Pointer(inner.clone()),
+                    result_ty: Type::Pointer(inner.clone()),
+                });
+            }
+            return Err(SemanticError {
+                message: format!(
+                    "cannot perform binary operation '{op:?}' on types '{left_type:?}' and '{right_type:?}'"
+                ),
+                span: *op_span,
+            });
+        }
+
+        if !is_integer(left_type) || !is_integer(right_type) {
             return Err(SemanticError {
                 message: format!(
                     "invalid operands to binary operator '{op:?}'\n\
@@ -229,6 +256,10 @@ impl Checker {
         }
     }
 
+    fn is_inc_dec_type(ty: &Type) -> bool {
+        is_integer(ty) || matches!(ty, Type::Pointer(_))
+    }
+
     fn check_inc_dec(
         &self,
         expr: &Expr,
@@ -236,6 +267,15 @@ impl Checker {
         make_kind: impl FnOnce(Box<TypedExpr>, Span) -> TypedExprKind,
     ) -> Result<TypedExpr, SemanticError> {
         let typed_lvalue = self.check_lvalue(expr, op_span)?;
+        if !Self::is_inc_dec_type(&typed_lvalue.ty) {
+            return Err(SemanticError {
+                message: format!(
+                    "cannot increment or decrement value of type '{:?}'",
+                    typed_lvalue.ty
+                ),
+                span: op_span,
+            });
+        }
         let ty = typed_lvalue.ty.clone();
         Ok(TypedExpr {
             kind: make_kind(Box::new(typed_lvalue), op_span),
@@ -267,7 +307,30 @@ impl Checker {
                 let typed_expr = self.check_expr(expr)?;
                 let ty = match op {
                     UnaryOp::LogicalNot => Type::Int,
-                    UnaryOp::BitwiseNot | UnaryOp::Negate => Self::promoted_type(&typed_expr.ty),
+                    UnaryOp::BitwiseNot | UnaryOp::Negate => {
+                        if !is_integer(&typed_expr.ty) {
+                            return Err(SemanticError {
+                                message: format!(
+                                    "cannot perform unary operation '{op:?}' on non-integer type '{:?}'",
+                                    typed_expr.ty
+                                ),
+                                span: *op_span,
+                            });
+                        }
+                        Self::promoted_type(&typed_expr.ty)
+                    }
+                    UnaryOp::Dereference => match &typed_expr.ty {
+                        Type::Pointer(inner) => *inner.clone(),
+                        _ => {
+                            return Err(SemanticError {
+                                message: format!(
+                                    "cannot dereference non-pointer type '{:?}'",
+                                    typed_expr.ty
+                                ),
+                                span: *op_span,
+                            });
+                        }
+                    },
                 };
                 Ok(TypedExpr {
                     kind: TypedExprKind::Unary {
@@ -693,4 +756,9 @@ pub fn check(program: &Program) -> Result<TypedProgram, SemanticError> {
         functions,
         eof_span: program.eof_span,
     })
+}
+
+#[must_use]
+pub const fn is_integer(ty: &Type) -> bool {
+    matches!(ty, Type::Int | Type::Char | Type::UnsignedInt)
 }

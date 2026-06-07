@@ -1024,6 +1024,223 @@ fn typed_unary_logical_not_returns_int_for_unsigned_operand() {
 }
 
 #[test]
+fn typed_pointer_dereference_has_pointee_type() {
+    let program = Program {
+        functions: vec![
+            Function {
+                return_type: Type::Int,
+                name_span: span(),
+                name: "first".to_string(),
+                params: vec![param_with_span(
+                    Type::Pointer(Box::new(Type::Char)),
+                    "buf",
+                    span(),
+                )],
+                body: vec![Statement::Return(Expr::Unary {
+                    op: UnaryOp::Dereference,
+                    op_span: span(),
+                    expr: Box::new(Expr::Variable {
+                        name: "buf".to_string(),
+                        span: span(),
+                    }),
+                })],
+            },
+            function(
+                "main",
+                vec![Statement::Return(Expr::IntLiteral {
+                    value: 0,
+                    span: span(),
+                })],
+            ),
+        ],
+        eof_span: span(),
+    };
+
+    let typed_program = check(&program).expect("semantic check should succeed");
+
+    let TypedStatement::Return(expr) = &typed_program.functions[0].body[0] else {
+        panic!("expected return statement");
+    };
+
+    assert_eq!(expr.ty, Type::Char);
+    assert!(matches!(
+        expr.kind,
+        TypedExprKind::Unary {
+            op: UnaryOp::Dereference,
+            ..
+        }
+    ));
+}
+
+#[test]
+fn typed_pointer_arithmetic_has_pointer_operand_and_result_type() {
+    let pointer_to_int = Type::Pointer(Box::new(Type::Int));
+    let program = Program {
+        functions: vec![
+            Function {
+                return_type: pointer_to_int.clone(),
+                name_span: span(),
+                name: "advance".to_string(),
+                params: vec![param_with_span(pointer_to_int.clone(), "p", span())],
+                body: vec![Statement::Return(Expr::Binary {
+                    op: BinaryOp::Add,
+                    op_span: span(),
+                    left: Box::new(Expr::Variable {
+                        name: "p".to_string(),
+                        span: span(),
+                    }),
+                    right: Box::new(Expr::IntLiteral {
+                        value: 2,
+                        span: span(),
+                    }),
+                })],
+            },
+            function(
+                "main",
+                vec![Statement::Return(Expr::IntLiteral {
+                    value: 0,
+                    span: span(),
+                })],
+            ),
+        ],
+        eof_span: span(),
+    };
+
+    let typed_program = check(&program).expect("semantic check should succeed");
+
+    let TypedStatement::Return(expr) = &typed_program.functions[0].body[0] else {
+        panic!("expected return statement");
+    };
+
+    let TypedExprKind::Binary { operand_ty, .. } = &expr.kind else {
+        panic!("expected binary expression");
+    };
+
+    assert_eq!(expr.ty, pointer_to_int);
+    assert_eq!(*operand_ty, pointer_to_int);
+}
+
+#[test]
+fn accepts_pointer_compound_assignment_by_integer() {
+    let program = main_program(vec![
+        Statement::VarDecl {
+            ty: Type::Pointer(Box::new(Type::Char)),
+            name_span: span(),
+            name: "buf".to_string(),
+            init: None,
+        },
+        Statement::ExprStatement(Expr::CompoundAssign {
+            target: Box::new(Expr::Variable {
+                name: "buf".to_string(),
+                span: span(),
+            }),
+            op: BinaryOp::Add,
+            op_span: span(),
+            value: Box::new(Expr::IntLiteral {
+                value: 1,
+                span: span(),
+            }),
+        }),
+        Statement::Return(Expr::IntLiteral {
+            value: 0,
+            span: span(),
+        }),
+    ]);
+
+    check(&program).expect("semantic check should succeed");
+}
+
+#[test]
+fn rejects_dereference_of_non_pointer_expression() {
+    let program = main_program(vec![Statement::Return(Expr::Unary {
+        op: UnaryOp::Dereference,
+        op_span: span(),
+        expr: Box::new(Expr::IntLiteral {
+            value: 1,
+            span: span(),
+        }),
+    })]);
+
+    let err = check(&program).expect_err("semantic check should fail");
+
+    assert_eq!(err.message, "cannot dereference non-pointer type 'Int'");
+}
+
+#[test]
+fn rejects_pointer_plus_pointer() {
+    let program = main_program(vec![
+        Statement::VarDecl {
+            ty: Type::Pointer(Box::new(Type::Char)),
+            name_span: span(),
+            name: "left".to_string(),
+            init: None,
+        },
+        Statement::VarDecl {
+            ty: Type::Pointer(Box::new(Type::Char)),
+            name_span: span(),
+            name: "right".to_string(),
+            init: None,
+        },
+        Statement::Return(Expr::Binary {
+            op: BinaryOp::Add,
+            op_span: span(),
+            left: Box::new(Expr::Variable {
+                name: "left".to_string(),
+                span: span(),
+            }),
+            right: Box::new(Expr::Variable {
+                name: "right".to_string(),
+                span: span(),
+            }),
+        }),
+    ]);
+
+    let err = check(&program).expect_err("semantic check should fail");
+
+    assert!(err.message.contains("invalid operands to binary operator"));
+}
+
+#[test]
+fn rejects_assignment_between_different_pointer_types() {
+    let program = main_program(vec![
+        Statement::VarDecl {
+            ty: Type::Pointer(Box::new(Type::Char)),
+            name_span: span(),
+            name: "chars".to_string(),
+            init: None,
+        },
+        Statement::VarDecl {
+            ty: Type::Pointer(Box::new(Type::Int)),
+            name_span: span(),
+            name: "ints".to_string(),
+            init: None,
+        },
+        Statement::ExprStatement(Expr::Assign {
+            target: Box::new(Expr::Variable {
+                name: "chars".to_string(),
+                span: span(),
+            }),
+            op_span: span(),
+            value: Box::new(Expr::Variable {
+                name: "ints".to_string(),
+                span: span(),
+            }),
+        }),
+        Statement::Return(Expr::IntLiteral {
+            value: 0,
+            span: span(),
+        }),
+    ]);
+
+    let err = check(&program).expect_err("semantic check should fail");
+
+    assert_eq!(
+        err.message,
+        "cannot assign value of type 'Pointer(Int)' to variable of type 'Pointer(Char)'"
+    );
+}
+
+#[test]
 fn typed_char_compound_assignment_has_target_type() {
     let program = main_program(vec![
         Statement::VarDecl {

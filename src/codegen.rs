@@ -1,4 +1,5 @@
 use crate::ast::{BinaryOp, Type, UnaryOp};
+use crate::sema::is_integer;
 use crate::typed_ast::{TypedExpr, TypedExprKind, TypedFunction, TypedProgram, TypedStatement};
 use std::collections::HashMap;
 use std::fmt::{self, Write};
@@ -186,6 +187,13 @@ impl Codegen {
         offset
     }
 
+    fn size_of_type(ty: &Type) -> i32 {
+        match ty {
+            Type::Char => 1,
+            Type::Int | Type::UnsignedInt | Type::Pointer(_) => 4,
+        }
+    }
+
     fn push_a0(&mut self) {
         self.emit_line(format_args!("addi sp, sp, -4"));
         self.emit_line(format_args!("sw a0, 0(sp)"));
@@ -215,14 +223,14 @@ impl Codegen {
 
     fn emit_narrow_to_type(&mut self, ty: &Type) {
         match ty {
-            Type::Int | Type::UnsignedInt => (),
+            Type::Int | Type::UnsignedInt | Type::Pointer(_) => (),
             Type::Char => self.emit_line(format_args!("andi a0, a0, 255")),
         }
     }
 
     fn emit_load_local(&mut self, local: &LocalInfo) {
         match local.ty {
-            Type::Int | Type::UnsignedInt => {
+            Type::Int | Type::UnsignedInt | Type::Pointer(_) => {
                 self.emit_line(format_args!("lw a0, {}(s0)", local.offset));
             }
             Type::Char => self.emit_line(format_args!("lbu a0, {}(s0)", local.offset)),
@@ -231,7 +239,7 @@ impl Codegen {
 
     fn emit_store_local(&mut self, local: &LocalInfo) {
         match local.ty {
-            Type::Int | Type::UnsignedInt => {
+            Type::Int | Type::UnsignedInt | Type::Pointer(_) => {
                 self.emit_line(format_args!("sw a0, {}(s0)", local.offset));
             }
             Type::Char => {
@@ -243,7 +251,7 @@ impl Codegen {
 
     fn emit_store_param(&mut self, reg: usize, local: &LocalInfo) {
         match local.ty {
-            Type::Int | Type::UnsignedInt => {
+            Type::Int | Type::UnsignedInt | Type::Pointer(_) => {
                 self.emit_line(format_args!("sw a{reg}, {}(s0)", local.offset));
             }
             Type::Char => {
@@ -295,10 +303,16 @@ impl Codegen {
             BinaryOp::Divide => match ty {
                 Type::Int | Type::Char => self.emit_line(format_args!("div a0, t0, a0")),
                 Type::UnsignedInt => self.emit_line(format_args!("divu a0, t0, a0")),
+                Type::Pointer(_) => {
+                    unreachable!("pointer arithmetic should be handled before emit_binary_op")
+                }
             },
             BinaryOp::Remainder => match ty {
                 Type::Int | Type::Char => self.emit_line(format_args!("rem a0, t0, a0")),
                 Type::UnsignedInt => self.emit_line(format_args!("remu a0, t0, a0")),
+                Type::Pointer(_) => {
+                    unreachable!("pointer arithmetic should be handled before emit_binary_op")
+                }
             },
             BinaryOp::Equal => {
                 self.emit_line(format_args!("xor a0, t0, a0"));
@@ -311,6 +325,9 @@ impl Codegen {
             BinaryOp::Less => match ty {
                 Type::Int | Type::Char => self.emit_line(format_args!("slt a0, t0, a0")),
                 Type::UnsignedInt => self.emit_line(format_args!("sltu a0, t0, a0")),
+                Type::Pointer(_) => {
+                    unreachable!("pointer arithmetic should be handled before emit_binary_op")
+                }
             },
             BinaryOp::LessEqual => match ty {
                 Type::Int | Type::Char => {
@@ -321,10 +338,16 @@ impl Codegen {
                     self.emit_line(format_args!("sltu a0, a0, t0"));
                     self.emit_line(format_args!("xori a0, a0, 1"));
                 }
+                Type::Pointer(_) => {
+                    unreachable!("pointer arithmetic should be handled before emit_binary_op")
+                }
             },
             BinaryOp::Greater => match ty {
                 Type::Int | Type::Char => self.emit_line(format_args!("slt a0, a0, t0")),
                 Type::UnsignedInt => self.emit_line(format_args!("sltu a0, a0, t0")),
+                Type::Pointer(_) => {
+                    unreachable!("pointer arithmetic should be handled before emit_binary_op")
+                }
             },
             BinaryOp::GreaterEqual => match ty {
                 Type::Int | Type::Char => {
@@ -335,6 +358,9 @@ impl Codegen {
                     self.emit_line(format_args!("sltu a0, t0, a0"));
                     self.emit_line(format_args!("xori a0, a0, 1"));
                 }
+                Type::Pointer(_) => {
+                    unreachable!("pointer arithmetic should be handled before emit_binary_op")
+                }
             },
             BinaryOp::BitAnd => self.emit_line(format_args!("and a0, a0, t0")),
             BinaryOp::BitXor => self.emit_line(format_args!("xor a0, a0, t0")),
@@ -343,12 +369,60 @@ impl Codegen {
             BinaryOp::ShiftRight => match ty {
                 Type::Int | Type::Char => self.emit_line(format_args!("sra a0, t0, a0")),
                 Type::UnsignedInt => self.emit_line(format_args!("srl a0, t0, a0")),
+                Type::Pointer(_) => {
+                    unreachable!("pointer arithmetic should be handled before emit_binary_op")
+                }
             },
             BinaryOp::LogicalAnd | BinaryOp::LogicalOr => unreachable!(),
         }
     }
 
-    fn emit_binary(&mut self, op: BinaryOp, ty: &Type, left: &TypedExpr, right: &TypedExpr) {
+    fn scale_reg(&mut self, scale: i32, reg: &str) {
+        match scale {
+            1 => (),
+            2 => self.emit_line(format_args!("slli {reg}, {reg}, 1")),
+            4 => self.emit_line(format_args!("slli {reg}, {reg}, 2")),
+            8 => self.emit_line(format_args!("slli {reg}, {reg}, 3")),
+            x => {
+                self.emit_line(format_args!("li t1, {x}"));
+                self.emit_line(format_args!("mul {reg}, {reg}, t1"));
+            }
+        }
+    }
+
+    fn emit_pointer_binary_op(
+        &mut self,
+        op: BinaryOp,
+        pointee_ty: &Type,
+        left_type: &Type,
+        right_type: &Type,
+    ) {
+        let scale = Self::size_of_type(pointee_ty);
+
+        match (op, left_type, right_type) {
+            (BinaryOp::Add, Type::Pointer(_), integer) if is_integer(integer) => {
+                self.scale_reg(scale, "a0");
+                self.emit_line(format_args!("add a0, t0, a0"));
+            }
+            (BinaryOp::Add, integer, Type::Pointer(_)) if is_integer(integer) => {
+                self.scale_reg(scale, "t0");
+                self.emit_line(format_args!("add a0, t0, a0"));
+            }
+            (BinaryOp::Subtract, Type::Pointer(_), integer) if is_integer(integer) => {
+                self.scale_reg(scale, "a0");
+                self.emit_line(format_args!("sub a0, t0, a0"));
+            }
+            _ => unreachable!("sema should reject invalid pointer arithmetic"),
+        }
+    }
+
+    fn emit_binary(
+        &mut self,
+        op: BinaryOp,
+        operand_ty: &Type,
+        left: &TypedExpr,
+        right: &TypedExpr,
+    ) {
         // Short-circuit binary operations
         match op {
             BinaryOp::LogicalAnd => {
@@ -368,22 +442,31 @@ impl Codegen {
         self.emit_expr(right);
         self.pop_t0();
 
-        self.emit_binary_op(op, ty);
+        if let Type::Pointer(pointee_ty) = operand_ty {
+            self.emit_pointer_binary_op(op, pointee_ty, &left.ty, &right.ty);
+            return;
+        }
+
+        self.emit_binary_op(op, operand_ty);
     }
 
     fn emit_compound_assign(
         &mut self,
         local: &LocalInfo,
         op: BinaryOp,
-        ty: &Type,
+        operand_ty: &Type,
         value: &TypedExpr,
     ) {
         self.emit_load_local(local);
         self.push_a0();
         self.emit_expr(value);
         self.pop_t0();
-        self.emit_binary_op(op, ty);
 
+        if let Type::Pointer(pointee_ty) = operand_ty {
+            self.emit_pointer_binary_op(op, pointee_ty, &local.ty, &value.ty);
+        } else {
+            self.emit_binary_op(op, operand_ty);
+        }
         self.emit_store_local(local);
     }
 
@@ -396,7 +479,12 @@ impl Codegen {
             self.push_a0();
         }
 
-        self.emit_line(format_args!("addi a0, a0, {delta}"));
+        let mut accumulator = delta;
+        if let Type::Pointer(inner) = &expr.ty {
+            accumulator *= Self::size_of_type(inner);
+        }
+
+        self.emit_line(format_args!("addi a0, a0, {accumulator}"));
         self.emit_store_local(&local);
 
         if postfix {
@@ -425,13 +513,18 @@ impl Codegen {
             TypedExprKind::Unary {
                 op,
                 op_span: _,
-                expr,
+                expr: operand,
             } => {
-                self.emit_expr(expr);
+                self.emit_expr(operand);
                 match op {
                     UnaryOp::Negate => self.emit_line(format_args!("neg a0, a0")),
                     UnaryOp::LogicalNot => self.emit_line(format_args!("seqz a0, a0")),
                     UnaryOp::BitwiseNot => self.emit_line(format_args!("not a0, a0")),
+                    UnaryOp::Dereference => match Self::size_of_type(&expr.ty) {
+                        1 => self.emit_line(format_args!("lbu a0, 0(a0)")),
+                        4 => self.emit_line(format_args!("lw a0, 0(a0)")),
+                        _ => panic!("codegen does not support arbitrary data sizes"),
+                    },
                 }
             }
             TypedExprKind::Call {

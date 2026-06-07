@@ -2,7 +2,7 @@
 
 `rivet` is a C compiler written in Rust that targets RV32IM assembly. It is working toward a C23 implementation and currently implements a small C23 subset.
 
-It currently supports a small C subset with `int`, `char`, and `unsigned int`, local variables, functions, calls, block scope, common control flow, assignment expressions, compound assignments, prefix/postfix increment and decrement, and most integer operators with C-like precedence. It emits RV32IM assembly and reports lexer, parser, and semantic errors with source locations.
+It currently supports a small C subset with `int`, `char`, `unsigned int`, and basic pointer types, local variables, functions, calls, block scope, common control flow, assignment expressions, compound assignments, prefix/postfix increment and decrement, dereference expressions, and most integer operators with C-like precedence. It emits RV32IM assembly and reports lexer, parser, and semantic errors with source locations.
 
 The current language subset supports programs shaped like:
 
@@ -166,12 +166,14 @@ Expressions and operators:
 - [x] logical `&&` and `||` with short-circuiting
 - [x] compound assignments: `+= -= *= /= %= &= |= ^= <<= >>=`
 - [x] prefix and postfix `++` / `--`
+- [x] pointer dereference as an rvalue: `*p`
 - [ ] conditional operator `?:`
 - [ ] comma operator
 - [ ] casts
 - [ ] `sizeof`
 - [ ] `_Alignof` / `alignof`
-- [ ] address-of and dereference: `&` and `*`
+- [ ] address-of: `&`
+- [ ] dereference as an lvalue: `*p = value`
 - [ ] array-to-pointer and function-to-pointer decay
 
 Types and semantic analysis:
@@ -180,6 +182,9 @@ Types and semantic analysis:
 - [x] basic type checking and implicit conversions for `int`, `char`, and `unsigned int`
 - [x] `char`
 - [x] `unsigned int`
+- [x] basic pointer types such as `char *` and `int *`
+- [x] pointer dereference type checking
+- [x] pointer arithmetic with integer offsets
 - [ ] full integer conversion rules
 - [ ] remaining signedness spelling and combinations: `signed`, bare `unsigned`, `unsigned char`, etc.
 - [ ] other non-`int` scalar types: `short`, `long`
@@ -209,10 +214,12 @@ Functions:
 
 Objects, aggregate types, and declarators:
 
-- [ ] pointers
-- [ ] pointer arithmetic
+- [x] pointer parameters and local declarations
+- [x] pointer arithmetic scaled by pointee size
 - [ ] arrays
 - [ ] array indexing
+- [ ] full pointer lvalue support
+- [ ] full C declarator grammar
 - [ ] structs and unions
 - [ ] member access: `.` and `->`
 - [ ] initializer lists

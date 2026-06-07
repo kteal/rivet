@@ -161,6 +161,7 @@ pub enum UnaryOp {
     Negate,
     LogicalNot,
     BitwiseNot,
+    Dereference,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -168,4 +169,5 @@ pub enum Type {
     Int,
     Char,
     UnsignedInt,
+    Pointer(Box<Self>),
 }

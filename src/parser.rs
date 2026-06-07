@@ -163,22 +163,39 @@ impl Parser {
         }
     }
 
-    fn parse_param(&mut self) -> Result<Param, ParseError> {
-        let ty = self.parse_type()?;
+    fn parse_declarator(&mut self, base_type: Type) -> Result<(Type, String, Span), ParseError> {
+        let mut ty = base_type;
 
-        let token = self.advance();
-
-        match token.kind {
-            TokenKind::Ident(name) => Ok(Param {
-                ty,
-                name,
-                name_span: token.span,
-            }),
-            found => Err(ParseError {
-                message: format!("expected identifier for parameter, found {found:?}"),
-                span: token.span,
-            }),
+        while *self.peek_kind() == TokenKind::Star {
+            self.expect(&TokenKind::Star)?;
+            ty = Type::Pointer(Box::new(ty));
         }
+
+        let (name, span) = match self.advance() {
+            Token {
+                kind: TokenKind::Ident(name),
+                span,
+            } => (name, span),
+            found => {
+                return Err(ParseError {
+                    message: format!("expected identifier for declaration, found {found:?}"),
+                    span: found.span,
+                });
+            }
+        };
+
+        Ok((ty, name, span))
+    }
+
+    fn parse_param(&mut self) -> Result<Param, ParseError> {
+        let base_ty = self.parse_type()?;
+        let (ty, name, name_span) = self.parse_declarator(base_ty)?;
+
+        Ok(Param {
+            ty,
+            name,
+            name_span,
+        })
     }
 
     fn parse_primary(&mut self) -> Result<Expr, ParseError> {
@@ -257,6 +274,10 @@ impl Parser {
             TokenKind::Tilde => {
                 let token = self.advance();
                 Some((UnaryOp::BitwiseNot, token.span))
+            }
+            TokenKind::Star => {
+                let token = self.advance();
+                Some((UnaryOp::Dereference, token.span))
             }
             _ => None,
         }
@@ -380,23 +401,14 @@ impl Parser {
     }
 
     fn parse_var_decl(&mut self) -> Result<Statement, ParseError> {
-        let ty = self.parse_type()?;
-        let token = self.advance();
-        let name = match token.kind {
-            TokenKind::Ident(name) => name,
-            found => {
-                return Err(ParseError {
-                    message: format!("expected variable name, found {found:?}"),
-                    span: token.span,
-                });
-            }
-        };
+        let base_ty = self.parse_type()?;
+        let (ty, name, name_span) = self.parse_declarator(base_ty)?;
         if *self.peek_kind() == TokenKind::Semicolon {
             self.expect(&TokenKind::Semicolon)?;
             return Ok(Statement::VarDecl {
                 ty,
                 name,
-                name_span: token.span,
+                name_span,
                 init: None,
             });
         }
@@ -406,7 +418,7 @@ impl Parser {
         Ok(Statement::VarDecl {
             ty,
             name,
-            name_span: token.span,
+            name_span,
             init: Some(expr),
         })
     }

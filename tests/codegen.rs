@@ -2615,3 +2615,183 @@ fn counts_locals_inside_while_body_for_frame_size() {
 
     assert!(asm.contains("addi sp, sp, -32"));
 }
+
+#[test]
+fn loads_char_pointer_dereference_with_byte_load() {
+    let program = Program {
+        functions: vec![
+            Function {
+                return_type: Type::Int,
+                name_span: span(),
+                name: "first".to_string(),
+                params: vec![param_with_span(
+                    Type::Pointer(Box::new(Type::Char)),
+                    "p",
+                    span(),
+                )],
+                body: vec![Statement::Return(Expr::Unary {
+                    op: UnaryOp::Dereference,
+                    op_span: span(),
+                    expr: Box::new(Expr::Variable {
+                        name: "p".to_string(),
+                        span: span(),
+                    }),
+                })],
+            },
+            empty_main_function(),
+        ],
+        eof_span: span(),
+    };
+
+    let asm = generate_raw_with_codegen(&program);
+
+    assert!(asm.contains("    sw a0, -12(s0)\n"));
+    assert!(asm.contains("    lw a0, -12(s0)\n    lbu a0, 0(a0)\n"));
+}
+
+#[test]
+fn loads_int_pointer_dereference_with_word_load() {
+    let program = Program {
+        functions: vec![
+            Function {
+                return_type: Type::Int,
+                name_span: span(),
+                name: "first".to_string(),
+                params: vec![param_with_span(
+                    Type::Pointer(Box::new(Type::Int)),
+                    "p",
+                    span(),
+                )],
+                body: vec![Statement::Return(Expr::Unary {
+                    op: UnaryOp::Dereference,
+                    op_span: span(),
+                    expr: Box::new(Expr::Variable {
+                        name: "p".to_string(),
+                        span: span(),
+                    }),
+                })],
+            },
+            empty_main_function(),
+        ],
+        eof_span: span(),
+    };
+
+    let asm = generate_raw_with_codegen(&program);
+
+    assert!(asm.contains("    lw a0, -12(s0)\n    lw a0, 0(a0)\n"));
+}
+
+#[test]
+fn scales_int_pointer_compound_assignment_by_pointee_size() {
+    let program = Program {
+        functions: vec![Function {
+            return_type: Type::Int,
+            name_span: span(),
+            name: "main".to_string(),
+            params: vec![],
+            body: vec![
+                Statement::VarDecl {
+                    ty: Type::Pointer(Box::new(Type::Int)),
+                    name_span: span(),
+                    name: "p".to_string(),
+                    init: None,
+                },
+                Statement::ExprStatement(Expr::CompoundAssign {
+                    target: Box::new(Expr::Variable {
+                        name: "p".to_string(),
+                        span: span(),
+                    }),
+                    op: BinaryOp::Add,
+                    op_span: span(),
+                    value: Box::new(Expr::IntLiteral {
+                        value: 2,
+                        span: span(),
+                    }),
+                }),
+                Statement::Return(Expr::IntLiteral {
+                    value: 0,
+                    span: span(),
+                }),
+            ],
+        }],
+        eof_span: span(),
+    };
+
+    let asm = generate_raw_with_codegen(&program);
+
+    assert!(asm.contains(
+        "    lw a0, -12(s0)\n    addi sp, sp, -4\n    sw a0, 0(sp)\n    li a0, 2\n    lw t0, 0(sp)\n    addi sp, sp, 4\n    slli a0, a0, 2\n    add a0, t0, a0\n    sw a0, -12(s0)\n"
+    ));
+}
+
+#[test]
+fn scales_int_pointer_increment_by_pointee_size() {
+    let program = Program {
+        functions: vec![Function {
+            return_type: Type::Int,
+            name_span: span(),
+            name: "main".to_string(),
+            params: vec![],
+            body: vec![
+                Statement::VarDecl {
+                    ty: Type::Pointer(Box::new(Type::Int)),
+                    name_span: span(),
+                    name: "p".to_string(),
+                    init: None,
+                },
+                Statement::ExprStatement(Expr::PrefixInc {
+                    expr: Box::new(Expr::Variable {
+                        name: "p".to_string(),
+                        span: span(),
+                    }),
+                    op_span: span(),
+                }),
+                Statement::Return(Expr::IntLiteral {
+                    value: 0,
+                    span: span(),
+                }),
+            ],
+        }],
+        eof_span: span(),
+    };
+
+    let asm = generate_raw_with_codegen(&program);
+
+    assert!(asm.contains("    lw a0, -12(s0)\n    addi a0, a0, 4\n    sw a0, -12(s0)\n"));
+}
+
+#[test]
+fn leaves_char_pointer_increment_unscaled() {
+    let program = Program {
+        functions: vec![Function {
+            return_type: Type::Int,
+            name_span: span(),
+            name: "main".to_string(),
+            params: vec![],
+            body: vec![
+                Statement::VarDecl {
+                    ty: Type::Pointer(Box::new(Type::Char)),
+                    name_span: span(),
+                    name: "p".to_string(),
+                    init: None,
+                },
+                Statement::ExprStatement(Expr::PrefixInc {
+                    expr: Box::new(Expr::Variable {
+                        name: "p".to_string(),
+                        span: span(),
+                    }),
+                    op_span: span(),
+                }),
+                Statement::Return(Expr::IntLiteral {
+                    value: 0,
+                    span: span(),
+                }),
+            ],
+        }],
+        eof_span: span(),
+    };
+
+    let asm = generate_raw_with_codegen(&program);
+
+    assert!(asm.contains("    lw a0, -12(s0)\n    addi a0, a0, 1\n    sw a0, -12(s0)\n"));
+}
