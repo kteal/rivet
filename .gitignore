@@ -29,3 +29,7 @@ tests/*
 # Added by cargo
 
 /target
+
+# Nix
+result
+.nix-bin/

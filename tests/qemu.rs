@@ -18,7 +18,6 @@ fn run_qemu_case(name: &str, source: &str, expected: i32) {
 }
 
 #[test]
-#[ignore = "requires qemu-riscv32 and riscv64-linux-gnu binutils"]
 fn qemu_return_and_arithmetic_programs_return_expected_values() {
     run_qemu_case("return-42", "int main() {\n    return 42;\n}\n", 42);
     run_qemu_case("precedence", "int main() {\n    return 1 + 2 * 3;\n}\n", 7);
@@ -31,7 +30,6 @@ fn qemu_return_and_arithmetic_programs_return_expected_values() {
 }
 
 #[test]
-#[ignore = "requires qemu-riscv32 and riscv64-linux-gnu binutils"]
 fn qemu_comparison_programs_return_expected_values() {
     run_qemu_case("equal-true", "int main() {\n    return 5 == 5;\n}\n", 1);
     run_qemu_case("equal-false", "int main() {\n    return 5 == 3;\n}\n", 0);
@@ -88,7 +86,6 @@ fn qemu_comparison_programs_return_expected_values() {
 }
 
 #[test]
-#[ignore = "requires qemu-riscv32 and riscv64-linux-gnu binutils"]
 fn qemu_unary_programs_return_expected_values() {
     run_qemu_case("unary-negation", "int main() {\n    return -5;\n}\n", 251);
     run_qemu_case("logical-not-zero", "int main() {\n    return !0;\n}\n", 1);
@@ -106,7 +103,6 @@ fn qemu_unary_programs_return_expected_values() {
 }
 
 #[test]
-#[ignore = "requires qemu-riscv32 and riscv64-linux-gnu binutils"]
 fn qemu_logical_operator_programs_return_expected_values() {
     run_qemu_case(
         "logical-and-true",
@@ -161,7 +157,6 @@ fn qemu_logical_operator_programs_return_expected_values() {
 }
 
 #[test]
-#[ignore = "requires qemu-riscv32 and riscv64-linux-gnu binutils"]
 fn qemu_bitwise_and_shift_programs_return_expected_values() {
     run_qemu_case("bitwise-and", "int main() {\n    return 6 & 3;\n}\n", 2);
     run_qemu_case("bitwise-xor", "int main() {\n    return 6 ^ 3;\n}\n", 5);
@@ -206,7 +201,6 @@ fn qemu_bitwise_and_shift_programs_return_expected_values() {
 }
 
 #[test]
-#[ignore = "requires qemu-riscv32 and riscv64-linux-gnu binutils"]
 fn qemu_unsigned_int_programs_return_expected_values() {
     run_qemu_case(
         "unsigned-local-initializer",
@@ -291,7 +285,6 @@ fn qemu_unsigned_int_programs_return_expected_values() {
 }
 
 #[test]
-#[ignore = "requires qemu-riscv32 and riscv64-linux-gnu binutils"]
 fn qemu_local_variable_programs_return_expected_values() {
     run_qemu_case(
         "local-return",
@@ -341,7 +334,6 @@ fn qemu_local_variable_programs_return_expected_values() {
 }
 
 #[test]
-#[ignore = "requires qemu-riscv32 and riscv64-linux-gnu binutils"]
 fn qemu_compound_assignment_programs_return_expected_values() {
     run_qemu_case(
         "compound-add",
@@ -406,7 +398,6 @@ fn qemu_compound_assignment_programs_return_expected_values() {
 }
 
 #[test]
-#[ignore = "requires qemu-riscv32 and riscv64-linux-gnu binutils"]
 fn qemu_increment_decrement_programs_return_expected_values() {
     run_qemu_case(
         "prefix-increment-result",
@@ -446,7 +437,6 @@ fn qemu_increment_decrement_programs_return_expected_values() {
 }
 
 #[test]
-#[ignore = "requires qemu-riscv32 and riscv64-linux-gnu binutils"]
 fn qemu_char_narrowing_programs_return_expected_values() {
     run_qemu_case(
         "char-local-initializer-narrows",
@@ -471,7 +461,6 @@ fn qemu_char_narrowing_programs_return_expected_values() {
 }
 
 #[test]
-#[ignore = "requires qemu-riscv32 and riscv64-linux-gnu binutils"]
 fn qemu_char_literal_programs_return_expected_values() {
     run_qemu_case(
         "char-literal-return",
@@ -496,7 +485,6 @@ fn qemu_char_literal_programs_return_expected_values() {
 }
 
 #[test]
-#[ignore = "requires qemu-riscv32 and riscv64-linux-gnu binutils"]
 fn qemu_block_scope_programs_return_expected_values() {
     run_qemu_case(
         "block-uses-outer-local",
@@ -521,7 +509,6 @@ fn qemu_block_scope_programs_return_expected_values() {
 }
 
 #[test]
-#[ignore = "requires qemu-riscv32 and riscv64-linux-gnu binutils"]
 fn qemu_if_else_programs_return_expected_values() {
     run_qemu_case(
         "if-true",
@@ -551,7 +538,6 @@ fn qemu_if_else_programs_return_expected_values() {
 }
 
 #[test]
-#[ignore = "requires qemu-riscv32 and riscv64-linux-gnu binutils"]
 fn qemu_while_programs_return_expected_values() {
     run_qemu_case(
         "while-countdown",
@@ -596,7 +582,6 @@ fn qemu_while_programs_return_expected_values() {
 }
 
 #[test]
-#[ignore = "requires qemu-riscv32 and riscv64-linux-gnu binutils"]
 fn qemu_for_programs_return_expected_values() {
     run_qemu_case(
         "for-countdown",
@@ -626,7 +611,6 @@ fn qemu_for_programs_return_expected_values() {
 }
 
 #[test]
-#[ignore = "requires qemu-riscv32 and riscv64-linux-gnu binutils"]
 fn qemu_multiple_function_definitions_return_expected_values() {
     run_qemu_case(
         "unused-helper-before-main",
@@ -646,7 +630,6 @@ fn qemu_multiple_function_definitions_return_expected_values() {
 }
 
 #[test]
-#[ignore = "requires qemu-riscv32 and riscv64-linux-gnu binutils"]
 fn qemu_function_calls_return_expected_values() {
     run_qemu_case(
         "zero-arg-call",
@@ -681,7 +664,6 @@ fn qemu_function_calls_return_expected_values() {
 }
 
 #[test]
-#[ignore = "requires qemu-riscv32 and riscv64-linux-gnu binutils"]
 fn qemu_expression_and_empty_statements_return_expected_values() {
     run_qemu_case(
         "empty-statement",

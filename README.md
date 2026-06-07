@@ -1,5 +1,9 @@
 # rivet
 
+[![CI](https://github.com/kteal/rivet/actions/workflows/ci.yml/badge.svg)](https://github.com/kteal/rivet/actions/workflows/ci.yml)
+![Nix Flake](https://img.shields.io/badge/Nix-Flake-5277C3?logo=nixos)
+![Rust](https://img.shields.io/badge/Rust-2024-orange?logo=rust)
+
 `rivet` is a C compiler written in Rust that targets RV32IM assembly. It is working toward a C23 implementation and currently implements a small C23 subset.
 
 It currently supports a small C subset with `int`, `char`, `unsigned int`, and basic pointer types, local variables, functions, calls, block scope, common control flow, assignment expressions, compound assignments, prefix/postfix increment and decrement, dereference expressions, and most integer operators with C-like precedence. It emits RV32IM assembly and reports lexer, parser, and semantic errors with source locations.
@@ -47,10 +51,64 @@ int main() {
 }
 ```
 
+## Development Environment
+
+### Nix (recommended)
+
+The provided Nix development shell includes:
+
+- Rust toolchain (`cargo`, `rustc`, `clippy`, `rustfmt`, `rust-analyzer`, `cargo-nextest`)
+- RISC-V assembler and linker
+- QEMU user emulation
+
+Enter the shell with:
+
+```bash
+nix develop
+```
+
+### Without Nix
+
+Install:
+
+- Rust and Cargo
+- `riscv64-linux-gnu-as`
+- `riscv64-linux-gnu-ld`
+- `qemu-riscv32`
+
+On Ubuntu or Debian:
+
+```bash
+sudo apt install qemu-user binutils-riscv64-linux-gnu
+```
+
+All commands below assume either:
+
+- you are inside the Nix development shell, or
+- the required tools are installed manually.
+
 ## Build
 
 ```bash
 cargo build
+```
+
+or build the Nix package, which also runs the package check phase:
+
+```bash
+nix build
+```
+
+## Formatting
+
+```bash
+cargo fmt
+```
+
+or with Nix
+
+```bash
+nix fmt
 ```
 
 ## Generate Assembly
@@ -75,16 +133,23 @@ path/to/program.c:2:12: error: undeclared local variable 'x'
 
 ## Run Tests
 
-Normal Rust tests:
+The repository includes Rust unit tests as well as end-to-end QEMU tests. These compile source programs, assemble and link the generated RV32 output, then run the result under `qemu-riscv32`.
 
 ```bash
-cargo test
+cargo nextest run --locked --all-targets --all-features
 ```
 
-The repository also includes ignored end-to-end QEMU tests. These compile source programs, assemble and link the generated RV32 output, then run the result under `qemu-riscv32`.
+CI runs tests inside the Nix development shell so the RISC-V binutils and QEMU tools are available:
 
 ```bash
-cargo test --test qemu -- --ignored
+nix develop --command cargo nextest run --locked --all-targets --all-features
+```
+
+To run the same Nix checks used by CI:
+
+```bash
+nix build
+nix flake check
 ```
 
 ## Run Generated Programs Under QEMU
@@ -107,21 +172,6 @@ The script:
 2. assembles and links an RV32 executable
 3. runs it with `qemu-riscv32`
 4. prints the program exit code
-
-## Tooling Requirements
-
-For QEMU-backed runs and tests, the following tools must be installed:
-
-- `cargo`
-- `riscv64-linux-gnu-as`
-- `riscv64-linux-gnu-ld`
-- `qemu-riscv32`
-
-On Ubuntu or Debian:
-
-```bash
-sudo apt install qemu-user binutils-riscv64-linux-gnu
-```
 
 ## Status
 
