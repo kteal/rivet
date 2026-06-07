@@ -257,6 +257,71 @@ fn qemu_local_variable_programs_return_expected_values() {
 
 #[test]
 #[ignore = "requires qemu-riscv32 and riscv64-linux-gnu binutils"]
+fn qemu_compound_assignment_programs_return_expected_values() {
+    run_qemu_case(
+        "compound-add",
+        "int main() {\n    int x = 3;\n    x += 4;\n    return x;\n}\n",
+        7,
+    );
+    run_qemu_case(
+        "compound-subtract",
+        "int main() {\n    int x = 10;\n    x -= 3;\n    return x;\n}\n",
+        7,
+    );
+    run_qemu_case(
+        "compound-multiply",
+        "int main() {\n    int x = 3;\n    x *= 4;\n    return x;\n}\n",
+        12,
+    );
+    run_qemu_case(
+        "compound-divide",
+        "int main() {\n    int x = 8;\n    x /= 2;\n    return x;\n}\n",
+        4,
+    );
+    run_qemu_case(
+        "compound-remainder",
+        "int main() {\n    int x = 8;\n    x %= 3;\n    return x;\n}\n",
+        2,
+    );
+    run_qemu_case(
+        "compound-bit-and",
+        "int main() {\n    int x = 6;\n    x &= 3;\n    return x;\n}\n",
+        2,
+    );
+    run_qemu_case(
+        "compound-bit-or",
+        "int main() {\n    int x = 4;\n    x |= 1;\n    return x;\n}\n",
+        5,
+    );
+    run_qemu_case(
+        "compound-bit-xor",
+        "int main() {\n    int x = 6;\n    x ^= 3;\n    return x;\n}\n",
+        5,
+    );
+    run_qemu_case(
+        "compound-shift-left",
+        "int main() {\n    int x = 3;\n    x <<= 2;\n    return x;\n}\n",
+        12,
+    );
+    run_qemu_case(
+        "compound-shift-right",
+        "int main() {\n    int x = 16;\n    x >>= 2;\n    return x;\n}\n",
+        4,
+    );
+    run_qemu_case(
+        "compound-expression-result",
+        "int main() {\n    int x = 3;\n    return x += 4;\n}\n",
+        7,
+    );
+    run_qemu_case(
+        "compound-char-narrows",
+        "int main() {\n    char c = 250;\n    c += 10;\n    return c;\n}\n",
+        4,
+    );
+}
+
+#[test]
+#[ignore = "requires qemu-riscv32 and riscv64-linux-gnu binutils"]
 fn qemu_char_narrowing_programs_return_expected_values() {
     run_qemu_case(
         "char-local-initializer-narrows",

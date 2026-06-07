@@ -284,26 +284,55 @@ impl Parser {
         self.parse_left_assoc(Self::parse_logical_and, LOGICAL_OR_OPS)
     }
 
+    fn parse_assignment_op(&mut self) -> Option<(Option<BinaryOp>, Span)> {
+        let op = match self.peek_kind() {
+            TokenKind::Equal => None,
+            TokenKind::PlusEqual => Some(BinaryOp::Add),
+            TokenKind::MinusEqual => Some(BinaryOp::Subtract),
+            TokenKind::StarEqual => Some(BinaryOp::Multiply),
+            TokenKind::SlashEqual => Some(BinaryOp::Divide),
+            TokenKind::PercentEqual => Some(BinaryOp::Remainder),
+            TokenKind::AmpersandEqual => Some(BinaryOp::BitAnd),
+            TokenKind::CaretEqual => Some(BinaryOp::BitXor),
+            TokenKind::PipeEqual => Some(BinaryOp::BitOr),
+            TokenKind::LessLessEqual => Some(BinaryOp::ShiftLeft),
+            TokenKind::GreaterGreaterEqual => Some(BinaryOp::ShiftRight),
+            _ => return None,
+        };
+
+        let token = self.advance();
+        Some((op, token.span))
+    }
+
     fn parse_assignment(&mut self) -> Result<Expr, ParseError> {
         let left = self.parse_logical_or()?;
 
-        if *self.peek_kind() == TokenKind::Equal {
-            if let Expr::Variable { name, span } = left {
-                self.expect(TokenKind::Equal)?;
-                let value = Box::new(self.parse_assignment()?);
-                return Ok(Expr::Assign {
-                    name,
-                    name_span: span,
-                    value,
-                });
-            } else {
+        if let Some((compound_op, op_span)) = self.parse_assignment_op() {
+            let value = Box::new(self.parse_assignment()?);
+
+            let Expr::Variable { name, span } = left else {
                 return Err(ParseError {
                     message: format!("cannot assign to non-variable expression"),
-                    span: self.peek().span,
+                    span: op_span,
+                });
+            };
+
+            if let Some(op) = compound_op {
+                return Ok(Expr::CompoundAssign {
+                    name,
+                    name_span: span,
+                    op,
+                    op_span,
+                    value,
                 });
             }
-        }
 
+            return Ok(Expr::Assign {
+                name,
+                name_span: span,
+                value,
+            });
+        }
         Ok(left)
     }
 
@@ -456,6 +485,7 @@ impl Parser {
             token_kind,
             TokenKind::Ident(_)
                 | TokenKind::IntLiteral(_)
+                | TokenKind::CharLiteral(_)
                 | TokenKind::LParen
                 | TokenKind::Minus
                 | TokenKind::Bang
@@ -665,6 +695,29 @@ mod tests {
             .expect_err("assignment to non-variable should fail");
 
         assert_eq!(err.span, Span { start: 15, end: 16 });
+        assert_eq!(err.message, "cannot assign to non-variable expression");
+    }
+
+    #[test]
+    fn compound_assignment_target_errors_point_at_operator_token() {
+        let tokens = vec![
+            token_with_span(TokenKind::KwReturn, 0, 6),
+            token_with_span(TokenKind::LParen, 7, 8),
+            token_with_span(TokenKind::IntLiteral(1), 8, 9),
+            token_with_span(TokenKind::Plus, 10, 11),
+            token_with_span(TokenKind::IntLiteral(2), 12, 13),
+            token_with_span(TokenKind::RParen, 13, 14),
+            token_with_span(TokenKind::PlusEqual, 15, 17),
+            token_with_span(TokenKind::IntLiteral(3), 18, 19),
+            token_with_span(TokenKind::Semicolon, 19, 20),
+        ];
+
+        let mut parser = Parser::new(tokens);
+        let err = parser
+            .parse_statement()
+            .expect_err("compound assignment to non-variable should fail");
+
+        assert_eq!(err.span, Span { start: 15, end: 17 });
         assert_eq!(err.message, "cannot assign to non-variable expression");
     }
 
@@ -1640,6 +1693,69 @@ mod tests {
                 value: Box::new(Expr::IntLiteral {
                     value: 3,
                     span: span()
+                }),
+            })
+        );
+    }
+
+    #[test]
+    fn parses_compound_assignment_as_expression_statement() {
+        let tokens = vec![
+            token_with_span(TokenKind::Ident("x".to_string()), 0, 1),
+            token_with_span(TokenKind::PlusEqual, 2, 4),
+            token_with_span(TokenKind::IntLiteral(3), 5, 6),
+            token_with_span(TokenKind::Semicolon, 6, 7),
+        ];
+
+        let mut parser = Parser::new(tokens);
+        let statement = parser.parse_statement().expect("parsing should succeed");
+
+        assert_eq!(
+            statement,
+            Statement::ExprStatement(Expr::CompoundAssign {
+                name: "x".to_string(),
+                name_span: Span { start: 0, end: 1 },
+                op: BinaryOp::Add,
+                op_span: Span { start: 2, end: 4 },
+                value: Box::new(Expr::IntLiteral {
+                    value: 3,
+                    span: Span { start: 5, end: 6 },
+                }),
+            })
+        );
+    }
+
+    #[test]
+    fn parses_compound_assignment_right_associative() {
+        let tokens = tokens![
+            TokenKind::KwReturn,
+            TokenKind::Ident("x".to_string()),
+            TokenKind::PlusEqual,
+            TokenKind::Ident("y".to_string()),
+            TokenKind::StarEqual,
+            TokenKind::IntLiteral(2),
+            TokenKind::Semicolon,
+        ];
+
+        let mut parser = Parser::new(tokens);
+        let statement = parser.parse_statement().expect("parsing should succeed");
+
+        assert_eq!(
+            statement,
+            Statement::Return(Expr::CompoundAssign {
+                name: "x".to_string(),
+                name_span: span(),
+                op: BinaryOp::Add,
+                op_span: span(),
+                value: Box::new(Expr::CompoundAssign {
+                    name: "y".to_string(),
+                    name_span: span(),
+                    op: BinaryOp::Multiply,
+                    op_span: span(),
+                    value: Box::new(Expr::IntLiteral {
+                        value: 2,
+                        span: span(),
+                    }),
                 }),
             })
         );

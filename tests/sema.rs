@@ -749,6 +749,95 @@ fn accepts_assignment_expression_in_return() {
 }
 
 #[test]
+fn accepts_compound_assignment_to_int() {
+    let program = main_program(vec![
+        Statement::VarDecl {
+            ty: Type::Int,
+            name_span: span(),
+            name: "x".to_string(),
+            init: Some(Expr::IntLiteral {
+                value: 3,
+                span: span(),
+            }),
+        },
+        Statement::ExprStatement(Expr::CompoundAssign {
+            name_span: span(),
+            name: "x".to_string(),
+            op: BinaryOp::Add,
+            op_span: span(),
+            value: Box::new(Expr::IntLiteral {
+                value: 4,
+                span: span(),
+            }),
+        }),
+        Statement::Return(Expr::Variable {
+            name: "x".to_string(),
+            span: span(),
+        }),
+    ]);
+
+    check(&program).expect("semantic check should succeed");
+}
+
+#[test]
+fn accepts_compound_assignment_to_char_from_int_expression() {
+    let program = main_program(vec![
+        Statement::VarDecl {
+            ty: Type::Char,
+            name_span: span(),
+            name: "c".to_string(),
+            init: Some(Expr::IntLiteral {
+                value: 1,
+                span: span(),
+            }),
+        },
+        Statement::ExprStatement(Expr::CompoundAssign {
+            name_span: span(),
+            name: "c".to_string(),
+            op: BinaryOp::Add,
+            op_span: span(),
+            value: Box::new(Expr::IntLiteral {
+                value: 2,
+                span: span(),
+            }),
+        }),
+        Statement::Return(Expr::Variable {
+            name: "c".to_string(),
+            span: span(),
+        }),
+    ]);
+
+    check(&program).expect("semantic check should succeed");
+}
+
+#[test]
+fn accepts_compound_assignment_expression_in_return() {
+    let program = main_program(vec![
+        Statement::VarDecl {
+            ty: Type::Int,
+            name_span: span(),
+            name: "x".to_string(),
+            init: Some(Expr::IntLiteral {
+                value: 3,
+                span: span(),
+            }),
+        },
+        Statement::Return(Expr::CompoundAssign {
+            name_span: span(),
+            name: "x".to_string(),
+            op: BinaryOp::Add,
+            op_span: span(),
+            value: Box::new(Expr::IntLiteral {
+                value: 4,
+                span: span(),
+            }),
+        }),
+    ]);
+
+    check(&program).expect("semantic check should succeed");
+}
+
+#[test]
 fn rejects_assignment_expression_to_undeclared_local() {
     let program = main_program(vec![Statement::Return(Expr::Assign {
         name_span: span(),
@@ -1238,8 +1327,7 @@ fn accepts_int_return_from_char_expression() {
 }
 
 #[test]
-fn binary_type_errors_point_at_operator() {
-    let op_span = span_from(10, 11);
+fn accepts_binary_expression_between_char_and_int() {
     let program = main_program(vec![
         Statement::VarDecl {
             ty: Type::Char,
@@ -1255,7 +1343,7 @@ fn binary_type_errors_point_at_operator() {
         },
         Statement::Return(Expr::Binary {
             op: BinaryOp::Add,
-            op_span,
+            op_span: span(),
             left: Box::new(Expr::Variable {
                 name: "c".to_string(),
                 span: span(),
@@ -1267,15 +1355,7 @@ fn binary_type_errors_point_at_operator() {
         }),
     ]);
 
-    let err = check(&program).expect_err("semantic check should fail");
-
-    assert_eq!(err.span, op_span);
-    assert!(
-        err.message
-            .contains("invalid operands to binary operator 'Add'")
-    );
-    assert!(err.message.contains("left operand has type 'Char'"));
-    assert!(err.message.contains("right operand has type 'Int'"));
+    check(&program).expect("semantic check should succeed");
 }
 
 #[test]

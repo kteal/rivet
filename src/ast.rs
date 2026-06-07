@@ -92,6 +92,13 @@ pub enum Expr {
         name_span: Span,
         value: Box<Expr>,
     },
+    CompoundAssign {
+        name: String,
+        name_span: Span,
+        op: BinaryOp,
+        op_span: Span,
+        value: Box<Expr>,
+    },
 }
 
 impl Expr {
@@ -103,6 +110,7 @@ impl Expr {
             Expr::Binary { op_span, .. } => *op_span,
             Expr::Call { name_span, .. } => *name_span,
             Expr::Assign { name_span, .. } => *name_span,
+            Expr::CompoundAssign { name_span, .. } => *name_span,
         }
     }
 }

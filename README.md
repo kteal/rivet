@@ -2,7 +2,7 @@
 
 `rivet` is a C compiler written in Rust that targets RV32IM assembly. It is working toward a C23 implementation and currently implements a small C23 subset.
 
-It currently supports integer and character literals, `int` and `char` local variables, assignment expressions, blocks, expression statements, empty statements, `if` / `else`, `while`, `do` / `while`, `for`, `break`, `continue`, return statements, comments, arithmetic, unary, comparison, bitwise, and short-circuiting logical operators with C-like precedence. It also supports multiple functions, parameters, and calls with up to 8 arguments passed in RISC-V argument registers.
+It currently supports a small C subset with `int` and `char`, local variables, functions, calls, block scope, common control flow, assignment expressions, compound assignments, and most integer operators with C-like precedence. It emits RV32IM assembly and reports lexer, parser, and semantic errors with source locations.
 
 The current language subset supports programs shaped like:
 
@@ -29,7 +29,7 @@ int adjust(int value, int mask) {
     char newline = '\n';
 
     do {
-        value = value + 1;
+        value += 1;
     } while (value < 6);
 
     if ((value & mask) == 6 && newline == 10) {
@@ -164,10 +164,10 @@ Expressions and operators:
 - [x] expression statements
 - [x] empty statements
 - [x] logical `&&` and `||` with short-circuiting
+- [x] compound assignments: `+= -= *= /= %= &= |= ^= <<= >>=`
 - [ ] conditional operator `?:`
 - [ ] comma operator
 - [ ] prefix and postfix `++` / `--`
-- [ ] compound assignments: `+= -= *= /= %= &= |= ^= <<= >>=`
 - [ ] casts
 - [ ] `sizeof`
 - [ ] `_Alignof` / `alignof`
@@ -178,9 +178,9 @@ Types and semantic analysis:
 
 - [x] semantic errors for undeclared and duplicate locals
 - [x] basic type checking and implicit conversions for `int` and `char`
+- [x] `char`
 - [ ] full integer conversion rules
 - [ ] signedness: `signed`, `unsigned`
-- [x] `char`
 - [ ] other non-`int` scalar types: `short`, `long`
 - [ ] fixed-width and standard integer typedef compatibility
 - [ ] `bool`, `true`, `false`
@@ -219,10 +219,10 @@ Objects, aggregate types, and declarators:
 
 Toolchain and library compatibility:
 
+- [x] diagnostics with source locations
 - [ ] standard header strategy
 - [ ] minimal hosted C runtime integration
 - [ ] standard library calls through external symbols
-- [x] diagnostics with source locations
 - [ ] warnings vs errors
 - [ ] separate compilation and object files
 - [ ] linker/assembler integration beyond the current assembly output

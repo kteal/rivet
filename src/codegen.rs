@@ -172,6 +172,16 @@ impl Codegen {
         offset
     }
 
+    fn push_a0(&mut self) {
+        self.emit_line(format_args!("addi sp, sp, -4"));
+        self.emit_line(format_args!("sw a0, 0(sp)"));
+    }
+
+    fn pop_t0(&mut self) {
+        self.emit_line(format_args!("lw t0, 0(sp)"));
+        self.emit_line(format_args!("addi sp, sp, 4"));
+    }
+
     fn emit(&mut self, args: fmt::Arguments) {
         self.out.write_fmt(args).unwrap();
     }
@@ -252,28 +262,7 @@ impl Codegen {
         self.emit_label(&end_label);
     }
 
-    fn emit_binary(&mut self, op: &BinaryOp, left: &Expr, right: &Expr) {
-        // Short-circuit binary operations
-        match op {
-            BinaryOp::LogicalAnd => {
-                self.emit_logical_and(left, right);
-                return;
-            }
-            BinaryOp::LogicalOr => {
-                self.emit_logical_or(left, right);
-                return;
-            }
-            _ => {}
-        }
-
-        // Fully-evaluated binary operations
-        self.emit_expr(left);
-        self.emit_line(format_args!("addi sp, sp, -4"));
-        self.emit_line(format_args!("sw a0, 0(sp)"));
-        self.emit_expr(right);
-        self.emit_line(format_args!("lw t0, 0(sp)"));
-        self.emit_line(format_args!("addi sp, sp, 4"));
-
+    fn emit_binary_op(&mut self, op: &BinaryOp) {
         match op {
             BinaryOp::Add => self.emit_line(format_args!("add a0, t0, a0")),
             BinaryOp::Subtract => self.emit_line(format_args!("sub a0, t0, a0")),
@@ -305,6 +294,43 @@ impl Codegen {
             BinaryOp::ShiftRight => self.emit_line(format_args!("sra a0, t0, a0")),
             BinaryOp::LogicalAnd | BinaryOp::LogicalOr => unreachable!(),
         };
+    }
+
+    fn emit_binary(&mut self, op: &BinaryOp, left: &Expr, right: &Expr) {
+        // Short-circuit binary operations
+        match op {
+            BinaryOp::LogicalAnd => {
+                self.emit_logical_and(left, right);
+                return;
+            }
+            BinaryOp::LogicalOr => {
+                self.emit_logical_or(left, right);
+                return;
+            }
+            _ => {}
+        }
+
+        // Fully-evaluated binary operations
+        self.emit_expr(left);
+        self.push_a0();
+        self.emit_expr(right);
+        self.pop_t0();
+
+        self.emit_binary_op(op);
+    }
+
+    fn emit_compound_assign(&mut self, name: &str, op: &BinaryOp, value: &Expr) {
+        let local = self
+            .resolve_local(name)
+            .expect("compound assignment to undefined variable");
+
+        self.emit_load_local(local);
+        self.push_a0();
+        self.emit_expr(value);
+        self.pop_t0();
+        self.emit_binary_op(op);
+
+        self.emit_store_local(local);
     }
 
     fn emit_expr(&mut self, expr: &Expr) {
@@ -363,6 +389,15 @@ impl Codegen {
                     .resolve_local(name)
                     .expect("assignment to undefined variable");
                 self.emit_store_local(local);
+            }
+            Expr::CompoundAssign {
+                name,
+                name_span: _,
+                op,
+                op_span: _,
+                value,
+            } => {
+                self.emit_compound_assign(name, op, value);
             }
         }
     }

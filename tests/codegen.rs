@@ -1221,6 +1221,134 @@ fn narrows_char_assignment() {
 }
 
 #[test]
+fn generates_compound_assignment() {
+    let program = Program {
+        functions: vec![Function {
+            return_type: Type::Int,
+            name_span: span(),
+            name: "main".to_string(),
+            params: vec![],
+            body: vec![
+                Statement::VarDecl {
+                    ty: Type::Int,
+                    name_span: span(),
+                    name: "x".to_string(),
+                    init: Some(Expr::IntLiteral {
+                        value: 3,
+                        span: span(),
+                    }),
+                },
+                Statement::ExprStatement(Expr::CompoundAssign {
+                    name_span: span(),
+                    name: "x".to_string(),
+                    op: BinaryOp::Add,
+                    op_span: span(),
+                    value: Box::new(Expr::IntLiteral {
+                        value: 4,
+                        span: span(),
+                    }),
+                }),
+                Statement::Return(Expr::Variable {
+                    name: "x".to_string(),
+                    span: span(),
+                }),
+            ],
+        }],
+        eof_span: span(),
+    };
+
+    let asm = generate_raw_with_codegen(&program);
+
+    assert!(asm.contains(
+        "    lw a0, -12(s0)\n    addi sp, sp, -4\n    sw a0, 0(sp)\n    li a0, 4\n    lw t0, 0(sp)\n    addi sp, sp, 4\n    add a0, t0, a0\n    sw a0, -12(s0)\n"
+    ));
+}
+
+#[test]
+fn generates_compound_assignment_expression_result() {
+    let program = Program {
+        functions: vec![Function {
+            return_type: Type::Int,
+            name_span: span(),
+            name: "main".to_string(),
+            params: vec![],
+            body: vec![
+                Statement::VarDecl {
+                    ty: Type::Int,
+                    name_span: span(),
+                    name: "x".to_string(),
+                    init: Some(Expr::IntLiteral {
+                        value: 3,
+                        span: span(),
+                    }),
+                },
+                Statement::Return(Expr::CompoundAssign {
+                    name_span: span(),
+                    name: "x".to_string(),
+                    op: BinaryOp::Add,
+                    op_span: span(),
+                    value: Box::new(Expr::IntLiteral {
+                        value: 4,
+                        span: span(),
+                    }),
+                }),
+            ],
+        }],
+        eof_span: span(),
+    };
+
+    let asm = generate_raw_with_codegen(&program);
+
+    assert!(asm.contains(
+        "    lw a0, -12(s0)\n    addi sp, sp, -4\n    sw a0, 0(sp)\n    li a0, 4\n    lw t0, 0(sp)\n    addi sp, sp, 4\n    add a0, t0, a0\n    sw a0, -12(s0)\n    j main_end\n"
+    ));
+}
+
+#[test]
+fn narrows_char_compound_assignment() {
+    let program = Program {
+        functions: vec![Function {
+            return_type: Type::Int,
+            name_span: span(),
+            name: "main".to_string(),
+            params: vec![],
+            body: vec![
+                Statement::VarDecl {
+                    ty: Type::Char,
+                    name_span: span(),
+                    name: "c".to_string(),
+                    init: Some(Expr::IntLiteral {
+                        value: 250,
+                        span: span(),
+                    }),
+                },
+                Statement::ExprStatement(Expr::CompoundAssign {
+                    name_span: span(),
+                    name: "c".to_string(),
+                    op: BinaryOp::Add,
+                    op_span: span(),
+                    value: Box::new(Expr::IntLiteral {
+                        value: 10,
+                        span: span(),
+                    }),
+                }),
+                Statement::Return(Expr::Variable {
+                    name: "c".to_string(),
+                    span: span(),
+                }),
+            ],
+        }],
+        eof_span: span(),
+    };
+
+    let asm = generate_raw_with_codegen(&program);
+
+    assert!(asm.contains(
+        "    lbu a0, -12(s0)\n    addi sp, sp, -4\n    sw a0, 0(sp)\n    li a0, 10\n    lw t0, 0(sp)\n    addi sp, sp, 4\n    add a0, t0, a0\n    andi a0, a0, 255\n    sb a0, -12(s0)\n"
+    ));
+}
+
+#[test]
 fn narrows_char_return_value() {
     let program = Program {
         functions: vec![Function {

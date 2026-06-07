@@ -21,25 +21,35 @@ pub enum TokenKind {
     RBrace,
     Semicolon,
     Plus,
+    PlusEqual,
     Minus,
+    MinusEqual,
     Star,
+    StarEqual,
     Slash,
+    SlashEqual,
     Percent,
+    PercentEqual,
     Equal,
     EqualEqual,
     BangEqual,
     Less,
     LessEqual,
+    LessLess,
+    LessLessEqual,
     Greater,
     GreaterEqual,
+    GreaterGreater,
+    GreaterGreaterEqual,
     Bang,
     Tilde,
     Ampersand,
-    Caret,
-    Pipe,
-    LessLess,
-    GreaterGreater,
+    AmpersandEqual,
     AmpersandAmpersand,
+    Caret,
+    CaretEqual,
+    Pipe,
+    PipeEqual,
     PipePipe,
     Comma,
     Eof,
@@ -102,9 +112,9 @@ impl<'a> Lexer<'a> {
                     let token = self.lex_char_literal()?;
                     self.push_token(token);
                 }
-                '+' => self.advance_and_push(TokenKind::Plus),
-                '-' => self.advance_and_push(TokenKind::Minus),
-                '*' => self.advance_and_push(TokenKind::Star),
+                '+' => self.advance_and_push_if_next('=', TokenKind::Plus, TokenKind::PlusEqual),
+                '-' => self.advance_and_push_if_next('=', TokenKind::Minus, TokenKind::MinusEqual),
+                '*' => self.advance_and_push_if_next('=', TokenKind::Star, TokenKind::StarEqual),
                 '/' => {
                     let start = self.offset;
                     self.advance();
@@ -112,12 +122,17 @@ impl<'a> Lexer<'a> {
                         self.skip_line_comment();
                     } else if self.consume_if('*') {
                         self.skip_block_comment(start)?
+                    } else if self.consume_if('=') {
+                        let end = self.offset;
+                        self.push(TokenKind::SlashEqual, Span { start, end });
                     } else {
                         let end = self.offset;
                         self.push(TokenKind::Slash, Span { start, end })
                     }
                 }
-                '%' => self.advance_and_push(TokenKind::Percent),
+                '%' => {
+                    self.advance_and_push_if_next('=', TokenKind::Percent, TokenKind::PercentEqual)
+                }
                 '=' => self.advance_and_push_if_next('=', TokenKind::Equal, TokenKind::EqualEqual),
                 '!' => self.advance_and_push_if_next('=', TokenKind::Bang, TokenKind::BangEqual),
                 '<' => {
@@ -127,8 +142,13 @@ impl<'a> Lexer<'a> {
                         let end = self.offset;
                         self.push(TokenKind::LessEqual, Span { start, end });
                     } else if self.consume_if('<') {
-                        let end = self.offset;
-                        self.push(TokenKind::LessLess, Span { start, end });
+                        if self.consume_if('=') {
+                            let end = self.offset;
+                            self.push(TokenKind::LessLessEqual, Span { start, end });
+                        } else {
+                            let end = self.offset;
+                            self.push(TokenKind::LessLess, Span { start, end });
+                        }
                     } else {
                         let end = self.offset;
                         self.push(TokenKind::Less, Span { start, end });
@@ -141,21 +161,48 @@ impl<'a> Lexer<'a> {
                         let end = self.offset;
                         self.push(TokenKind::GreaterEqual, Span { start, end });
                     } else if self.consume_if('>') {
-                        let end = self.offset;
-                        self.push(TokenKind::GreaterGreater, Span { start, end });
+                        if self.consume_if('=') {
+                            let end = self.offset;
+                            self.push(TokenKind::GreaterGreaterEqual, Span { start, end });
+                        } else {
+                            let end = self.offset;
+                            self.push(TokenKind::GreaterGreater, Span { start, end });
+                        }
                     } else {
                         let end = self.offset;
                         self.push(TokenKind::Greater, Span { start, end });
                     }
                 }
                 '~' => self.advance_and_push(TokenKind::Tilde),
-                '&' => self.advance_and_push_if_next(
-                    '&',
-                    TokenKind::Ampersand,
-                    TokenKind::AmpersandAmpersand,
-                ),
-                '^' => self.advance_and_push(TokenKind::Caret),
-                '|' => self.advance_and_push_if_next('|', TokenKind::Pipe, TokenKind::PipePipe),
+                '&' => {
+                    let start = self.offset;
+                    self.advance();
+                    if self.consume_if('=') {
+                        let end = self.offset;
+                        self.push(TokenKind::AmpersandEqual, Span { start, end });
+                    } else if self.consume_if('&') {
+                        let end = self.offset;
+                        self.push(TokenKind::AmpersandAmpersand, Span { start, end });
+                    } else {
+                        let end = self.offset;
+                        self.push(TokenKind::Ampersand, Span { start, end });
+                    }
+                }
+                '^' => self.advance_and_push_if_next('=', TokenKind::Caret, TokenKind::CaretEqual),
+                '|' => {
+                    let start = self.offset;
+                    self.advance();
+                    if self.consume_if('=') {
+                        let end = self.offset;
+                        self.push(TokenKind::PipeEqual, Span { start, end });
+                    } else if self.consume_if('|') {
+                        let end = self.offset;
+                        self.push(TokenKind::PipePipe, Span { start, end });
+                    } else {
+                        let end = self.offset;
+                        self.push(TokenKind::Pipe, Span { start, end });
+                    }
+                }
                 _ => {
                     let start = self.offset;
                     let ch = self.advance().unwrap();
@@ -610,6 +657,61 @@ mod tests {
                 TokenKind::LessLess,
                 TokenKind::IntLiteral(2),
                 TokenKind::GreaterGreater,
+                TokenKind::IntLiteral(1),
+                TokenKind::Semicolon,
+                TokenKind::Eof,
+            ]
+        );
+    }
+
+    #[test]
+    fn lexes_compound_assignment_operators() {
+        let tokens = lex_with_struct(
+            "x += 1; x -= 1; x *= 1; x /= 1; x %= 1; x &= 1; x |= 1; x ^= 1; x <<= 1; x >>= 1;",
+        )
+        .expect("lexing should succeed");
+
+        assert_eq!(
+            token_kinds(&tokens),
+            vec![
+                TokenKind::Ident("x".to_string()),
+                TokenKind::PlusEqual,
+                TokenKind::IntLiteral(1),
+                TokenKind::Semicolon,
+                TokenKind::Ident("x".to_string()),
+                TokenKind::MinusEqual,
+                TokenKind::IntLiteral(1),
+                TokenKind::Semicolon,
+                TokenKind::Ident("x".to_string()),
+                TokenKind::StarEqual,
+                TokenKind::IntLiteral(1),
+                TokenKind::Semicolon,
+                TokenKind::Ident("x".to_string()),
+                TokenKind::SlashEqual,
+                TokenKind::IntLiteral(1),
+                TokenKind::Semicolon,
+                TokenKind::Ident("x".to_string()),
+                TokenKind::PercentEqual,
+                TokenKind::IntLiteral(1),
+                TokenKind::Semicolon,
+                TokenKind::Ident("x".to_string()),
+                TokenKind::AmpersandEqual,
+                TokenKind::IntLiteral(1),
+                TokenKind::Semicolon,
+                TokenKind::Ident("x".to_string()),
+                TokenKind::PipeEqual,
+                TokenKind::IntLiteral(1),
+                TokenKind::Semicolon,
+                TokenKind::Ident("x".to_string()),
+                TokenKind::CaretEqual,
+                TokenKind::IntLiteral(1),
+                TokenKind::Semicolon,
+                TokenKind::Ident("x".to_string()),
+                TokenKind::LessLessEqual,
+                TokenKind::IntLiteral(1),
+                TokenKind::Semicolon,
+                TokenKind::Ident("x".to_string()),
+                TokenKind::GreaterGreaterEqual,
                 TokenKind::IntLiteral(1),
                 TokenKind::Semicolon,
                 TokenKind::Eof,

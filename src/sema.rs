@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::ast::{Expr, Function, Param, Program, Statement, Type};
+use crate::ast::{BinaryOp, Expr, Function, Param, Program, Statement, Type};
 use crate::lexer::Span;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -71,6 +71,10 @@ impl Checker {
         target == value
             || (target == Type::Char && value == Type::Int)
             || (target == Type::Int && value == Type::Char)
+    }
+
+    fn is_integer(ty: Type) -> bool {
+        matches!(ty, Type::Int | Type::Char)
     }
 
     fn declare_local(&mut self, ty: Type, name: &str, span: Span) -> Result<(), SemanticError> {
@@ -171,6 +175,28 @@ impl Checker {
         Ok(())
     }
 
+    fn check_binary_op_types(
+        &self,
+        op: &BinaryOp,
+        op_span: &Span,
+        left_type: Type,
+        right_type: Type,
+    ) -> Result<Type, SemanticError> {
+        if Self::is_integer(left_type) && Self::is_integer(right_type) {
+            Ok(Type::Int)
+        } else {
+            Err(SemanticError {
+                message: format!(
+                    "invalid operands to binary operator '{:?}'\n\
+                     left operand has type '{:?}'\n\
+                     right operand has type '{:?}'",
+                    op, left_type, right_type
+                ),
+                span: *op_span,
+            })
+        }
+    }
+
     fn check_expr(&self, expr: &Expr) -> Result<Type, SemanticError> {
         match expr {
             Expr::IntLiteral { .. } => Ok(Type::Int),
@@ -192,19 +218,9 @@ impl Checker {
                 let left_type = self.check_expr(left)?;
                 let right_type = self.check_expr(right)?;
 
-                if left_type != right_type {
-                    return Err(SemanticError {
-                        message: format!(
-                            "invalid operands to binary operator '{:?}'\n\
-                             left operand has type '{:?}'\n\
-                             right operand has type '{:?}'",
-                            op, left_type, right_type
-                        ),
-                        span: *op_span,
-                    });
-                }
+                let result_type = self.check_binary_op_types(op, op_span, left_type, right_type)?;
 
-                Ok(Type::Int)
+                Ok(result_type)
             }
             Expr::Call {
                 name,
@@ -241,6 +257,30 @@ impl Checker {
                             "cannot assign value of type '{value_type:?}' to variable of type '{target_type:?}'"
                         ),
                         span: *name_span,
+                    });
+                }
+
+                Ok(target_type)
+            }
+            Expr::CompoundAssign {
+                name,
+                name_span,
+                op,
+                op_span,
+                value,
+            } => {
+                let target_type = self.resolve_local(name, *name_span)?;
+                let value_type = self.check_expr(value)?;
+
+                let result_type =
+                    self.check_binary_op_types(op, op_span, target_type, value_type)?;
+
+                if !Self::is_assignable(target_type, result_type) {
+                    return Err(SemanticError {
+                        message: format!(
+                            "cannot assign result of type '{result_type:?}' to variable of type '{target_type:?}'"
+                        ),
+                        span: *op_span,
                     });
                 }
 
