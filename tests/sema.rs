@@ -676,8 +676,11 @@ fn accepts_declared_local_usage() {
             }),
         },
         Statement::ExprStatement(Expr::Assign {
-            name_span: span(),
-            name: "x".to_string(),
+            op_span: span(),
+            target: Box::new(Expr::Variable {
+                name: "x".to_string(),
+                span: span(),
+            }),
             value: Box::new(Expr::Binary {
                 op: BinaryOp::Add,
                 op_span: span(),
@@ -710,8 +713,11 @@ fn accepts_declaration_without_initializer_assigned_before_use() {
             init: None,
         },
         Statement::ExprStatement(Expr::Assign {
-            name_span: span(),
-            name: "x".to_string(),
+            op_span: span(),
+            target: Box::new(Expr::Variable {
+                name: "x".to_string(),
+                span: span(),
+            }),
             value: Box::new(Expr::IntLiteral {
                 value: 3,
                 span: span(),
@@ -736,8 +742,11 @@ fn accepts_assignment_expression_in_return() {
             init: None,
         },
         Statement::Return(Expr::Assign {
-            name_span: span(),
-            name: "x".to_string(),
+            op_span: span(),
+            target: Box::new(Expr::Variable {
+                name: "x".to_string(),
+                span: span(),
+            }),
             value: Box::new(Expr::IntLiteral {
                 value: 3,
                 span: span(),
@@ -761,8 +770,10 @@ fn accepts_compound_assignment_to_int() {
             }),
         },
         Statement::ExprStatement(Expr::CompoundAssign {
-            name_span: span(),
-            name: "x".to_string(),
+            target: Box::new(Expr::Variable {
+                name: "x".to_string(),
+                span: span(),
+            }),
             op: BinaryOp::Add,
             op_span: span(),
             value: Box::new(Expr::IntLiteral {
@@ -792,8 +803,10 @@ fn accepts_compound_assignment_to_char_from_int_expression() {
             }),
         },
         Statement::ExprStatement(Expr::CompoundAssign {
-            name_span: span(),
-            name: "c".to_string(),
+            target: Box::new(Expr::Variable {
+                name: "c".to_string(),
+                span: span(),
+            }),
             op: BinaryOp::Add,
             op_span: span(),
             value: Box::new(Expr::IntLiteral {
@@ -823,8 +836,10 @@ fn accepts_compound_assignment_expression_in_return() {
             }),
         },
         Statement::Return(Expr::CompoundAssign {
-            name_span: span(),
-            name: "x".to_string(),
+            target: Box::new(Expr::Variable {
+                name: "x".to_string(),
+                span: span(),
+            }),
             op: BinaryOp::Add,
             op_span: span(),
             value: Box::new(Expr::IntLiteral {
@@ -840,8 +855,11 @@ fn accepts_compound_assignment_expression_in_return() {
 #[test]
 fn rejects_assignment_expression_to_undeclared_local() {
     let program = main_program(vec![Statement::Return(Expr::Assign {
-        name_span: span(),
-        name: "x".to_string(),
+        op_span: span(),
+        target: Box::new(Expr::Variable {
+            name: "x".to_string(),
+            span: span(),
+        }),
         value: Box::new(Expr::IntLiteral {
             value: 3,
             span: span(),
@@ -851,6 +869,135 @@ fn rejects_assignment_expression_to_undeclared_local() {
     let err = check(&program).expect_err("semantic check should fail");
 
     assert_eq!(err.message, "undeclared local variable 'x'");
+}
+
+#[test]
+fn rejects_assignment_to_non_lvalue_expression() {
+    let op_span = span_from(10, 11);
+    let program = main_program(vec![Statement::Return(Expr::Assign {
+        target: Box::new(Expr::Binary {
+            op: BinaryOp::Add,
+            op_span: span(),
+            left: Box::new(Expr::IntLiteral {
+                value: 1,
+                span: span(),
+            }),
+            right: Box::new(Expr::IntLiteral {
+                value: 2,
+                span: span(),
+            }),
+        }),
+        op_span,
+        value: Box::new(Expr::IntLiteral {
+            value: 3,
+            span: span(),
+        }),
+    })]);
+
+    let err = check(&program).expect_err("semantic check should fail");
+
+    assert_eq!(err.span, op_span);
+    assert_eq!(err.message, "cannot assign to non-variable expression");
+}
+
+#[test]
+fn rejects_compound_assignment_to_non_lvalue_expression() {
+    let op_span = span_from(10, 12);
+    let program = main_program(vec![Statement::Return(Expr::CompoundAssign {
+        target: Box::new(Expr::Binary {
+            op: BinaryOp::Add,
+            op_span: span(),
+            left: Box::new(Expr::IntLiteral {
+                value: 1,
+                span: span(),
+            }),
+            right: Box::new(Expr::IntLiteral {
+                value: 2,
+                span: span(),
+            }),
+        }),
+        op: BinaryOp::Add,
+        op_span,
+        value: Box::new(Expr::IntLiteral {
+            value: 3,
+            span: span(),
+        }),
+    })]);
+
+    let err = check(&program).expect_err("semantic check should fail");
+
+    assert_eq!(err.span, op_span);
+    assert_eq!(err.message, "cannot assign to non-variable expression");
+}
+
+#[test]
+fn accepts_prefix_and_postfix_increment_decrement() {
+    let program = main_program(vec![
+        Statement::VarDecl {
+            ty: Type::Int,
+            name_span: span(),
+            name: "x".to_string(),
+            init: Some(Expr::IntLiteral {
+                value: 1,
+                span: span(),
+            }),
+        },
+        Statement::ExprStatement(Expr::PrefixInc {
+            expr: Box::new(Expr::Variable {
+                name: "x".to_string(),
+                span: span(),
+            }),
+            op_span: span(),
+        }),
+        Statement::ExprStatement(Expr::PostfixInc {
+            expr: Box::new(Expr::Variable {
+                name: "x".to_string(),
+                span: span(),
+            }),
+            op_span: span(),
+        }),
+        Statement::ExprStatement(Expr::PrefixDec {
+            expr: Box::new(Expr::Variable {
+                name: "x".to_string(),
+                span: span(),
+            }),
+            op_span: span(),
+        }),
+        Statement::Return(Expr::PostfixDec {
+            expr: Box::new(Expr::Variable {
+                name: "x".to_string(),
+                span: span(),
+            }),
+            op_span: span(),
+        }),
+    ]);
+
+    check(&program).expect("semantic check should succeed");
+}
+
+#[test]
+fn rejects_increment_of_non_lvalue_expression() {
+    let op_span = span_from(10, 12);
+    let program = main_program(vec![Statement::Return(Expr::PostfixInc {
+        expr: Box::new(Expr::Binary {
+            op: BinaryOp::Add,
+            op_span: span(),
+            left: Box::new(Expr::IntLiteral {
+                value: 1,
+                span: span(),
+            }),
+            right: Box::new(Expr::IntLiteral {
+                value: 2,
+                span: span(),
+            }),
+        }),
+        op_span,
+    })]);
+
+    let err = check(&program).expect_err("semantic check should fail");
+
+    assert_eq!(err.span, op_span);
+    assert_eq!(err.message, "cannot assign to non-variable expression");
 }
 
 #[test]
@@ -940,8 +1087,11 @@ fn rejects_duplicate_local_declaration() {
 fn rejects_assignment_to_undeclared_local() {
     let program = main_program(vec![
         Statement::ExprStatement(Expr::Assign {
-            name_span: span(),
-            name: "x".to_string(),
+            op_span: span(),
+            target: Box::new(Expr::Variable {
+                name: "x".to_string(),
+                span: span(),
+            }),
             value: Box::new(Expr::IntLiteral {
                 value: 1,
                 span: span(),
@@ -1145,8 +1295,11 @@ fn accepts_char_assignment_from_int_expression() {
             init: None,
         },
         Statement::ExprStatement(Expr::Assign {
-            name_span: span(),
-            name: "c".to_string(),
+            op_span: span(),
+            target: Box::new(Expr::Variable {
+                name: "c".to_string(),
+                span: span(),
+            }),
             value: Box::new(Expr::Variable {
                 name: "i".to_string(),
                 span: span(),
@@ -1548,8 +1701,11 @@ fn accepts_while_with_local_condition_and_body() {
             },
             body: Box::new(Statement::Block(vec![Statement::ExprStatement(
                 Expr::Assign {
-                    name_span: span(),
-                    name: "x".to_string(),
+                    op_span: span(),
+                    target: Box::new(Expr::Variable {
+                        name: "x".to_string(),
+                        span: span(),
+                    }),
                     value: Box::new(Expr::Binary {
                         op: BinaryOp::Subtract,
                         op_span: span(),

@@ -322,6 +322,46 @@ fn qemu_compound_assignment_programs_return_expected_values() {
 
 #[test]
 #[ignore = "requires qemu-riscv32 and riscv64-linux-gnu binutils"]
+fn qemu_increment_decrement_programs_return_expected_values() {
+    run_qemu_case(
+        "prefix-increment-result",
+        "int main() {\n    int x = 1;\n    return ++x;\n}\n",
+        2,
+    );
+    run_qemu_case(
+        "postfix-increment-result",
+        "int main() {\n    int x = 1;\n    return x++;\n}\n",
+        1,
+    );
+    run_qemu_case(
+        "postfix-increment-side-effect",
+        "int main() {\n    int x = 1;\n    x++;\n    return x;\n}\n",
+        2,
+    );
+    run_qemu_case(
+        "prefix-decrement-result",
+        "int main() {\n    int x = 1;\n    return --x;\n}\n",
+        0,
+    );
+    run_qemu_case(
+        "postfix-decrement-result",
+        "int main() {\n    int x = 1;\n    return x--;\n}\n",
+        1,
+    );
+    run_qemu_case(
+        "char-prefix-increment-narrows",
+        "int main() {\n    char c = 255;\n    ++c;\n    return c;\n}\n",
+        0,
+    );
+    run_qemu_case(
+        "char-postfix-increment-result",
+        "int main() {\n    char c = 255;\n    return c++;\n}\n",
+        255,
+    );
+}
+
+#[test]
+#[ignore = "requires qemu-riscv32 and riscv64-linux-gnu binutils"]
 fn qemu_char_narrowing_programs_return_expected_values() {
     run_qemu_case(
         "char-local-initializer-narrows",

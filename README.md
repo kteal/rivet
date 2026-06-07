@@ -2,7 +2,7 @@
 
 `rivet` is a C compiler written in Rust that targets RV32IM assembly. It is working toward a C23 implementation and currently implements a small C23 subset.
 
-It currently supports a small C subset with `int` and `char`, local variables, functions, calls, block scope, common control flow, assignment expressions, compound assignments, and most integer operators with C-like precedence. It emits RV32IM assembly and reports lexer, parser, and semantic errors with source locations.
+It currently supports a small C subset with `int` and `char`, local variables, functions, calls, block scope, common control flow, assignment expressions, compound assignments, prefix/postfix increment and decrement, and most integer operators with C-like precedence. It emits RV32IM assembly and reports lexer, parser, and semantic errors with source locations.
 
 The current language subset supports programs shaped like:
 
@@ -10,7 +10,7 @@ The current language subset supports programs shaped like:
 int triangular_until(int x, int stop) {
     int sum = 0;
 
-    for (int i = x; i > 0; i = i - 1) {
+    for (int i = x; i > 0; i--) {
         if (i == stop) {
             break;
         }
@@ -29,7 +29,7 @@ int adjust(int value, int mask) {
     char newline = '\n';
 
     do {
-        value += 1;
+        value++;
     } while (value < 6);
 
     if ((value & mask) == 6 && newline == 10) {
@@ -165,9 +165,9 @@ Expressions and operators:
 - [x] empty statements
 - [x] logical `&&` and `||` with short-circuiting
 - [x] compound assignments: `+= -= *= /= %= &= |= ^= <<= >>=`
+- [x] prefix and postfix `++` / `--`
 - [ ] conditional operator `?:`
 - [ ] comma operator
-- [ ] prefix and postfix `++` / `--`
 - [ ] casts
 - [ ] `sizeof`
 - [ ] `_Alignof` / `alignof`

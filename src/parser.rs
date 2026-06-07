@@ -213,6 +213,32 @@ impl Parser {
         }
     }
 
+    fn parse_postfix(&mut self) -> Result<Expr, ParseError> {
+        let mut expr = self.parse_primary()?;
+
+        loop {
+            match self.peek_kind() {
+                TokenKind::PlusPlus => {
+                    let op = self.advance();
+                    expr = Expr::PostfixInc {
+                        expr: Box::new(expr),
+                        op_span: op.span,
+                    }
+                }
+                TokenKind::MinusMinus => {
+                    let op = self.advance();
+                    expr = Expr::PostfixDec {
+                        expr: Box::new(expr),
+                        op_span: op.span,
+                    }
+                }
+                _ => break,
+            }
+        }
+
+        Ok(expr)
+    }
+
     fn parse_unary_op(&mut self) -> Option<(UnaryOp, Span)> {
         match self.peek_kind() {
             TokenKind::Minus => {
@@ -232,6 +258,22 @@ impl Parser {
     }
 
     fn parse_unary(&mut self) -> Result<Expr, ParseError> {
+        if *self.peek_kind() == TokenKind::PlusPlus {
+            let op = self.advance();
+            let expr = Box::new(self.parse_unary()?);
+            return Ok(Expr::PrefixInc {
+                expr,
+                op_span: op.span,
+            });
+        }
+        if *self.peek_kind() == TokenKind::MinusMinus {
+            let op = self.advance();
+            let expr = Box::new(self.parse_unary()?);
+            return Ok(Expr::PrefixDec {
+                expr,
+                op_span: op.span,
+            });
+        }
         if let Some((op, op_span)) = self.parse_unary_op() {
             let right = self.parse_unary()?;
             return Ok(Expr::Unary {
@@ -241,7 +283,7 @@ impl Parser {
             });
         }
 
-        self.parse_primary()
+        self.parse_postfix()
     }
 
     fn parse_multiplicative(&mut self) -> Result<Expr, ParseError> {
@@ -310,17 +352,9 @@ impl Parser {
         if let Some((compound_op, op_span)) = self.parse_assignment_op() {
             let value = Box::new(self.parse_assignment()?);
 
-            let Expr::Variable { name, span } = left else {
-                return Err(ParseError {
-                    message: format!("cannot assign to non-variable expression"),
-                    span: op_span,
-                });
-            };
-
             if let Some(op) = compound_op {
                 return Ok(Expr::CompoundAssign {
-                    name,
-                    name_span: span,
+                    target: Box::new(left),
                     op,
                     op_span,
                     value,
@@ -328,8 +362,8 @@ impl Parser {
             }
 
             return Ok(Expr::Assign {
-                name,
-                name_span: span,
+                target: Box::new(left),
+                op_span,
                 value,
             });
         }
@@ -490,6 +524,8 @@ impl Parser {
                 | TokenKind::Minus
                 | TokenKind::Bang
                 | TokenKind::Tilde
+                | TokenKind::PlusPlus
+                | TokenKind::MinusMinus
         )
     }
 
@@ -676,7 +712,7 @@ mod tests {
     }
 
     #[test]
-    fn assignment_target_errors_point_at_equal_token() {
+    fn parses_assignment_to_non_variable_expression() {
         let tokens = vec![
             token_with_span(TokenKind::KwReturn, 0, 6),
             token_with_span(TokenKind::LParen, 7, 8),
@@ -690,16 +726,34 @@ mod tests {
         ];
 
         let mut parser = Parser::new(tokens);
-        let err = parser
-            .parse_statement()
-            .expect_err("assignment to non-variable should fail");
+        let statement = parser.parse_statement().expect("parsing should succeed");
 
-        assert_eq!(err.span, Span { start: 15, end: 16 });
-        assert_eq!(err.message, "cannot assign to non-variable expression");
+        assert_eq!(
+            statement,
+            Statement::Return(Expr::Assign {
+                target: Box::new(Expr::Binary {
+                    op: BinaryOp::Add,
+                    op_span: Span { start: 10, end: 11 },
+                    left: Box::new(Expr::IntLiteral {
+                        value: 1,
+                        span: Span { start: 8, end: 9 },
+                    }),
+                    right: Box::new(Expr::IntLiteral {
+                        value: 2,
+                        span: Span { start: 12, end: 13 },
+                    }),
+                }),
+                op_span: Span { start: 15, end: 16 },
+                value: Box::new(Expr::IntLiteral {
+                    value: 3,
+                    span: Span { start: 17, end: 18 },
+                }),
+            })
+        );
     }
 
     #[test]
-    fn compound_assignment_target_errors_point_at_operator_token() {
+    fn parses_compound_assignment_to_non_variable_expression() {
         let tokens = vec![
             token_with_span(TokenKind::KwReturn, 0, 6),
             token_with_span(TokenKind::LParen, 7, 8),
@@ -713,12 +767,31 @@ mod tests {
         ];
 
         let mut parser = Parser::new(tokens);
-        let err = parser
-            .parse_statement()
-            .expect_err("compound assignment to non-variable should fail");
+        let statement = parser.parse_statement().expect("parsing should succeed");
 
-        assert_eq!(err.span, Span { start: 15, end: 17 });
-        assert_eq!(err.message, "cannot assign to non-variable expression");
+        assert_eq!(
+            statement,
+            Statement::Return(Expr::CompoundAssign {
+                target: Box::new(Expr::Binary {
+                    op: BinaryOp::Add,
+                    op_span: Span { start: 10, end: 11 },
+                    left: Box::new(Expr::IntLiteral {
+                        value: 1,
+                        span: Span { start: 8, end: 9 },
+                    }),
+                    right: Box::new(Expr::IntLiteral {
+                        value: 2,
+                        span: Span { start: 12, end: 13 },
+                    }),
+                }),
+                op: BinaryOp::Add,
+                op_span: Span { start: 15, end: 17 },
+                value: Box::new(Expr::IntLiteral {
+                    value: 3,
+                    span: Span { start: 18, end: 19 },
+                }),
+            })
+        );
     }
 
     #[test]
@@ -1646,8 +1719,11 @@ mod tests {
                             }),
                         },
                         Statement::ExprStatement(Expr::Assign {
-                            name_span: span(),
-                            name: "x".to_string(),
+                            op_span: span(),
+                            target: Box::new(Expr::Variable {
+                                name: "x".to_string(),
+                                span: span()
+                            }),
                             value: Box::new(Expr::Binary {
                                 op: BinaryOp::Add,
                                 op_span: span(),
@@ -1688,8 +1764,11 @@ mod tests {
         assert_eq!(
             statement,
             Statement::ExprStatement(Expr::Assign {
-                name_span: span(),
-                name: "x".to_string(),
+                op_span: span(),
+                target: Box::new(Expr::Variable {
+                    name: "x".to_string(),
+                    span: span()
+                }),
                 value: Box::new(Expr::IntLiteral {
                     value: 3,
                     span: span()
@@ -1713,8 +1792,10 @@ mod tests {
         assert_eq!(
             statement,
             Statement::ExprStatement(Expr::CompoundAssign {
-                name: "x".to_string(),
-                name_span: Span { start: 0, end: 1 },
+                target: Box::new(Expr::Variable {
+                    name: "x".to_string(),
+                    span: Span { start: 0, end: 1 },
+                }),
                 op: BinaryOp::Add,
                 op_span: Span { start: 2, end: 4 },
                 value: Box::new(Expr::IntLiteral {
@@ -1743,13 +1824,17 @@ mod tests {
         assert_eq!(
             statement,
             Statement::Return(Expr::CompoundAssign {
-                name: "x".to_string(),
-                name_span: span(),
+                target: Box::new(Expr::Variable {
+                    name: "x".to_string(),
+                    span: span()
+                }),
                 op: BinaryOp::Add,
                 op_span: span(),
                 value: Box::new(Expr::CompoundAssign {
-                    name: "y".to_string(),
-                    name_span: span(),
+                    target: Box::new(Expr::Variable {
+                        name: "y".to_string(),
+                        span: span()
+                    }),
                     op: BinaryOp::Multiply,
                     op_span: span(),
                     value: Box::new(Expr::IntLiteral {
@@ -1757,6 +1842,100 @@ mod tests {
                         span: span(),
                     }),
                 }),
+            })
+        );
+    }
+
+    #[test]
+    fn parses_prefix_increment_as_return_expression() {
+        let tokens = tokens![
+            TokenKind::KwReturn,
+            TokenKind::PlusPlus,
+            TokenKind::Ident("x".to_string()),
+            TokenKind::Semicolon,
+        ];
+
+        let mut parser = Parser::new(tokens);
+        let statement = parser.parse_statement().expect("parsing should succeed");
+
+        assert_eq!(
+            statement,
+            Statement::Return(Expr::PrefixInc {
+                expr: Box::new(Expr::Variable {
+                    name: "x".to_string(),
+                    span: span(),
+                }),
+                op_span: span(),
+            })
+        );
+    }
+
+    #[test]
+    fn parses_postfix_increment_as_return_expression() {
+        let tokens = tokens![
+            TokenKind::KwReturn,
+            TokenKind::Ident("x".to_string()),
+            TokenKind::PlusPlus,
+            TokenKind::Semicolon,
+        ];
+
+        let mut parser = Parser::new(tokens);
+        let statement = parser.parse_statement().expect("parsing should succeed");
+
+        assert_eq!(
+            statement,
+            Statement::Return(Expr::PostfixInc {
+                expr: Box::new(Expr::Variable {
+                    name: "x".to_string(),
+                    span: span(),
+                }),
+                op_span: span(),
+            })
+        );
+    }
+
+    #[test]
+    fn parses_prefix_increment_as_expression_statement() {
+        let tokens = tokens![
+            TokenKind::PlusPlus,
+            TokenKind::Ident("x".to_string()),
+            TokenKind::Semicolon,
+        ];
+
+        let mut parser = Parser::new(tokens);
+        let statement = parser.parse_statement().expect("parsing should succeed");
+
+        assert_eq!(
+            statement,
+            Statement::ExprStatement(Expr::PrefixInc {
+                expr: Box::new(Expr::Variable {
+                    name: "x".to_string(),
+                    span: span(),
+                }),
+                op_span: span(),
+            })
+        );
+    }
+
+    #[test]
+    fn parses_postfix_decrement_as_expression_statement() {
+        let tokens = tokens![
+            TokenKind::Ident("x".to_string()),
+            TokenKind::MinusMinus,
+            TokenKind::Semicolon,
+        ];
+
+        let mut parser = Parser::new(tokens);
+        let statement = parser.parse_statement().expect("parsing should succeed");
+
+        assert_eq!(
+            statement,
+            Statement::ExprStatement(Expr::PostfixDec {
+                expr: Box::new(Expr::Variable {
+                    name: "x".to_string(),
+                    span: span(),
+                }),
+                op_span: span(),
             })
         );
     }
@@ -1778,8 +1957,11 @@ mod tests {
         assert_eq!(
             statement,
             Statement::Return(Expr::Assign {
-                name_span: span(),
-                name: "x".to_string(),
+                op_span: span(),
+                target: Box::new(Expr::Variable {
+                    name: "x".to_string(),
+                    span: span()
+                }),
                 value: Box::new(Expr::IntLiteral {
                     value: 3,
                     span: span()
@@ -1807,11 +1989,17 @@ mod tests {
         assert_eq!(
             statement,
             Statement::Return(Expr::Assign {
-                name_span: span(),
-                name: "x".to_string(),
+                op_span: span(),
+                target: Box::new(Expr::Variable {
+                    name: "x".to_string(),
+                    span: span()
+                }),
                 value: Box::new(Expr::Assign {
-                    name_span: span(),
-                    name: "y".to_string(),
+                    op_span: span(),
+                    target: Box::new(Expr::Variable {
+                        name: "y".to_string(),
+                        span: span()
+                    }),
                     value: Box::new(Expr::IntLiteral {
                         value: 4,
                         span: span()
@@ -1822,7 +2010,7 @@ mod tests {
     }
 
     #[test]
-    fn rejects_assignment_to_non_variable_expression() {
+    fn parses_parenthesized_binary_assignment_target() {
         let tokens = tokens![
             TokenKind::KwReturn,
             TokenKind::LParen,
@@ -1837,11 +2025,30 @@ mod tests {
 
         let mut parser = Parser::new(tokens);
 
-        let err = parser
-            .parse_statement()
-            .expect_err("assignment target should be rejected");
+        let statement = parser.parse_statement().expect("parsing should succeed");
 
-        assert_eq!(err.message, "cannot assign to non-variable expression");
+        assert_eq!(
+            statement,
+            Statement::Return(Expr::Assign {
+                target: Box::new(Expr::Binary {
+                    op: BinaryOp::Add,
+                    op_span: span(),
+                    left: Box::new(Expr::IntLiteral {
+                        value: 1,
+                        span: span(),
+                    }),
+                    right: Box::new(Expr::IntLiteral {
+                        value: 2,
+                        span: span(),
+                    }),
+                }),
+                op_span: span(),
+                value: Box::new(Expr::IntLiteral {
+                    value: 3,
+                    span: span()
+                }),
+            })
+        );
     }
 
     #[test]
@@ -1969,8 +2176,11 @@ mod tests {
                     span: span()
                 },
                 body: Box::new(Statement::ExprStatement(Expr::Assign {
-                    name_span: span(),
-                    name: "x".to_string(),
+                    op_span: span(),
+                    target: Box::new(Expr::Variable {
+                        name: "x".to_string(),
+                        span: span()
+                    }),
                     value: Box::new(Expr::Binary {
                         op: BinaryOp::Subtract,
                         op_span: span(),
@@ -2013,8 +2223,11 @@ mod tests {
             statement,
             Statement::DoWhile {
                 body: Box::new(Statement::ExprStatement(Expr::Assign {
-                    name_span: span(),
-                    name: "x".to_string(),
+                    op_span: span(),
+                    target: Box::new(Expr::Variable {
+                        name: "x".to_string(),
+                        span: span()
+                    }),
                     value: Box::new(Expr::Binary {
                         op: BinaryOp::Subtract,
                         op_span: span(),
@@ -2921,8 +3134,11 @@ mod tests {
             statement,
             Statement::For {
                 init: Some(Box::new(Statement::ExprStatement(Expr::Assign {
-                    name_span: span(),
-                    name: "i".to_string(),
+                    op_span: span(),
+                    target: Box::new(Expr::Variable {
+                        name: "i".to_string(),
+                        span: span()
+                    }),
                     value: Box::new(Expr::IntLiteral {
                         value: 0,
                         span: span()
@@ -2941,8 +3157,11 @@ mod tests {
                     }),
                 }),
                 post: Some(Expr::Assign {
-                    name_span: span(),
-                    name: "i".to_string(),
+                    op_span: span(),
+                    target: Box::new(Expr::Variable {
+                        name: "i".to_string(),
+                        span: span()
+                    }),
                     value: Box::new(Expr::Binary {
                         op: BinaryOp::Add,
                         op_span: span(),
@@ -3013,8 +3232,11 @@ mod tests {
                     }),
                 }),
                 post: Some(Expr::Assign {
-                    name_span: span(),
-                    name: "i".to_string(),
+                    op_span: span(),
+                    target: Box::new(Expr::Variable {
+                        name: "i".to_string(),
+                        span: span()
+                    }),
                     value: Box::new(Expr::Binary {
                         op: BinaryOp::Add,
                         op_span: span(),

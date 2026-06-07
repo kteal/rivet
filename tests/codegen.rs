@@ -1095,8 +1095,11 @@ fn generates_local_variable_without_initializer() {
                     init: None,
                 },
                 Statement::ExprStatement(Expr::Assign {
-                    name_span: span(),
-                    name: "x".to_string(),
+                    op_span: span(),
+                    target: Box::new(Expr::Variable {
+                        name: "x".to_string(),
+                        span: span(),
+                    }),
                     value: Box::new(Expr::IntLiteral {
                         value: 3,
                         span: span(),
@@ -1199,8 +1202,11 @@ fn narrows_char_assignment() {
                     init: None,
                 },
                 Statement::ExprStatement(Expr::Assign {
-                    name_span: span(),
-                    name: "c".to_string(),
+                    op_span: span(),
+                    target: Box::new(Expr::Variable {
+                        name: "c".to_string(),
+                        span: span(),
+                    }),
                     value: Box::new(Expr::IntLiteral {
                         value: 300,
                         span: span(),
@@ -1239,8 +1245,10 @@ fn generates_compound_assignment() {
                     }),
                 },
                 Statement::ExprStatement(Expr::CompoundAssign {
-                    name_span: span(),
-                    name: "x".to_string(),
+                    target: Box::new(Expr::Variable {
+                        name: "x".to_string(),
+                        span: span(),
+                    }),
                     op: BinaryOp::Add,
                     op_span: span(),
                     value: Box::new(Expr::IntLiteral {
@@ -1283,8 +1291,10 @@ fn generates_compound_assignment_expression_result() {
                     }),
                 },
                 Statement::Return(Expr::CompoundAssign {
-                    name_span: span(),
-                    name: "x".to_string(),
+                    target: Box::new(Expr::Variable {
+                        name: "x".to_string(),
+                        span: span(),
+                    }),
                     op: BinaryOp::Add,
                     op_span: span(),
                     value: Box::new(Expr::IntLiteral {
@@ -1323,8 +1333,10 @@ fn narrows_char_compound_assignment() {
                     }),
                 },
                 Statement::ExprStatement(Expr::CompoundAssign {
-                    name_span: span(),
-                    name: "c".to_string(),
+                    target: Box::new(Expr::Variable {
+                        name: "c".to_string(),
+                        span: span(),
+                    }),
                     op: BinaryOp::Add,
                     op_span: span(),
                     value: Box::new(Expr::IntLiteral {
@@ -1423,8 +1435,11 @@ fn generates_assignment_expression_result() {
                     init: None,
                 },
                 Statement::Return(Expr::Assign {
-                    name_span: span(),
-                    name: "x".to_string(),
+                    op_span: span(),
+                    target: Box::new(Expr::Variable {
+                        name: "x".to_string(),
+                        span: span(),
+                    }),
                     value: Box::new(Expr::IntLiteral {
                         value: 3,
                         span: span(),
@@ -1441,6 +1456,123 @@ fn generates_assignment_expression_result() {
         asm,
         ".globl main\nmain:\n    addi sp, sp, -16\n    sw ra, 12(sp)\n    sw s0, 8(sp)\n    addi s0, sp, 16\n    li a0, 3\n    sw a0, -12(s0)\n    lw ra, 12(sp)\n    lw s0, 8(sp)\n    addi sp, sp, 16\n    ret\n"
     );
+}
+
+#[test]
+fn generates_prefix_increment_expression_result() {
+    let program = Program {
+        functions: vec![Function {
+            return_type: Type::Int,
+            name_span: span(),
+            name: "main".to_string(),
+            params: vec![],
+            body: vec![
+                Statement::VarDecl {
+                    ty: Type::Int,
+                    name_span: span(),
+                    name: "x".to_string(),
+                    init: Some(Expr::IntLiteral {
+                        value: 1,
+                        span: span(),
+                    }),
+                },
+                Statement::Return(Expr::PrefixInc {
+                    expr: Box::new(Expr::Variable {
+                        name: "x".to_string(),
+                        span: span(),
+                    }),
+                    op_span: span(),
+                }),
+            ],
+        }],
+        eof_span: span(),
+    };
+
+    let asm = generate_with_codegen(&program);
+
+    assert_eq!(
+        asm,
+        ".globl main\nmain:\n    addi sp, sp, -16\n    sw ra, 12(sp)\n    sw s0, 8(sp)\n    addi s0, sp, 16\n    li a0, 1\n    sw a0, -12(s0)\n    lw a0, -12(s0)\n    addi a0, a0, 1\n    sw a0, -12(s0)\n    lw ra, 12(sp)\n    lw s0, 8(sp)\n    addi sp, sp, 16\n    ret\n"
+    );
+}
+
+#[test]
+fn generates_postfix_increment_expression_result() {
+    let program = Program {
+        functions: vec![Function {
+            return_type: Type::Int,
+            name_span: span(),
+            name: "main".to_string(),
+            params: vec![],
+            body: vec![
+                Statement::VarDecl {
+                    ty: Type::Int,
+                    name_span: span(),
+                    name: "x".to_string(),
+                    init: Some(Expr::IntLiteral {
+                        value: 1,
+                        span: span(),
+                    }),
+                },
+                Statement::Return(Expr::PostfixInc {
+                    expr: Box::new(Expr::Variable {
+                        name: "x".to_string(),
+                        span: span(),
+                    }),
+                    op_span: span(),
+                }),
+            ],
+        }],
+        eof_span: span(),
+    };
+
+    let asm = generate_with_codegen(&program);
+
+    assert_eq!(
+        asm,
+        ".globl main\nmain:\n    addi sp, sp, -16\n    sw ra, 12(sp)\n    sw s0, 8(sp)\n    addi s0, sp, 16\n    li a0, 1\n    sw a0, -12(s0)\n    lw a0, -12(s0)\n    addi sp, sp, -4\n    sw a0, 0(sp)\n    addi a0, a0, 1\n    sw a0, -12(s0)\n    lw a0, 0(sp)\n    addi sp, sp, 4\n    lw ra, 12(sp)\n    lw s0, 8(sp)\n    addi sp, sp, 16\n    ret\n"
+    );
+}
+
+#[test]
+fn narrows_char_increment_store() {
+    let program = Program {
+        functions: vec![Function {
+            return_type: Type::Int,
+            name_span: span(),
+            name: "main".to_string(),
+            params: vec![],
+            body: vec![
+                Statement::VarDecl {
+                    ty: Type::Char,
+                    name_span: span(),
+                    name: "c".to_string(),
+                    init: Some(Expr::IntLiteral {
+                        value: 255,
+                        span: span(),
+                    }),
+                },
+                Statement::ExprStatement(Expr::PrefixInc {
+                    expr: Box::new(Expr::Variable {
+                        name: "c".to_string(),
+                        span: span(),
+                    }),
+                    op_span: span(),
+                }),
+                Statement::Return(Expr::Variable {
+                    name: "c".to_string(),
+                    span: span(),
+                }),
+            ],
+        }],
+        eof_span: span(),
+    };
+
+    let asm = generate_raw_with_codegen(&program);
+
+    assert!(asm.contains(
+        "    lbu a0, -12(s0)\n    addi a0, a0, 1\n    andi a0, a0, 255\n    sb a0, -12(s0)\n"
+    ));
 }
 
 #[test]
@@ -1465,11 +1597,17 @@ fn generates_chained_assignment_expression_right_associative() {
                     init: None,
                 },
                 Statement::ExprStatement(Expr::Assign {
-                    name_span: span(),
-                    name: "x".to_string(),
+                    op_span: span(),
+                    target: Box::new(Expr::Variable {
+                        name: "x".to_string(),
+                        span: span(),
+                    }),
                     value: Box::new(Expr::Assign {
-                        name_span: span(),
-                        name: "y".to_string(),
+                        op_span: span(),
+                        target: Box::new(Expr::Variable {
+                            name: "y".to_string(),
+                            span: span(),
+                        }),
                         value: Box::new(Expr::IntLiteral {
                             value: 4,
                             span: span(),
@@ -1710,8 +1848,11 @@ fn generates_while_loop() {
                     },
                     body: Box::new(Statement::Block(vec![Statement::ExprStatement(
                         Expr::Assign {
-                            name_span: span(),
-                            name: "x".to_string(),
+                            op_span: span(),
+                            target: Box::new(Expr::Variable {
+                                name: "x".to_string(),
+                                span: span(),
+                            }),
                             value: Box::new(Expr::Binary {
                                 op: BinaryOp::Subtract,
                                 op_span: span(),
@@ -1830,8 +1971,11 @@ fn generates_do_while_loop_with_body_before_condition() {
                 Statement::DoWhile {
                     body: Box::new(Statement::Block(vec![Statement::ExprStatement(
                         Expr::Assign {
-                            name_span: span(),
-                            name: "x".to_string(),
+                            op_span: span(),
+                            target: Box::new(Expr::Variable {
+                                name: "x".to_string(),
+                                span: span(),
+                            }),
                             value: Box::new(Expr::Binary {
                                 op: BinaryOp::Subtract,
                                 op_span: span(),
@@ -2017,8 +2161,11 @@ fn generates_for_loop_with_init_condition_and_post() {
                 },
                 Statement::For {
                     init: Some(Box::new(Statement::ExprStatement(Expr::Assign {
-                        name_span: span(),
-                        name: "i".to_string(),
+                        op_span: span(),
+                        target: Box::new(Expr::Variable {
+                            name: "i".to_string(),
+                            span: span(),
+                        }),
                         value: Box::new(Expr::IntLiteral {
                             value: 0,
                             span: span(),
@@ -2037,8 +2184,11 @@ fn generates_for_loop_with_init_condition_and_post() {
                         }),
                     }),
                     post: Some(Expr::Assign {
-                        name_span: span(),
-                        name: "i".to_string(),
+                        op_span: span(),
+                        target: Box::new(Expr::Variable {
+                            name: "i".to_string(),
+                            span: span(),
+                        }),
                         value: Box::new(Expr::Binary {
                             op: BinaryOp::Add,
                             op_span: span(),
@@ -2137,8 +2287,11 @@ fn generates_continue_in_for_loop_to_post_clause() {
                         }),
                     }),
                     post: Some(Expr::Assign {
-                        name_span: span(),
-                        name: "i".to_string(),
+                        op_span: span(),
+                        target: Box::new(Expr::Variable {
+                            name: "i".to_string(),
+                            span: span(),
+                        }),
                         value: Box::new(Expr::Binary {
                             op: BinaryOp::Add,
                             op_span: span(),
@@ -2287,8 +2440,11 @@ fn for_init_scope_can_shadow_outer_local_without_replacing_it() {
                         }),
                     }),
                     post: Some(Expr::Assign {
-                        name_span: span(),
-                        name: "i".to_string(),
+                        op_span: span(),
+                        target: Box::new(Expr::Variable {
+                            name: "i".to_string(),
+                            span: span(),
+                        }),
                         value: Box::new(Expr::Binary {
                             op: BinaryOp::Add,
                             op_span: span(),

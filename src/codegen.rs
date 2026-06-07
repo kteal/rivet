@@ -157,7 +157,14 @@ impl Codegen {
             .expect("codegen should have an active scope")
     }
 
-    fn resolve_local(&mut self, name: &str) -> Option<LocalInfo> {
+    fn resolve_lvalue_local(&self, expr: &Expr) -> LocalInfo {
+        match expr {
+            Expr::Variable { name, .. } => self.resolve_local(name).unwrap(),
+            _ => panic!("semantic analysis should reject non-variable lvalue"),
+        }
+    }
+
+    fn resolve_local(&self, name: &str) -> Option<LocalInfo> {
         self.scopes
             .iter()
             .rev()
@@ -175,6 +182,11 @@ impl Codegen {
     fn push_a0(&mut self) {
         self.emit_line(format_args!("addi sp, sp, -4"));
         self.emit_line(format_args!("sw a0, 0(sp)"));
+    }
+
+    fn pop_a0(&mut self) {
+        self.emit_line(format_args!("lw a0, 0(sp)"));
+        self.emit_line(format_args!("addi sp, sp, 4"));
     }
 
     fn pop_t0(&mut self) {
@@ -201,14 +213,14 @@ impl Codegen {
         };
     }
 
-    fn emit_load_local(&mut self, local: LocalInfo) {
+    fn emit_load_local(&mut self, local: &LocalInfo) {
         match local.ty {
             Type::Int => self.emit_line(format_args!("lw a0, {}(s0)", local.offset)),
             Type::Char => self.emit_line(format_args!("lbu a0, {}(s0)", local.offset)),
         }
     }
 
-    fn emit_store_local(&mut self, local: LocalInfo) {
+    fn emit_store_local(&mut self, local: &LocalInfo) {
         match local.ty {
             Type::Int => self.emit_line(format_args!("sw a0, {}(s0)", local.offset)),
             Type::Char => {
@@ -218,7 +230,7 @@ impl Codegen {
         }
     }
 
-    fn emit_store_param(&mut self, reg: usize, local: LocalInfo) {
+    fn emit_store_param(&mut self, reg: usize, local: &LocalInfo) {
         match local.ty {
             Type::Int => self.emit_line(format_args!("sw a{reg}, {}(s0)", local.offset)),
             Type::Char => {
@@ -319,11 +331,7 @@ impl Codegen {
         self.emit_binary_op(op);
     }
 
-    fn emit_compound_assign(&mut self, name: &str, op: &BinaryOp, value: &Expr) {
-        let local = self
-            .resolve_local(name)
-            .expect("compound assignment to undefined variable");
-
+    fn emit_compound_assign(&mut self, local: &LocalInfo, op: &BinaryOp, value: &Expr) {
         self.emit_load_local(local);
         self.push_a0();
         self.emit_expr(value);
@@ -331,6 +339,23 @@ impl Codegen {
         self.emit_binary_op(op);
 
         self.emit_store_local(local);
+    }
+
+    fn emit_inc_dec(&mut self, expr: &Expr, delta: i32, postfix: bool) {
+        let local = self.resolve_lvalue_local(expr);
+
+        self.emit_load_local(&local);
+
+        if postfix {
+            self.push_a0();
+        }
+
+        self.emit_line(format_args!("addi a0, a0, {delta}"));
+        self.emit_store_local(&local);
+
+        if postfix {
+            self.pop_a0();
+        }
     }
 
     fn emit_expr(&mut self, expr: &Expr) {
@@ -346,7 +371,7 @@ impl Codegen {
                 let local = self
                     .resolve_local(name)
                     .expect("usage of undefined variable");
-                self.emit_load_local(local);
+                self.emit_load_local(&local);
             }
             Expr::Unary {
                 op,
@@ -379,26 +404,28 @@ impl Codegen {
                 self.emit_line(format_args!("call {name}"));
             }
             Expr::Assign {
-                name,
-                name_span: _,
+                target,
+                op_span: _,
                 value,
             } => {
                 self.emit_expr(value);
 
-                let local = self
-                    .resolve_local(name)
-                    .expect("assignment to undefined variable");
-                self.emit_store_local(local);
+                let local = self.resolve_lvalue_local(target);
+                self.emit_store_local(&local);
             }
             Expr::CompoundAssign {
-                name,
-                name_span: _,
+                target,
                 op,
                 op_span: _,
                 value,
             } => {
-                self.emit_compound_assign(name, op, value);
+                let local = self.resolve_lvalue_local(target);
+                self.emit_compound_assign(&local, op, value);
             }
+            Expr::PrefixInc { expr, op_span: _ } => self.emit_inc_dec(expr, 1, false),
+            Expr::PrefixDec { expr, op_span: _ } => self.emit_inc_dec(expr, -1, false),
+            Expr::PostfixInc { expr, op_span: _ } => self.emit_inc_dec(expr, 1, true),
+            Expr::PostfixDec { expr, op_span: _ } => self.emit_inc_dec(expr, -1, true),
         }
     }
 
@@ -528,7 +555,7 @@ impl Codegen {
                 if let Some(init_expr) = init {
                     self.emit_expr(init_expr);
                     let local = LocalInfo { offset, ty: *ty };
-                    self.emit_store_local(local);
+                    self.emit_store_local(&local);
                 }
             }
             Statement::Block(body) => {
@@ -608,7 +635,7 @@ impl Codegen {
                 offset,
                 ty: param.ty,
             };
-            self.emit_store_param(i, local);
+            self.emit_store_param(i, &local);
         }
 
         self.current_function_return_type = Some(function.return_type);

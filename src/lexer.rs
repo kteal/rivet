@@ -22,8 +22,10 @@ pub enum TokenKind {
     Semicolon,
     Plus,
     PlusEqual,
+    PlusPlus,
     Minus,
     MinusEqual,
+    MinusMinus,
     Star,
     StarEqual,
     Slash,
@@ -112,9 +114,16 @@ impl<'a> Lexer<'a> {
                     let token = self.lex_char_literal()?;
                     self.push_token(token);
                 }
-                '+' => self.advance_and_push_if_next('=', TokenKind::Plus, TokenKind::PlusEqual),
-                '-' => self.advance_and_push_if_next('=', TokenKind::Minus, TokenKind::MinusEqual),
-                '*' => self.advance_and_push_if_next('=', TokenKind::Star, TokenKind::StarEqual),
+                '+' => self.lex_one_or_two_char_operator(
+                    TokenKind::Plus,
+                    &[('=', TokenKind::PlusEqual), ('+', TokenKind::PlusPlus)],
+                ),
+                '-' => self.lex_one_or_two_char_operator(
+                    TokenKind::Minus,
+                    &[('=', TokenKind::MinusEqual), ('-', TokenKind::MinusMinus)],
+                ),
+                '*' => self
+                    .lex_one_or_two_char_operator(TokenKind::Star, &[('=', TokenKind::StarEqual)]),
                 '/' => {
                     let start = self.offset;
                     self.advance();
@@ -130,79 +139,46 @@ impl<'a> Lexer<'a> {
                         self.push(TokenKind::Slash, Span { start, end })
                     }
                 }
-                '%' => {
-                    self.advance_and_push_if_next('=', TokenKind::Percent, TokenKind::PercentEqual)
-                }
-                '=' => self.advance_and_push_if_next('=', TokenKind::Equal, TokenKind::EqualEqual),
-                '!' => self.advance_and_push_if_next('=', TokenKind::Bang, TokenKind::BangEqual),
-                '<' => {
-                    let start = self.offset;
-                    self.advance();
-                    if self.consume_if('=') {
-                        let end = self.offset;
-                        self.push(TokenKind::LessEqual, Span { start, end });
-                    } else if self.consume_if('<') {
-                        if self.consume_if('=') {
-                            let end = self.offset;
-                            self.push(TokenKind::LessLessEqual, Span { start, end });
-                        } else {
-                            let end = self.offset;
-                            self.push(TokenKind::LessLess, Span { start, end });
-                        }
-                    } else {
-                        let end = self.offset;
-                        self.push(TokenKind::Less, Span { start, end });
-                    }
-                }
-                '>' => {
-                    let start = self.offset;
-                    self.advance();
-                    if self.consume_if('=') {
-                        let end = self.offset;
-                        self.push(TokenKind::GreaterEqual, Span { start, end });
-                    } else if self.consume_if('>') {
-                        if self.consume_if('=') {
-                            let end = self.offset;
-                            self.push(TokenKind::GreaterGreaterEqual, Span { start, end });
-                        } else {
-                            let end = self.offset;
-                            self.push(TokenKind::GreaterGreater, Span { start, end });
-                        }
-                    } else {
-                        let end = self.offset;
-                        self.push(TokenKind::Greater, Span { start, end });
-                    }
-                }
+                '%' => self.lex_one_or_two_char_operator(
+                    TokenKind::Percent,
+                    &[('=', TokenKind::PercentEqual)],
+                ),
+                '=' => self.lex_one_or_two_char_operator(
+                    TokenKind::Equal,
+                    &[('=', TokenKind::EqualEqual)],
+                ),
+                '!' => self
+                    .lex_one_or_two_char_operator(TokenKind::Bang, &[('=', TokenKind::BangEqual)]),
+                '<' => self.lex_shift_or_compare(
+                    '<',
+                    TokenKind::Less,
+                    TokenKind::LessEqual,
+                    TokenKind::LessLess,
+                    TokenKind::LessLessEqual,
+                ),
+                '>' => self.lex_shift_or_compare(
+                    '>',
+                    TokenKind::Greater,
+                    TokenKind::GreaterEqual,
+                    TokenKind::GreaterGreater,
+                    TokenKind::GreaterGreaterEqual,
+                ),
                 '~' => self.advance_and_push(TokenKind::Tilde),
-                '&' => {
-                    let start = self.offset;
-                    self.advance();
-                    if self.consume_if('=') {
-                        let end = self.offset;
-                        self.push(TokenKind::AmpersandEqual, Span { start, end });
-                    } else if self.consume_if('&') {
-                        let end = self.offset;
-                        self.push(TokenKind::AmpersandAmpersand, Span { start, end });
-                    } else {
-                        let end = self.offset;
-                        self.push(TokenKind::Ampersand, Span { start, end });
-                    }
-                }
-                '^' => self.advance_and_push_if_next('=', TokenKind::Caret, TokenKind::CaretEqual),
-                '|' => {
-                    let start = self.offset;
-                    self.advance();
-                    if self.consume_if('=') {
-                        let end = self.offset;
-                        self.push(TokenKind::PipeEqual, Span { start, end });
-                    } else if self.consume_if('|') {
-                        let end = self.offset;
-                        self.push(TokenKind::PipePipe, Span { start, end });
-                    } else {
-                        let end = self.offset;
-                        self.push(TokenKind::Pipe, Span { start, end });
-                    }
-                }
+                '&' => self.lex_one_or_two_char_operator(
+                    TokenKind::Ampersand,
+                    &[
+                        ('=', TokenKind::AmpersandEqual),
+                        ('&', TokenKind::AmpersandAmpersand),
+                    ],
+                ),
+                '^' => self.lex_one_or_two_char_operator(
+                    TokenKind::Caret,
+                    &[('=', TokenKind::CaretEqual)],
+                ),
+                '|' => self.lex_one_or_two_char_operator(
+                    TokenKind::Pipe,
+                    &[('=', TokenKind::PipeEqual), ('|', TokenKind::PipePipe)],
+                ),
                 _ => {
                     let start = self.offset;
                     let ch = self.advance().unwrap();
@@ -410,18 +386,52 @@ impl<'a> Lexer<'a> {
         self.push(kind, Span { start, end });
     }
 
-    fn advance_and_push_if_next(&mut self, expected: char, single: TokenKind, double: TokenKind) {
+    fn lex_one_or_two_char_operator(
+        &mut self,
+        single: TokenKind,
+        alternatives: &[(char, TokenKind)],
+    ) {
         let start = self.offset;
         self.advance();
 
-        let kind = if self.consume_if(expected) {
-            double
-        } else {
-            single
-        };
+        for (ch, kind) in alternatives {
+            if self.consume_if(*ch) {
+                let end = self.offset;
+                self.push(kind.clone(), Span { start, end });
+                return;
+            }
+        }
 
         let end = self.offset;
-        self.push(kind, Span { start, end })
+        self.push(single, Span { start, end });
+    }
+
+    fn lex_shift_or_compare(
+        &mut self,
+        ch: char,
+        single: TokenKind,
+        equal: TokenKind,
+        shift: TokenKind,
+        shift_equal: TokenKind,
+    ) {
+        let start = self.offset;
+        self.advance();
+
+        if self.consume_if('=') {
+            let end = self.offset;
+            self.push(equal, Span { start, end });
+        } else if self.consume_if(ch) {
+            if self.consume_if('=') {
+                let end = self.offset;
+                self.push(shift_equal, Span { start, end });
+            } else {
+                let end = self.offset;
+                self.push(shift, Span { start, end });
+            }
+        } else {
+            let end = self.offset;
+            self.push(single, Span { start, end });
+        }
     }
 
     fn error(&self, start: usize, message: &str) -> LexError {
@@ -713,6 +723,30 @@ mod tests {
                 TokenKind::Ident("x".to_string()),
                 TokenKind::GreaterGreaterEqual,
                 TokenKind::IntLiteral(1),
+                TokenKind::Semicolon,
+                TokenKind::Eof,
+            ]
+        );
+    }
+
+    #[test]
+    fn lexes_increment_and_decrement_operators() {
+        let tokens = lex_with_struct("x++; ++x; x--; --x;").expect("lexing should succeed");
+
+        assert_eq!(
+            token_kinds(&tokens),
+            vec![
+                TokenKind::Ident("x".to_string()),
+                TokenKind::PlusPlus,
+                TokenKind::Semicolon,
+                TokenKind::PlusPlus,
+                TokenKind::Ident("x".to_string()),
+                TokenKind::Semicolon,
+                TokenKind::Ident("x".to_string()),
+                TokenKind::MinusMinus,
+                TokenKind::Semicolon,
+                TokenKind::MinusMinus,
+                TokenKind::Ident("x".to_string()),
                 TokenKind::Semicolon,
                 TokenKind::Eof,
             ]

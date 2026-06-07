@@ -88,16 +88,31 @@ pub enum Expr {
         args: Vec<Expr>,
     },
     Assign {
-        name: String,
-        name_span: Span,
+        target: Box<Expr>,
+        op_span: Span,
         value: Box<Expr>,
     },
     CompoundAssign {
-        name: String,
-        name_span: Span,
+        target: Box<Expr>,
         op: BinaryOp,
         op_span: Span,
         value: Box<Expr>,
+    },
+    PrefixInc {
+        expr: Box<Expr>,
+        op_span: Span,
+    },
+    PrefixDec {
+        expr: Box<Expr>,
+        op_span: Span,
+    },
+    PostfixInc {
+        expr: Box<Expr>,
+        op_span: Span,
+    },
+    PostfixDec {
+        expr: Box<Expr>,
+        op_span: Span,
     },
 }
 
@@ -109,8 +124,12 @@ impl Expr {
             Expr::Unary { op_span, .. } => *op_span,
             Expr::Binary { op_span, .. } => *op_span,
             Expr::Call { name_span, .. } => *name_span,
-            Expr::Assign { name_span, .. } => *name_span,
-            Expr::CompoundAssign { name_span, .. } => *name_span,
+            Expr::Assign { op_span, .. } => *op_span,
+            Expr::CompoundAssign { op_span, .. } => *op_span,
+            Expr::PrefixInc { op_span, .. } => *op_span,
+            Expr::PrefixDec { op_span, .. } => *op_span,
+            Expr::PostfixInc { op_span, .. } => *op_span,
+            Expr::PostfixDec { op_span, .. } => *op_span,
         }
     }
 }

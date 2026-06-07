@@ -197,6 +197,16 @@ impl Checker {
         }
     }
 
+    fn check_lvalue(&self, expr: &Expr, op_span: Span) -> Result<Type, SemanticError> {
+        match expr {
+            Expr::Variable { name, span } => self.resolve_local(name, *span),
+            _ => Err(SemanticError {
+                message: "cannot assign to non-variable expression".to_string(),
+                span: op_span,
+            }),
+        }
+    }
+
     fn check_expr(&self, expr: &Expr) -> Result<Type, SemanticError> {
         match expr {
             Expr::IntLiteral { .. } => Ok(Type::Int),
@@ -244,11 +254,11 @@ impl Checker {
                 Ok(function_info.return_type)
             }
             Expr::Assign {
-                name,
-                name_span,
+                target,
+                op_span,
                 value,
             } => {
-                let target_type = self.resolve_local(name, *name_span)?;
+                let target_type = self.check_lvalue(target, *op_span)?;
                 let value_type = self.check_expr(value)?;
 
                 if !Self::is_assignable(target_type, value_type) {
@@ -256,20 +266,19 @@ impl Checker {
                         message: format!(
                             "cannot assign value of type '{value_type:?}' to variable of type '{target_type:?}'"
                         ),
-                        span: *name_span,
+                        span: *op_span,
                     });
                 }
 
                 Ok(target_type)
             }
             Expr::CompoundAssign {
-                name,
-                name_span,
+                target,
                 op,
                 op_span,
                 value,
             } => {
-                let target_type = self.resolve_local(name, *name_span)?;
+                let target_type = self.check_lvalue(target, *op_span)?;
                 let value_type = self.check_expr(value)?;
 
                 let result_type =
@@ -284,6 +293,22 @@ impl Checker {
                     });
                 }
 
+                Ok(target_type)
+            }
+            Expr::PrefixInc { expr, op_span } => {
+                let target_type = self.check_lvalue(expr, *op_span)?;
+                Ok(target_type)
+            }
+            Expr::PrefixDec { expr, op_span } => {
+                let target_type = self.check_lvalue(expr, *op_span)?;
+                Ok(target_type)
+            }
+            Expr::PostfixInc { expr, op_span } => {
+                let target_type = self.check_lvalue(expr, *op_span)?;
+                Ok(target_type)
+            }
+            Expr::PostfixDec { expr, op_span } => {
+                let target_type = self.check_lvalue(expr, *op_span)?;
                 Ok(target_type)
             }
         }
