@@ -4,6 +4,7 @@ use std::{iter::Peekable, str::Chars};
 pub enum TokenKind {
     KwInt,
     KwChar,
+    KwUnsigned,
     KwReturn,
     KwIf,
     KwElse,
@@ -311,6 +312,7 @@ impl<'a> Lexer<'a> {
         let kind = match text.as_str() {
             "int" => TokenKind::KwInt,
             "char" => TokenKind::KwChar,
+            "unsigned" => TokenKind::KwUnsigned,
             "return" => TokenKind::KwReturn,
             "if" => TokenKind::KwIf,
             "else" => TokenKind::KwElse,

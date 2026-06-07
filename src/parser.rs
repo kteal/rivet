@@ -140,7 +140,10 @@ impl Parser {
     }
 
     fn is_type_decl(token_kind: &TokenKind) -> bool {
-        matches!(token_kind, TokenKind::KwInt | TokenKind::KwChar)
+        matches!(
+            token_kind,
+            TokenKind::KwInt | TokenKind::KwChar | TokenKind::KwUnsigned
+        )
     }
 
     fn parse_type(&mut self) -> Result<Type, ParseError> {
@@ -149,6 +152,10 @@ impl Parser {
         match token.kind {
             TokenKind::KwInt => Ok(Type::Int),
             TokenKind::KwChar => Ok(Type::Char),
+            TokenKind::KwUnsigned => {
+                self.expect(TokenKind::KwInt)?;
+                Ok(Type::UnsignedInt)
+            }
             found => Err(ParseError {
                 message: format!("expected type declaration, found {found:?}"),
                 span: token.span,

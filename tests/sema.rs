@@ -1,7 +1,7 @@
 mod common;
 
 use common::{param, param_with_span, span, span_from};
-use rivet::ast::{BinaryOp, Expr, Function, Program, Statement, Type};
+use rivet::ast::{BinaryOp, Expr, Function, Program, Statement, Type, UnaryOp};
 use rivet::sema::check;
 use rivet::typed_ast::{TypedExprKind, TypedStatement};
 
@@ -876,6 +876,151 @@ fn typed_binary_expression_has_result_type() {
 
     assert_eq!(expr.ty, Type::Int);
     assert!(matches!(expr.kind, TypedExprKind::Binary { .. }));
+}
+
+#[test]
+fn typed_shift_uses_promoted_left_operand_type() {
+    let program = main_program(vec![
+        Statement::VarDecl {
+            ty: Type::Int,
+            name_span: span(),
+            name: "x".to_string(),
+            init: Some(Expr::IntLiteral {
+                value: 1,
+                span: span(),
+            }),
+        },
+        Statement::VarDecl {
+            ty: Type::UnsignedInt,
+            name_span: span(),
+            name: "shift".to_string(),
+            init: Some(Expr::IntLiteral {
+                value: 1,
+                span: span(),
+            }),
+        },
+        Statement::Return(Expr::Binary {
+            op: BinaryOp::ShiftRight,
+            op_span: span(),
+            left: Box::new(Expr::Variable {
+                name: "x".to_string(),
+                span: span(),
+            }),
+            right: Box::new(Expr::Variable {
+                name: "shift".to_string(),
+                span: span(),
+            }),
+        }),
+    ]);
+
+    let typed_program = check(&program).expect("semantic check should succeed");
+
+    let TypedStatement::Return(expr) = &typed_program.functions[0].body[2] else {
+        panic!("expected return statement");
+    };
+
+    let TypedExprKind::Binary { operand_ty, .. } = &expr.kind else {
+        panic!("expected binary expression");
+    };
+
+    assert_eq!(expr.ty, Type::Int);
+    assert_eq!(*operand_ty, Type::Int);
+}
+
+#[test]
+fn typed_unary_negate_preserves_unsigned_operand_type() {
+    let program = main_program(vec![
+        Statement::VarDecl {
+            ty: Type::UnsignedInt,
+            name_span: span(),
+            name: "x".to_string(),
+            init: Some(Expr::IntLiteral {
+                value: 1,
+                span: span(),
+            }),
+        },
+        Statement::Return(Expr::Unary {
+            op: UnaryOp::Negate,
+            op_span: span(),
+            expr: Box::new(Expr::Variable {
+                name: "x".to_string(),
+                span: span(),
+            }),
+        }),
+    ]);
+
+    let typed_program = check(&program).expect("semantic check should succeed");
+
+    let TypedStatement::Return(expr) = &typed_program.functions[0].body[1] else {
+        panic!("expected return statement");
+    };
+
+    assert_eq!(expr.ty, Type::UnsignedInt);
+    assert!(matches!(expr.kind, TypedExprKind::Unary { .. }));
+}
+
+#[test]
+fn typed_unary_bitwise_not_preserves_unsigned_operand_type() {
+    let program = main_program(vec![
+        Statement::VarDecl {
+            ty: Type::UnsignedInt,
+            name_span: span(),
+            name: "x".to_string(),
+            init: Some(Expr::IntLiteral {
+                value: 1,
+                span: span(),
+            }),
+        },
+        Statement::Return(Expr::Unary {
+            op: UnaryOp::BitwiseNot,
+            op_span: span(),
+            expr: Box::new(Expr::Variable {
+                name: "x".to_string(),
+                span: span(),
+            }),
+        }),
+    ]);
+
+    let typed_program = check(&program).expect("semantic check should succeed");
+
+    let TypedStatement::Return(expr) = &typed_program.functions[0].body[1] else {
+        panic!("expected return statement");
+    };
+
+    assert_eq!(expr.ty, Type::UnsignedInt);
+    assert!(matches!(expr.kind, TypedExprKind::Unary { .. }));
+}
+
+#[test]
+fn typed_unary_logical_not_returns_int_for_unsigned_operand() {
+    let program = main_program(vec![
+        Statement::VarDecl {
+            ty: Type::UnsignedInt,
+            name_span: span(),
+            name: "x".to_string(),
+            init: Some(Expr::IntLiteral {
+                value: 1,
+                span: span(),
+            }),
+        },
+        Statement::Return(Expr::Unary {
+            op: UnaryOp::LogicalNot,
+            op_span: span(),
+            expr: Box::new(Expr::Variable {
+                name: "x".to_string(),
+                span: span(),
+            }),
+        }),
+    ]);
+
+    let typed_program = check(&program).expect("semantic check should succeed");
+
+    let TypedStatement::Return(expr) = &typed_program.functions[0].body[1] else {
+        panic!("expected return statement");
+    };
+
+    assert_eq!(expr.ty, Type::Int);
+    assert!(matches!(expr.kind, TypedExprKind::Unary { .. }));
 }
 
 #[test]

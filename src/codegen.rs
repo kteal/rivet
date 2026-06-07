@@ -211,21 +211,25 @@ impl Codegen {
 
     fn emit_narrow_to_type(&mut self, ty: Type) {
         match ty {
-            Type::Int => (),
+            Type::Int | Type::UnsignedInt => (),
             Type::Char => self.emit_line(format_args!("andi a0, a0, 255")),
         };
     }
 
     fn emit_load_local(&mut self, local: &LocalInfo) {
         match local.ty {
-            Type::Int => self.emit_line(format_args!("lw a0, {}(s0)", local.offset)),
+            Type::Int | Type::UnsignedInt => {
+                self.emit_line(format_args!("lw a0, {}(s0)", local.offset))
+            }
             Type::Char => self.emit_line(format_args!("lbu a0, {}(s0)", local.offset)),
         }
     }
 
     fn emit_store_local(&mut self, local: &LocalInfo) {
         match local.ty {
-            Type::Int => self.emit_line(format_args!("sw a0, {}(s0)", local.offset)),
+            Type::Int | Type::UnsignedInt => {
+                self.emit_line(format_args!("sw a0, {}(s0)", local.offset))
+            }
             Type::Char => {
                 self.emit_narrow_to_type(Type::Char);
                 self.emit_line(format_args!("sb a0, {}(s0)", local.offset));
@@ -235,7 +239,9 @@ impl Codegen {
 
     fn emit_store_param(&mut self, reg: usize, local: &LocalInfo) {
         match local.ty {
-            Type::Int => self.emit_line(format_args!("sw a{reg}, {}(s0)", local.offset)),
+            Type::Int | Type::UnsignedInt => {
+                self.emit_line(format_args!("sw a{reg}, {}(s0)", local.offset))
+            }
             Type::Char => {
                 self.emit_line(format_args!("andi a{reg}, a{reg}, 255"));
                 self.emit_line(format_args!("sb a{reg}, {}(s0)", local.offset));
@@ -284,9 +290,11 @@ impl Codegen {
             BinaryOp::Multiply => self.emit_line(format_args!("mul a0, t0, a0")),
             BinaryOp::Divide => match ty {
                 Type::Int | Type::Char => self.emit_line(format_args!("div a0, t0, a0")),
+                Type::UnsignedInt => self.emit_line(format_args!("divu a0, t0, a0")),
             },
             BinaryOp::Remainder => match ty {
                 Type::Int | Type::Char => self.emit_line(format_args!("rem a0, t0, a0")),
+                Type::UnsignedInt => self.emit_line(format_args!("remu a0, t0, a0")),
             },
             BinaryOp::Equal => {
                 self.emit_line(format_args!("xor a0, t0, a0"));
@@ -298,19 +306,29 @@ impl Codegen {
             }
             BinaryOp::Less => match ty {
                 Type::Int | Type::Char => self.emit_line(format_args!("slt a0, t0, a0")),
+                Type::UnsignedInt => self.emit_line(format_args!("sltu a0, t0, a0")),
             },
             BinaryOp::LessEqual => match ty {
                 Type::Int | Type::Char => {
                     self.emit_line(format_args!("slt a0, a0, t0"));
                     self.emit_line(format_args!("xori a0, a0, 1"));
                 }
+                Type::UnsignedInt => {
+                    self.emit_line(format_args!("sltu a0, a0, t0"));
+                    self.emit_line(format_args!("xori a0, a0, 1"));
+                }
             },
             BinaryOp::Greater => match ty {
                 Type::Int | Type::Char => self.emit_line(format_args!("slt a0, a0, t0")),
+                Type::UnsignedInt => self.emit_line(format_args!("sltu a0, a0, t0")),
             },
             BinaryOp::GreaterEqual => match ty {
                 Type::Int | Type::Char => {
                     self.emit_line(format_args!("slt a0, t0, a0"));
+                    self.emit_line(format_args!("xori a0, a0, 1"));
+                }
+                Type::UnsignedInt => {
+                    self.emit_line(format_args!("sltu a0, t0, a0"));
                     self.emit_line(format_args!("xori a0, a0, 1"));
                 }
             },
@@ -320,6 +338,7 @@ impl Codegen {
             BinaryOp::ShiftLeft => self.emit_line(format_args!("sll a0, t0, a0")),
             BinaryOp::ShiftRight => match ty {
                 Type::Int | Type::Char => self.emit_line(format_args!("sra a0, t0, a0")),
+                Type::UnsignedInt => self.emit_line(format_args!("srl a0, t0, a0")),
             },
             BinaryOp::LogicalAnd | BinaryOp::LogicalOr => unreachable!(),
         };
@@ -389,9 +408,10 @@ impl Codegen {
             TypedExprKind::Binary {
                 op,
                 op_span: _,
+                operand_ty,
                 left,
                 right,
-            } => self.emit_binary(&op, expr.ty, &left, &right),
+            } => self.emit_binary(&op, *operand_ty, &left, &right),
             TypedExprKind::Variable { name, .. } => {
                 let local = self
                     .resolve_local(&name)
@@ -442,10 +462,11 @@ impl Codegen {
                 target,
                 op,
                 op_span: _,
+                operand_ty,
                 value,
             } => {
                 let local = self.resolve_lvalue_local(&target);
-                self.emit_compound_assign(&local, &op, expr.ty, &value);
+                self.emit_compound_assign(&local, &op, *operand_ty, &value);
             }
             TypedExprKind::PrefixInc { expr, op_span: _ } => self.emit_inc_dec(&expr, 1, false),
             TypedExprKind::PrefixDec { expr, op_span: _ } => self.emit_inc_dec(&expr, -1, false),

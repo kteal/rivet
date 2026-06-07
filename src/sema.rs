@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::ast::{BinaryOp, Expr, Function, Param, Program, Statement, Type};
+use crate::ast::{BinaryOp, Expr, Function, Param, Program, Statement, Type, UnaryOp};
 use crate::lexer::Span;
 use crate::typed_ast::{
     TypedExpr, TypedExprKind, TypedFunction, TypedParam, TypedProgram, TypedStatement,
@@ -16,6 +16,11 @@ pub struct FunctionInfo {
     return_type: Type,
     name: String,
     params: Vec<Param>,
+}
+
+struct BinaryTypeInfo {
+    operand_ty: Type,
+    result_ty: Type,
 }
 
 struct Checker {
@@ -73,11 +78,23 @@ impl Checker {
     fn is_assignable(target: Type, value: Type) -> bool {
         target == value
             || (target == Type::Char && value == Type::Int)
+            || (target == Type::Char && value == Type::UnsignedInt)
             || (target == Type::Int && value == Type::Char)
+            || (target == Type::Int && value == Type::UnsignedInt)
+            || (target == Type::UnsignedInt && value == Type::Char)
+            || (target == Type::UnsignedInt && value == Type::Int)
     }
 
     fn is_integer(ty: Type) -> bool {
-        matches!(ty, Type::Int | Type::Char)
+        matches!(ty, Type::Int | Type::Char | Type::UnsignedInt)
+    }
+
+    fn promoted_type(ty: Type) -> Type {
+        match ty {
+            Type::Char => Type::Int,
+            Type::Int => Type::Int,
+            Type::UnsignedInt => Type::UnsignedInt,
+        }
     }
 
     fn declare_local(&mut self, ty: Type, name: &str, span: Span) -> Result<(), SemanticError> {
@@ -143,17 +160,23 @@ impl Checker {
         })
     }
 
+    fn usual_arithmetic_type(left: Type, right: Type) -> Type {
+        if left == Type::UnsignedInt || right == Type::UnsignedInt {
+            Type::UnsignedInt
+        } else {
+            Type::Int
+        }
+    }
+
     fn check_binary_op_types(
         &self,
         op: &BinaryOp,
         op_span: &Span,
         left_type: Type,
         right_type: Type,
-    ) -> Result<Type, SemanticError> {
-        if Self::is_integer(left_type) && Self::is_integer(right_type) {
-            Ok(Type::Int)
-        } else {
-            Err(SemanticError {
+    ) -> Result<BinaryTypeInfo, SemanticError> {
+        if !Self::is_integer(left_type) || !Self::is_integer(right_type) {
+            return Err(SemanticError {
                 message: format!(
                     "invalid operands to binary operator '{:?}'\n\
                      left operand has type '{:?}'\n\
@@ -161,8 +184,30 @@ impl Checker {
                     op, left_type, right_type
                 ),
                 span: *op_span,
-            })
+            });
         }
+        let mut operand_ty = Self::usual_arithmetic_type(left_type, right_type);
+        let mut result_ty = match op {
+            BinaryOp::Equal
+            | BinaryOp::NotEqual
+            | BinaryOp::Less
+            | BinaryOp::LessEqual
+            | BinaryOp::Greater
+            | BinaryOp::GreaterEqual
+            | BinaryOp::LogicalAnd
+            | BinaryOp::LogicalOr => Type::Int,
+
+            _ => operand_ty,
+        };
+        if *op == BinaryOp::ShiftLeft || *op == BinaryOp::ShiftRight {
+            operand_ty = Self::promoted_type(left_type);
+            result_ty = Self::promoted_type(left_type);
+        }
+
+        Ok(BinaryTypeInfo {
+            operand_ty,
+            result_ty,
+        })
     }
 
     fn check_lvalue(&self, expr: &Expr, op_span: Span) -> Result<TypedExpr, SemanticError> {
@@ -221,13 +266,17 @@ impl Checker {
             }
             Expr::Unary { op, op_span, expr } => {
                 let typed_expr = self.check_expr(expr)?;
+                let ty = match op {
+                    UnaryOp::LogicalNot => Type::Int,
+                    UnaryOp::BitwiseNot | UnaryOp::Negate => Self::promoted_type(typed_expr.ty),
+                };
                 Ok(TypedExpr {
                     kind: TypedExprKind::Unary {
                         op: *op,
                         op_span: *op_span,
                         expr: Box::new(typed_expr),
                     },
-                    ty: Type::Int,
+                    ty,
                 })
             }
             Expr::Binary {
@@ -239,17 +288,18 @@ impl Checker {
                 let typed_left = self.check_expr(left)?;
                 let typed_right = self.check_expr(right)?;
 
-                let result_type =
+                let type_info =
                     self.check_binary_op_types(op, op_span, typed_left.ty, typed_right.ty)?;
 
                 Ok(TypedExpr {
                     kind: TypedExprKind::Binary {
                         op: *op,
                         op_span: *op_span,
+                        operand_ty: type_info.operand_ty,
                         left: Box::new(typed_left),
                         right: Box::new(typed_right),
                     },
-                    ty: result_type,
+                    ty: type_info.result_ty,
                 })
             }
             Expr::Call {
@@ -345,14 +395,14 @@ impl Checker {
                 let typed_target = self.check_lvalue(target, *op_span)?;
                 let typed_value = self.check_expr(value)?;
 
-                let result_type =
+                let type_info =
                     self.check_binary_op_types(op, op_span, typed_target.ty, typed_value.ty)?;
 
-                if !Self::is_assignable(typed_target.ty, result_type) {
+                if !Self::is_assignable(typed_target.ty, type_info.result_ty) {
                     return Err(SemanticError {
                         message: format!(
                             "cannot assign value of type '{:?}' to variable of type '{:?}'",
-                            result_type, typed_target.ty
+                            type_info.result_ty, typed_target.ty
                         ),
                         span: *op_span,
                     });
@@ -364,6 +414,7 @@ impl Checker {
                         target: Box::new(typed_target),
                         op: *op,
                         op_span: *op_span,
+                        operand_ty: type_info.operand_ty,
                         value: Box::new(typed_value),
                     },
                     ty,

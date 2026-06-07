@@ -207,6 +207,91 @@ fn qemu_bitwise_and_shift_programs_return_expected_values() {
 
 #[test]
 #[ignore = "requires qemu-riscv32 and riscv64-linux-gnu binutils"]
+fn qemu_unsigned_int_programs_return_expected_values() {
+    run_qemu_case(
+        "unsigned-local-initializer",
+        "int main() {\n    unsigned int x = 42;\n    return x;\n}\n",
+        42,
+    );
+    run_qemu_case(
+        "unsigned-parameter-and-return",
+        "unsigned int id(unsigned int x) {\n    return x;\n}\n\nint main() {\n    return id(7);\n}\n",
+        7,
+    );
+    run_qemu_case(
+        "unsigned-comparison-uses-unsigned-operands",
+        "int main() {\n    unsigned int x = 0 - 1;\n    return x > 1;\n}\n",
+        1,
+    );
+    run_qemu_case(
+        "mixed-unsigned-comparison-converts-int",
+        "int main() {\n    unsigned int x = 0 - 1;\n    int y = 1;\n    return x > y;\n}\n",
+        1,
+    );
+    run_qemu_case(
+        "unsigned-less-equal-uses-unsigned-operands",
+        "int main() {\n    unsigned int x = 0 - 1;\n    return x <= 1;\n}\n",
+        0,
+    );
+    run_qemu_case(
+        "unsigned-greater-equal-uses-unsigned-operands",
+        "int main() {\n    unsigned int x = 0 - 1;\n    return x >= 1;\n}\n",
+        1,
+    );
+    run_qemu_case(
+        "unsigned-divide-uses-divu",
+        "int main() {\n    unsigned int x = 0 - 2;\n    return x / 2 == 2147483647;\n}\n",
+        1,
+    );
+    run_qemu_case(
+        "unsigned-remainder-uses-remu",
+        "int main() {\n    unsigned int x = 0 - 1;\n    return x % 2 == 1;\n}\n",
+        1,
+    );
+    run_qemu_case(
+        "unsigned-shift-right-uses-logical-shift",
+        "int main() {\n    unsigned int x = 0 - 8;\n    return (x >> 1) < x;\n}\n",
+        1,
+    );
+    run_qemu_case(
+        "signed-left-shift-right-with-unsigned-count-uses-arithmetic-shift",
+        "int main() {\n    int x = -8;\n    unsigned int shift = 1;\n    return (x >> shift) < 0;\n}\n",
+        1,
+    );
+    run_qemu_case(
+        "unsigned-compound-divide-uses-divu",
+        "int main() {\n    unsigned int x = 0 - 2;\n    x /= 2;\n    return x == 2147483647;\n}\n",
+        1,
+    );
+    run_qemu_case(
+        "unsigned-compound-remainder-uses-remu",
+        "int main() {\n    unsigned int x = 0 - 1;\n    x %= 2;\n    return x;\n}\n",
+        1,
+    );
+    run_qemu_case(
+        "unsigned-compound-shift-right-uses-logical-shift",
+        "int main() {\n    unsigned int x = 0 - 8;\n    unsigned int original = x;\n    x >>= 1;\n    return x < original;\n}\n",
+        1,
+    );
+    run_qemu_case(
+        "signed-left-compound-shift-right-with-unsigned-count-uses-arithmetic-shift",
+        "int main() {\n    int x = -8;\n    unsigned int shift = 1;\n    x >>= shift;\n    return x < 0;\n}\n",
+        1,
+    );
+    run_qemu_case(
+        "unsigned-unary-negation-preserves-unsigned-type",
+        "int main() {\n    unsigned int x = 1;\n    return -x > 1;\n}\n",
+        1,
+    );
+    run_qemu_case(
+        "unsigned-bitwise-not-preserves-unsigned-type",
+        "int main() {\n    unsigned int x = 0;\n    return ~x > 1;\n}\n",
+        1,
+    );
+}
+
+#[test]
+#[ignore = "requires qemu-riscv32 and riscv64-linux-gnu binutils"]
 fn qemu_local_variable_programs_return_expected_values() {
     run_qemu_case(
         "local-return",

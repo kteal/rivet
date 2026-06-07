@@ -167,4 +167,5 @@ pub enum UnaryOp {
 pub enum Type {
     Int,
     Char,
+    UnsignedInt,
 }

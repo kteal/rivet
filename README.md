@@ -2,7 +2,7 @@
 
 `rivet` is a C compiler written in Rust that targets RV32IM assembly. It is working toward a C23 implementation and currently implements a small C23 subset.
 
-It currently supports a small C subset with `int` and `char`, local variables, functions, calls, block scope, common control flow, assignment expressions, compound assignments, prefix/postfix increment and decrement, and most integer operators with C-like precedence. It emits RV32IM assembly and reports lexer, parser, and semantic errors with source locations.
+It currently supports a small C subset with `int`, `char`, and `unsigned int`, local variables, functions, calls, block scope, common control flow, assignment expressions, compound assignments, prefix/postfix increment and decrement, and most integer operators with C-like precedence. It emits RV32IM assembly and reports lexer, parser, and semantic errors with source locations.
 
 The current language subset supports programs shaped like:
 
@@ -177,10 +177,11 @@ Expressions and operators:
 Types and semantic analysis:
 
 - [x] semantic errors for undeclared and duplicate locals
-- [x] basic type checking and implicit conversions for `int` and `char`
+- [x] basic type checking and implicit conversions for `int`, `char`, and `unsigned int`
 - [x] `char`
+- [x] `unsigned int`
 - [ ] full integer conversion rules
-- [ ] signedness: `signed`, `unsigned`
+- [ ] remaining signedness spelling and combinations: `signed`, bare `unsigned`, `unsigned char`, etc.
 - [ ] other non-`int` scalar types: `short`, `long`
 - [ ] fixed-width and standard integer typedef compatibility
 - [ ] `bool`, `true`, `false`

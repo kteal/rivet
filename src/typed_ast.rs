@@ -99,6 +99,7 @@ pub enum TypedExprKind {
     Binary {
         op: BinaryOp,
         op_span: Span,
+        operand_ty: Type,
         left: Box<TypedExpr>,
         right: Box<TypedExpr>,
     },
@@ -121,6 +122,7 @@ pub enum TypedExprKind {
         target: Box<TypedExpr>,
         op: BinaryOp,
         op_span: Span,
+        operand_ty: Type,
         value: Box<TypedExpr>,
     },
     PrefixInc {
