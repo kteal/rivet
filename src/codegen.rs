@@ -187,11 +187,16 @@ impl Codegen {
         offset
     }
 
-    fn size_of_type(ty: &Type) -> i32 {
-        match ty {
-            Type::Char => 1,
-            Type::Int | Type::UnsignedInt | Type::Pointer(_) => 4,
-        }
+    fn emit(&mut self, args: fmt::Arguments) {
+        self.out.write_fmt(args).unwrap();
+    }
+
+    fn emit_line(&mut self, args: fmt::Arguments) {
+        self.emit(format_args!("    {args}\n"));
+    }
+
+    fn emit_label(&mut self, label: &str) {
+        self.emit(format_args!("{label}:\n"));
     }
 
     fn push_a0(&mut self) {
@@ -209,16 +214,24 @@ impl Codegen {
         self.emit_line(format_args!("addi sp, sp, 4"));
     }
 
-    fn emit(&mut self, args: fmt::Arguments) {
-        self.out.write_fmt(args).unwrap();
+    fn scale_reg(&mut self, scale: i32, reg: &str) {
+        match scale {
+            1 => (),
+            2 => self.emit_line(format_args!("slli {reg}, {reg}, 1")),
+            4 => self.emit_line(format_args!("slli {reg}, {reg}, 2")),
+            8 => self.emit_line(format_args!("slli {reg}, {reg}, 3")),
+            x => {
+                self.emit_line(format_args!("li t1, {x}"));
+                self.emit_line(format_args!("mul {reg}, {reg}, t1"));
+            }
+        }
     }
 
-    fn emit_line(&mut self, args: fmt::Arguments) {
-        self.emit(format_args!("    {args}\n"));
-    }
-
-    fn emit_label(&mut self, label: &str) {
-        self.emit(format_args!("{label}:\n"));
+    const fn size_of_type(ty: &Type) -> i32 {
+        match ty {
+            Type::Char => 1,
+            Type::Int | Type::UnsignedInt | Type::Pointer(_) => 4,
+        }
     }
 
     fn emit_narrow_to_type(&mut self, ty: &Type) {
@@ -374,19 +387,6 @@ impl Codegen {
                 }
             },
             BinaryOp::LogicalAnd | BinaryOp::LogicalOr => unreachable!(),
-        }
-    }
-
-    fn scale_reg(&mut self, scale: i32, reg: &str) {
-        match scale {
-            1 => (),
-            2 => self.emit_line(format_args!("slli {reg}, {reg}, 1")),
-            4 => self.emit_line(format_args!("slli {reg}, {reg}, 2")),
-            8 => self.emit_line(format_args!("slli {reg}, {reg}, 3")),
-            x => {
-                self.emit_line(format_args!("li t1, {x}"));
-                self.emit_line(format_args!("mul {reg}, {reg}, t1"));
-            }
         }
     }
 
@@ -733,15 +733,11 @@ impl Codegen {
         }
     }
 
-    fn emit_statements(&mut self, statements: &[TypedStatement]) {
-        for statement in statements {
-            self.emit_statement(statement);
-        }
-    }
-
     fn emit_block(&mut self, body: &[TypedStatement]) {
         self.enter_scope();
-        self.emit_statements(body);
+        for statement in body {
+            self.emit_statement(statement);
+        }
         self.exit_scope();
     }
 
@@ -783,7 +779,9 @@ impl Codegen {
         }
 
         self.current_function_return_type = Some(function.return_type.clone());
-        self.emit_statements(&function.body);
+        for statement in &function.body {
+            self.emit_statement(statement);
+        }
         self.current_function_return_type = None;
         self.emit_epilogue();
     }

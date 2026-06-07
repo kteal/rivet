@@ -73,20 +73,6 @@ impl Checker {
             .expect("semantic checker should have an active scope")
     }
 
-    fn is_assignable(target: &Type, value: &Type) -> bool {
-        target == value || (is_integer(target) && is_integer(value))
-    }
-
-    const fn promoted_type(ty: &Type) -> Type {
-        match ty {
-            Type::Int | Type::Char => Type::Int,
-            Type::UnsignedInt => Type::UnsignedInt,
-            Type::Pointer(_) => {
-                panic!("semantic checker should not be trying to promote a pointer")
-            }
-        }
-    }
-
     fn declare_local(&mut self, ty: &Type, name: &str, span: Span) -> Result<(), SemanticError> {
         if self.current_scope().contains_key(name) {
             return Err(SemanticError {
@@ -149,6 +135,20 @@ impl Checker {
             message: format!("undeclared function '{name}'"),
             span,
         })
+    }
+
+    fn is_assignable(target: &Type, value: &Type) -> bool {
+        target == value || (is_integer(target) && is_integer(value))
+    }
+
+    const fn promoted_type(ty: &Type) -> Type {
+        match ty {
+            Type::Int | Type::Char => Type::Int,
+            Type::UnsignedInt => Type::UnsignedInt,
+            Type::Pointer(_) => {
+                panic!("semantic checker should not be trying to promote a pointer")
+            }
+        }
     }
 
     fn usual_arithmetic_type(left: &Type, right: &Type) -> Type {
@@ -236,6 +236,10 @@ impl Checker {
         })
     }
 
+    const fn is_inc_dec_type(ty: &Type) -> bool {
+        is_integer(ty) || matches!(ty, Type::Pointer(_))
+    }
+
     fn check_lvalue(&self, expr: &Expr, op_span: Span) -> Result<TypedExpr, SemanticError> {
         match expr {
             Expr::Variable { name, span } => {
@@ -254,10 +258,6 @@ impl Checker {
                 span: op_span,
             }),
         }
-    }
-
-    fn is_inc_dec_type(ty: &Type) -> bool {
-        is_integer(ty) || matches!(ty, Type::Pointer(_))
     }
 
     fn check_inc_dec(
@@ -283,6 +283,109 @@ impl Checker {
         })
     }
 
+    fn check_unary_expr(
+        &self,
+        op: UnaryOp,
+        op_span: &Span,
+        expr: &Expr,
+    ) -> Result<TypedExpr, SemanticError> {
+        let typed_expr = self.check_expr(expr)?;
+        let ty = match op {
+            UnaryOp::LogicalNot => Type::Int,
+            UnaryOp::BitwiseNot | UnaryOp::Negate => {
+                if !is_integer(&typed_expr.ty) {
+                    return Err(SemanticError {
+                        message: format!(
+                            "cannot perform unary operation '{op:?}' on non-integer type '{:?}'",
+                            typed_expr.ty
+                        ),
+                        span: *op_span,
+                    });
+                }
+                Self::promoted_type(&typed_expr.ty)
+            }
+            UnaryOp::Dereference => match &typed_expr.ty {
+                Type::Pointer(inner) => *inner.clone(),
+                _ => {
+                    return Err(SemanticError {
+                        message: format!(
+                            "cannot dereference non-pointer type '{:?}'",
+                            typed_expr.ty
+                        ),
+                        span: *op_span,
+                    });
+                }
+            },
+        };
+        Ok(TypedExpr {
+            kind: TypedExprKind::Unary {
+                op,
+                op_span: *op_span,
+                expr: Box::new(typed_expr),
+            },
+            ty,
+        })
+    }
+
+    fn check_call_expr(
+        &self,
+        name: &str,
+        name_span: &Span,
+        args: &[Expr],
+    ) -> Result<TypedExpr, SemanticError> {
+        let function_info = self.check_function_declared(name, *name_span)?;
+
+        if args.len() > 8 {
+            return Err(SemanticError {
+                message: format!(
+                    "too many arguments in call to function {}, got {}, max 8",
+                    name,
+                    args.len()
+                ),
+                span: *name_span,
+            });
+        }
+
+        if function_info.params.len() != args.len() {
+            return Err(SemanticError {
+                message: format!(
+                    "function call of '{}' has {} arguments, declaration has {}",
+                    function_info.name,
+                    args.len(),
+                    function_info.params.len()
+                ),
+                span: *name_span,
+            });
+        }
+
+        let typed_args = args
+            .iter()
+            .map(|arg| self.check_expr(arg))
+            .collect::<Result<Vec<_>, _>>()?;
+
+        for (param, typed_arg) in function_info.params.iter().zip(&typed_args) {
+            if !Self::is_assignable(&param.ty, &typed_arg.ty) {
+                return Err(SemanticError {
+                    message: format!(
+                        "cannot pass value of type '{:?}' to parameter of type '{:?}'",
+                        typed_arg.ty, param.ty
+                    ),
+                    span: typed_arg.diagnostic_span(),
+                });
+            }
+        }
+
+        Ok(TypedExpr {
+            ty: function_info.return_type.clone(),
+            kind: TypedExprKind::Call {
+                name: name.to_string(),
+                name_span: *name_span,
+                args: typed_args,
+            },
+        })
+    }
+
+    #[allow(clippy::too_many_lines)]
     fn check_expr(&self, expr: &Expr) -> Result<TypedExpr, SemanticError> {
         match expr {
             Expr::IntLiteral { value, span } => Ok(TypedExpr {
@@ -303,44 +406,7 @@ impl Checker {
                     ty,
                 })
             }
-            Expr::Unary { op, op_span, expr } => {
-                let typed_expr = self.check_expr(expr)?;
-                let ty = match op {
-                    UnaryOp::LogicalNot => Type::Int,
-                    UnaryOp::BitwiseNot | UnaryOp::Negate => {
-                        if !is_integer(&typed_expr.ty) {
-                            return Err(SemanticError {
-                                message: format!(
-                                    "cannot perform unary operation '{op:?}' on non-integer type '{:?}'",
-                                    typed_expr.ty
-                                ),
-                                span: *op_span,
-                            });
-                        }
-                        Self::promoted_type(&typed_expr.ty)
-                    }
-                    UnaryOp::Dereference => match &typed_expr.ty {
-                        Type::Pointer(inner) => *inner.clone(),
-                        _ => {
-                            return Err(SemanticError {
-                                message: format!(
-                                    "cannot dereference non-pointer type '{:?}'",
-                                    typed_expr.ty
-                                ),
-                                span: *op_span,
-                            });
-                        }
-                    },
-                };
-                Ok(TypedExpr {
-                    kind: TypedExprKind::Unary {
-                        op: *op,
-                        op_span: *op_span,
-                        expr: Box::new(typed_expr),
-                    },
-                    ty,
-                })
-            }
+            Expr::Unary { op, op_span, expr } => self.check_unary_expr(*op, op_span, expr),
             Expr::Binary {
                 op,
                 op_span,
@@ -368,58 +434,7 @@ impl Checker {
                 name,
                 name_span,
                 args,
-            } => {
-                let function_info = self.check_function_declared(name, *name_span)?;
-
-                if args.len() > 8 {
-                    return Err(SemanticError {
-                        message: format!(
-                            "too many arguments in call to function {}, got {}, max 8",
-                            name,
-                            args.len()
-                        ),
-                        span: *name_span,
-                    });
-                }
-
-                if function_info.params.len() != args.len() {
-                    return Err(SemanticError {
-                        message: format!(
-                            "function call of '{}' has {} arguments, declaration has {}",
-                            function_info.name,
-                            args.len(),
-                            function_info.params.len()
-                        ),
-                        span: *name_span,
-                    });
-                }
-
-                let typed_args = args
-                    .iter()
-                    .map(|arg| self.check_expr(arg))
-                    .collect::<Result<Vec<_>, _>>()?;
-
-                for (param, typed_arg) in function_info.params.iter().zip(&typed_args) {
-                    if !Self::is_assignable(&param.ty, &typed_arg.ty) {
-                        return Err(SemanticError {
-                            message: format!(
-                                "cannot pass value of type '{:?}' to parameter of type '{:?}'",
-                                typed_arg.ty, param.ty
-                            ),
-                            span: typed_arg.diagnostic_span(),
-                        });
-                    }
-                }
-
-                Ok(TypedExpr {
-                    ty: function_info.return_type.clone(),
-                    kind: TypedExprKind::Call {
-                        name: name.clone(),
-                        name_span: *name_span,
-                        args: typed_args,
-                    },
-                })
-            }
+            } => self.check_call_expr(name, name_span, args),
             Expr::Assign {
                 target,
                 op_span,
@@ -512,6 +527,7 @@ impl Checker {
         }
     }
 
+    #[allow(clippy::too_many_lines)]
     fn check_statement(&mut self, statement: &Statement) -> Result<TypedStatement, SemanticError> {
         match statement {
             Statement::Return(expr) => {
@@ -738,6 +754,13 @@ impl Checker {
     }
 }
 
+/// Performs semantic analysis and returns a typed AST.
+///
+/// # Errors
+///
+/// Returns a [`SemanticError`] when the program violates the currently supported
+/// semantic rules, such as using undeclared variables, redeclaring locals, or
+/// applying operators to unsupported operand types.
 pub fn check(program: &Program) -> Result<TypedProgram, SemanticError> {
     let mut checker = Checker::new();
 

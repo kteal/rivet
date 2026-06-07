@@ -91,6 +91,7 @@ impl<'a> Lexer<'a> {
         }
     }
 
+    #[allow(clippy::too_many_lines)]
     fn lex(&mut self) -> Result<Vec<Token>, LexError> {
         while let Some(ch) = self.chars.peek().copied() {
             match ch {
@@ -448,6 +449,12 @@ impl<'a> Lexer<'a> {
     }
 }
 
+/// Lexes C source text into tokens.
+///
+/// # Errors
+///
+/// Returns a [`LexError`] when the source contains an unknown character,
+/// malformed character constant, or unterminated block comment.
 pub fn lex(source: &str) -> Result<Vec<Token>, LexError> {
     let mut lexer = Lexer::new(source);
     lexer.lex()
