@@ -1,4 +1,5 @@
-use crate::ast::{BinaryOp, Expr, Function, Program, Statement, Type, UnaryOp};
+use crate::ast::{BinaryOp, Type, UnaryOp};
+use crate::typed_ast::{TypedExpr, TypedExprKind, TypedFunction, TypedProgram, TypedStatement};
 use std::collections::HashMap;
 use std::fmt::{self, Write};
 
@@ -19,11 +20,11 @@ struct FrameLayout {
 }
 
 impl FrameLayout {
-    fn count_locals_in_statement(statement: &Statement) -> i32 {
+    fn count_locals_in_statement(statement: &TypedStatement) -> i32 {
         match statement {
-            Statement::VarDecl { .. } => 1,
-            Statement::Block(body) => FrameLayout::count_locals_in_statements(body),
-            Statement::If {
+            TypedStatement::VarDecl { .. } => 1,
+            TypedStatement::Block(body) => FrameLayout::count_locals_in_statements(body),
+            TypedStatement::If {
                 cond: _,
                 then_branch,
                 else_branch,
@@ -34,9 +35,11 @@ impl FrameLayout {
                 }
                 sum
             }
-            Statement::While { cond: _, body } => FrameLayout::count_locals_in_statement(body),
-            Statement::DoWhile { body, cond: _ } => FrameLayout::count_locals_in_statement(body),
-            Statement::For {
+            TypedStatement::While { cond: _, body } => FrameLayout::count_locals_in_statement(body),
+            TypedStatement::DoWhile { body, cond: _ } => {
+                FrameLayout::count_locals_in_statement(body)
+            }
+            TypedStatement::For {
                 init,
                 cond: _,
                 post: _,
@@ -53,7 +56,7 @@ impl FrameLayout {
         }
     }
 
-    fn count_locals_in_statements(statements: &[Statement]) -> i32 {
+    fn count_locals_in_statements(statements: &[TypedStatement]) -> i32 {
         let mut sum = 0;
         for statement in statements {
             sum += FrameLayout::count_locals_in_statement(statement);
@@ -61,7 +64,7 @@ impl FrameLayout {
         sum
     }
 
-    fn for_function(function: &Function) -> Self {
+    fn for_function(function: &TypedFunction) -> Self {
         let num_locals = FrameLayout::count_locals_in_statements(&function.body);
         let mut size = (num_locals * 4) + 8;
         // Add space for parameters
@@ -107,7 +110,7 @@ impl Codegen {
         }
     }
 
-    fn reset_for_function(&mut self, function: &Function) {
+    fn reset_for_function(&mut self, function: &TypedFunction) {
         self.frame = FrameLayout::for_function(function);
         self.scopes = vec![HashMap::new()];
         self.next_local_offset = -12;
@@ -157,9 +160,9 @@ impl Codegen {
             .expect("codegen should have an active scope")
     }
 
-    fn resolve_lvalue_local(&self, expr: &Expr) -> LocalInfo {
-        match expr {
-            Expr::Variable { name, .. } => self.resolve_local(name).unwrap(),
+    fn resolve_lvalue_local(&self, expr: &TypedExpr) -> LocalInfo {
+        match &expr.kind {
+            TypedExprKind::Variable { name, .. } => self.resolve_local(&name).unwrap(),
             _ => panic!("semantic analysis should reject non-variable lvalue"),
         }
     }
@@ -171,10 +174,10 @@ impl Codegen {
             .find_map(|scope| scope.get(name).copied())
     }
 
-    fn declare_local(&mut self, ty: &Type, name: &str) -> i32 {
+    fn declare_local(&mut self, ty: Type, name: &str) -> i32 {
         let offset = self.next_local_offset;
         self.current_scope_mut()
-            .insert(name.to_string(), LocalInfo { offset, ty: *ty });
+            .insert(name.to_string(), LocalInfo { offset, ty });
         self.next_local_offset -= 4;
         offset
     }
@@ -240,7 +243,7 @@ impl Codegen {
         }
     }
 
-    fn emit_logical_and(&mut self, left: &Expr, right: &Expr) {
+    fn emit_logical_and(&mut self, left: &TypedExpr, right: &TypedExpr) {
         let false_label = self.new_label("logical_and_false");
         let end_label = self.new_label("logical_and_end");
 
@@ -257,7 +260,7 @@ impl Codegen {
         self.emit_label(&end_label);
     }
 
-    fn emit_logical_or(&mut self, left: &Expr, right: &Expr) {
+    fn emit_logical_or(&mut self, left: &TypedExpr, right: &TypedExpr) {
         let true_label = self.new_label("logical_or_true");
         let end_label = self.new_label("logical_or_end");
 
@@ -274,13 +277,17 @@ impl Codegen {
         self.emit_label(&end_label);
     }
 
-    fn emit_binary_op(&mut self, op: &BinaryOp) {
+    fn emit_binary_op(&mut self, op: &BinaryOp, ty: Type) {
         match op {
             BinaryOp::Add => self.emit_line(format_args!("add a0, t0, a0")),
             BinaryOp::Subtract => self.emit_line(format_args!("sub a0, t0, a0")),
             BinaryOp::Multiply => self.emit_line(format_args!("mul a0, t0, a0")),
-            BinaryOp::Divide => self.emit_line(format_args!("div a0, t0, a0")),
-            BinaryOp::Remainder => self.emit_line(format_args!("rem a0, t0, a0")),
+            BinaryOp::Divide => match ty {
+                Type::Int | Type::Char => self.emit_line(format_args!("div a0, t0, a0")),
+            },
+            BinaryOp::Remainder => match ty {
+                Type::Int | Type::Char => self.emit_line(format_args!("rem a0, t0, a0")),
+            },
             BinaryOp::Equal => {
                 self.emit_line(format_args!("xor a0, t0, a0"));
                 self.emit_line(format_args!("seqz a0, a0"));
@@ -289,26 +296,36 @@ impl Codegen {
                 self.emit_line(format_args!("xor a0, t0, a0"));
                 self.emit_line(format_args!("snez a0, a0"));
             }
-            BinaryOp::Less => self.emit_line(format_args!("slt a0, t0, a0")),
-            BinaryOp::LessEqual => {
-                self.emit_line(format_args!("slt a0, a0, t0"));
-                self.emit_line(format_args!("xori a0, a0, 1"));
-            }
-            BinaryOp::Greater => self.emit_line(format_args!("slt a0, a0, t0")),
-            BinaryOp::GreaterEqual => {
-                self.emit_line(format_args!("slt a0, t0, a0"));
-                self.emit_line(format_args!("xori a0, a0, 1"));
-            }
+            BinaryOp::Less => match ty {
+                Type::Int | Type::Char => self.emit_line(format_args!("slt a0, t0, a0")),
+            },
+            BinaryOp::LessEqual => match ty {
+                Type::Int | Type::Char => {
+                    self.emit_line(format_args!("slt a0, a0, t0"));
+                    self.emit_line(format_args!("xori a0, a0, 1"));
+                }
+            },
+            BinaryOp::Greater => match ty {
+                Type::Int | Type::Char => self.emit_line(format_args!("slt a0, a0, t0")),
+            },
+            BinaryOp::GreaterEqual => match ty {
+                Type::Int | Type::Char => {
+                    self.emit_line(format_args!("slt a0, t0, a0"));
+                    self.emit_line(format_args!("xori a0, a0, 1"));
+                }
+            },
             BinaryOp::BitAnd => self.emit_line(format_args!("and a0, a0, t0")),
             BinaryOp::BitXor => self.emit_line(format_args!("xor a0, a0, t0")),
             BinaryOp::BitOr => self.emit_line(format_args!("or a0, a0, t0")),
             BinaryOp::ShiftLeft => self.emit_line(format_args!("sll a0, t0, a0")),
-            BinaryOp::ShiftRight => self.emit_line(format_args!("sra a0, t0, a0")),
+            BinaryOp::ShiftRight => match ty {
+                Type::Int | Type::Char => self.emit_line(format_args!("sra a0, t0, a0")),
+            },
             BinaryOp::LogicalAnd | BinaryOp::LogicalOr => unreachable!(),
         };
     }
 
-    fn emit_binary(&mut self, op: &BinaryOp, left: &Expr, right: &Expr) {
+    fn emit_binary(&mut self, op: &BinaryOp, ty: Type, left: &TypedExpr, right: &TypedExpr) {
         // Short-circuit binary operations
         match op {
             BinaryOp::LogicalAnd => {
@@ -328,20 +345,26 @@ impl Codegen {
         self.emit_expr(right);
         self.pop_t0();
 
-        self.emit_binary_op(op);
+        self.emit_binary_op(op, ty);
     }
 
-    fn emit_compound_assign(&mut self, local: &LocalInfo, op: &BinaryOp, value: &Expr) {
+    fn emit_compound_assign(
+        &mut self,
+        local: &LocalInfo,
+        op: &BinaryOp,
+        ty: Type,
+        value: &TypedExpr,
+    ) {
         self.emit_load_local(local);
         self.push_a0();
         self.emit_expr(value);
         self.pop_t0();
-        self.emit_binary_op(op);
+        self.emit_binary_op(op, ty);
 
         self.emit_store_local(local);
     }
 
-    fn emit_inc_dec(&mut self, expr: &Expr, delta: i32, postfix: bool) {
+    fn emit_inc_dec(&mut self, expr: &TypedExpr, delta: i32, postfix: bool) {
         let local = self.resolve_lvalue_local(expr);
 
         self.emit_load_local(&local);
@@ -358,40 +381,42 @@ impl Codegen {
         }
     }
 
-    fn emit_expr(&mut self, expr: &Expr) {
-        match expr {
-            Expr::IntLiteral { value, .. } => self.emit_line(format_args!("li a0, {value}")),
-            Expr::Binary {
+    fn emit_expr(&mut self, expr: &TypedExpr) {
+        match &expr.kind {
+            TypedExprKind::IntLiteral { value, .. } => {
+                self.emit_line(format_args!("li a0, {value}"))
+            }
+            TypedExprKind::Binary {
                 op,
                 op_span: _,
                 left,
                 right,
-            } => self.emit_binary(op, left, right),
-            Expr::Variable { name, .. } => {
+            } => self.emit_binary(&op, expr.ty, &left, &right),
+            TypedExprKind::Variable { name, .. } => {
                 let local = self
-                    .resolve_local(name)
+                    .resolve_local(&name)
                     .expect("usage of undefined variable");
                 self.emit_load_local(&local);
             }
-            Expr::Unary {
+            TypedExprKind::Unary {
                 op,
                 op_span: _,
                 expr,
             } => {
-                self.emit_expr(expr);
+                self.emit_expr(&expr);
                 match op {
                     UnaryOp::Negate => self.emit_line(format_args!("neg a0, a0")),
                     UnaryOp::LogicalNot => self.emit_line(format_args!("seqz a0, a0")),
                     UnaryOp::BitwiseNot => self.emit_line(format_args!("not a0, a0")),
                 }
             }
-            Expr::Call {
+            TypedExprKind::Call {
                 name,
                 name_span: _,
                 args,
             } => {
                 for arg in args {
-                    self.emit_expr(arg);
+                    self.emit_expr(&arg);
                     // Push a0 onto the stack
                     self.emit_line(format_args!("addi sp, sp, -4"));
                     self.emit_line(format_args!("sw a0, 0(sp)"));
@@ -403,37 +428,37 @@ impl Codegen {
                 }
                 self.emit_line(format_args!("call {name}"));
             }
-            Expr::Assign {
+            TypedExprKind::Assign {
                 target,
                 op_span: _,
                 value,
             } => {
-                self.emit_expr(value);
+                self.emit_expr(&value);
 
-                let local = self.resolve_lvalue_local(target);
+                let local = self.resolve_lvalue_local(&target);
                 self.emit_store_local(&local);
             }
-            Expr::CompoundAssign {
+            TypedExprKind::CompoundAssign {
                 target,
                 op,
                 op_span: _,
                 value,
             } => {
-                let local = self.resolve_lvalue_local(target);
-                self.emit_compound_assign(&local, op, value);
+                let local = self.resolve_lvalue_local(&target);
+                self.emit_compound_assign(&local, &op, expr.ty, &value);
             }
-            Expr::PrefixInc { expr, op_span: _ } => self.emit_inc_dec(expr, 1, false),
-            Expr::PrefixDec { expr, op_span: _ } => self.emit_inc_dec(expr, -1, false),
-            Expr::PostfixInc { expr, op_span: _ } => self.emit_inc_dec(expr, 1, true),
-            Expr::PostfixDec { expr, op_span: _ } => self.emit_inc_dec(expr, -1, true),
+            TypedExprKind::PrefixInc { expr, op_span: _ } => self.emit_inc_dec(&expr, 1, false),
+            TypedExprKind::PrefixDec { expr, op_span: _ } => self.emit_inc_dec(&expr, -1, false),
+            TypedExprKind::PostfixInc { expr, op_span: _ } => self.emit_inc_dec(&expr, 1, true),
+            TypedExprKind::PostfixDec { expr, op_span: _ } => self.emit_inc_dec(&expr, -1, true),
         }
     }
 
     fn emit_if_statement(
         &mut self,
-        cond: &Expr,
-        then_branch: &Statement,
-        else_branch: Option<&Statement>,
+        cond: &TypedExpr,
+        then_branch: &TypedStatement,
+        else_branch: Option<&TypedStatement>,
     ) {
         self.emit_expr(cond);
         let end_label = self.new_label("if_end");
@@ -454,7 +479,7 @@ impl Codegen {
         self.emit_label(&end_label);
     }
 
-    fn emit_while_statement(&mut self, cond: &Expr, body: &Statement) {
+    fn emit_while_statement(&mut self, cond: &TypedExpr, body: &TypedStatement) {
         let start_label = self.new_label("while_start");
         let end_label = self.new_label("while_end");
 
@@ -470,7 +495,7 @@ impl Codegen {
         self.pop_loop_labels();
     }
 
-    fn emit_do_while_statement(&mut self, body: &Statement, cond: &Expr) {
+    fn emit_do_while_statement(&mut self, body: &TypedStatement, cond: &TypedExpr) {
         let start_label = self.new_label("do_while_start");
         let continue_label = self.new_label("do_while_continue");
         let end_label = self.new_label("do_while_end");
@@ -489,10 +514,10 @@ impl Codegen {
 
     fn emit_for_statement(
         &mut self,
-        init: Option<&Statement>,
-        cond: Option<&Expr>,
-        post: Option<&Expr>,
-        body: &Statement,
+        init: Option<&TypedStatement>,
+        cond: Option<&TypedExpr>,
+        post: Option<&TypedExpr>,
+        body: &TypedStatement,
     ) {
         let start_label = self.new_label("for_start");
         let continue_label = self.new_label("for_continue");
@@ -528,59 +553,56 @@ impl Codegen {
         self.pop_loop_labels();
     }
 
-    fn emit_statement(&mut self, statement: &Statement) {
+    fn emit_statement(&mut self, statement: &TypedStatement) {
         match statement {
-            Statement::Return(expr) => {
+            TypedStatement::Return(expr) => {
                 self.emit_expr(expr);
-                match self
-                    .current_function_return_type
-                    .expect("codegen should have a function return type")
-                {
-                    Type::Int => (),
-                    Type::Char => self.emit_line(format_args!("andi a0, a0, 255")),
-                };
+                self.emit_narrow_to_type(
+                    self.current_function_return_type
+                        .expect("codegen should have a function return type"),
+                );
                 let return_label = self
                     .return_label
                     .clone()
                     .expect("codegen should have an active return label");
                 self.emit_line(format_args!("j {return_label}"));
             }
-            Statement::VarDecl {
+            TypedStatement::VarDecl {
                 ty,
                 name,
                 name_span: _,
                 init,
             } => {
-                let offset = self.declare_local(ty, name);
+                let offset = self.declare_local(*ty, name);
                 if let Some(init_expr) = init {
                     self.emit_expr(init_expr);
                     let local = LocalInfo { offset, ty: *ty };
                     self.emit_store_local(&local);
                 }
             }
-            Statement::Block(body) => {
+            TypedStatement::Block(body) => {
                 self.emit_block(body);
             }
-            Statement::If {
+            TypedStatement::If {
                 cond,
                 then_branch,
                 else_branch,
             } => self.emit_if_statement(cond, then_branch, else_branch.as_deref()),
-            Statement::While { cond, body } => self.emit_while_statement(cond, body),
-            Statement::DoWhile { body, cond } => self.emit_do_while_statement(body, cond),
-            Statement::Empty => (),
-            Statement::ExprStatement(expr) => self.emit_expr(expr),
-            Statement::Break { .. } => {
+            TypedStatement::While { cond, body } => self.emit_while_statement(cond, body),
+            TypedStatement::DoWhile { body, cond } => self.emit_do_while_statement(body, cond),
+            TypedStatement::Empty => (),
+            TypedStatement::ExprStatement(expr) => self.emit_expr(expr),
+            TypedStatement::Break { .. } => {
                 if let Some(label) = self.current_break_label() {
                     self.emit_line(format_args!("j {label}"));
                 }
             }
-            Statement::Continue { .. } => {
+            TypedStatement::Continue { .. } => {
                 if let Some(label) = self.current_continue_label() {
                     self.emit_line(format_args!("j {label}"));
                 }
             }
-            Statement::For {
+            TypedStatement::For {
                 init,
                 cond,
                 post,
@@ -589,13 +611,13 @@ impl Codegen {
         }
     }
 
-    fn emit_statements(&mut self, statements: &[Statement]) {
+    fn emit_statements(&mut self, statements: &[TypedStatement]) {
         for statement in statements {
             self.emit_statement(statement);
         }
     }
 
-    fn emit_block(&mut self, body: &[Statement]) {
+    fn emit_block(&mut self, body: &[TypedStatement]) {
         self.enter_scope();
         self.emit_statements(body);
         self.exit_scope();
@@ -624,13 +646,13 @@ impl Codegen {
         self.emit_line(format_args!("ret"));
     }
 
-    fn emit_function(&mut self, function: &Function) {
+    fn emit_function(&mut self, function: &TypedFunction) {
         self.reset_for_function(function);
         self.emit_prologue(&function.name);
 
         // Store the argument registers a0-a7 onto the stack, declaring as local vars
         for (i, param) in function.params.iter().enumerate() {
-            let offset = self.declare_local(&param.ty, &param.name);
+            let offset = self.declare_local(param.ty, &param.name);
             let local = LocalInfo {
                 offset,
                 ty: param.ty,
@@ -644,7 +666,7 @@ impl Codegen {
         self.emit_epilogue();
     }
 
-    fn emit_program(&mut self, program: &Program) -> String {
+    fn emit_program(&mut self, program: &TypedProgram) -> String {
         for function in &program.functions {
             self.emit_function(function);
         }
@@ -653,7 +675,7 @@ impl Codegen {
     }
 }
 
-pub fn generate(program: &Program, target: CodegenTarget) -> String {
+pub fn generate(program: &TypedProgram, target: CodegenTarget) -> String {
     let mut codegen = Codegen::new(target);
     codegen.emit_program(program)
 }

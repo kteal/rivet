@@ -3,6 +3,7 @@ mod common;
 use common::{param, param_with_span, span, span_from};
 use rivet::ast::{BinaryOp, Expr, Function, Program, Statement, Type};
 use rivet::sema::check;
+use rivet::typed_ast::{TypedExprKind, TypedStatement};
 
 fn main_program(body: Vec<Statement>) -> Program {
     Program {
@@ -850,6 +851,146 @@ fn accepts_compound_assignment_expression_in_return() {
     ]);
 
     check(&program).expect("semantic check should succeed");
+}
+
+#[test]
+fn typed_binary_expression_has_result_type() {
+    let program = main_program(vec![Statement::Return(Expr::Binary {
+        op: BinaryOp::Add,
+        op_span: span(),
+        left: Box::new(Expr::IntLiteral {
+            value: 1,
+            span: span(),
+        }),
+        right: Box::new(Expr::IntLiteral {
+            value: 2,
+            span: span(),
+        }),
+    })]);
+
+    let typed_program = check(&program).expect("semantic check should succeed");
+
+    let TypedStatement::Return(expr) = &typed_program.functions[0].body[0] else {
+        panic!("expected return statement");
+    };
+
+    assert_eq!(expr.ty, Type::Int);
+    assert!(matches!(expr.kind, TypedExprKind::Binary { .. }));
+}
+
+#[test]
+fn typed_char_compound_assignment_has_target_type() {
+    let program = main_program(vec![
+        Statement::VarDecl {
+            ty: Type::Char,
+            name_span: span(),
+            name: "c".to_string(),
+            init: Some(Expr::IntLiteral {
+                value: 1,
+                span: span(),
+            }),
+        },
+        Statement::Return(Expr::CompoundAssign {
+            target: Box::new(Expr::Variable {
+                name: "c".to_string(),
+                span: span(),
+            }),
+            op: BinaryOp::Add,
+            op_span: span(),
+            value: Box::new(Expr::IntLiteral {
+                value: 2,
+                span: span(),
+            }),
+        }),
+    ]);
+
+    let typed_program = check(&program).expect("semantic check should succeed");
+
+    let TypedStatement::Return(expr) = &typed_program.functions[0].body[1] else {
+        panic!("expected return statement");
+    };
+
+    assert_eq!(expr.ty, Type::Char);
+    assert!(matches!(expr.kind, TypedExprKind::CompoundAssign { .. }));
+}
+
+#[test]
+fn typed_postfix_increment_preserves_postfix_kind() {
+    let program = main_program(vec![
+        Statement::VarDecl {
+            ty: Type::Int,
+            name_span: span(),
+            name: "x".to_string(),
+            init: Some(Expr::IntLiteral {
+                value: 1,
+                span: span(),
+            }),
+        },
+        Statement::Return(Expr::PostfixInc {
+            expr: Box::new(Expr::Variable {
+                name: "x".to_string(),
+                span: span(),
+            }),
+            op_span: span(),
+        }),
+    ]);
+
+    let typed_program = check(&program).expect("semantic check should succeed");
+
+    let TypedStatement::Return(expr) = &typed_program.functions[0].body[1] else {
+        panic!("expected return statement");
+    };
+
+    assert_eq!(expr.ty, Type::Int);
+    assert!(matches!(expr.kind, TypedExprKind::PostfixInc { .. }));
+}
+
+#[test]
+fn typed_call_preserves_typed_arguments() {
+    let program = Program {
+        functions: vec![
+            Function {
+                return_type: Type::Int,
+                name_span: span(),
+                name: "id".to_string(),
+                params: vec![param_with_span(Type::Char, "c", span())],
+                body: vec![Statement::Return(Expr::Variable {
+                    name: "c".to_string(),
+                    span: span(),
+                })],
+            },
+            Function {
+                return_type: Type::Int,
+                name_span: span(),
+                name: "main".to_string(),
+                params: vec![],
+                body: vec![Statement::Return(Expr::Call {
+                    name_span: span(),
+                    name: "id".to_string(),
+                    args: vec![Expr::IntLiteral {
+                        value: 65,
+                        span: span(),
+                    }],
+                })],
+            },
+        ],
+        eof_span: span(),
+    };
+
+    let typed_program = check(&program).expect("semantic check should succeed");
+
+    let TypedStatement::Return(expr) = &typed_program.functions[1].body[0] else {
+        panic!("expected return statement");
+    };
+
+    let TypedExprKind::Call { args, .. } = &expr.kind else {
+        panic!("expected call expression");
+    };
+
+    assert_eq!(expr.ty, Type::Int);
+    assert_eq!(args.len(), 1);
+    assert_eq!(args[0].ty, Type::Int);
+    assert!(matches!(args[0].kind, TypedExprKind::IntLiteral { .. }));
 }
 
 #[test]

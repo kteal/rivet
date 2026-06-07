@@ -260,17 +260,17 @@ impl Parser {
     fn parse_unary(&mut self) -> Result<Expr, ParseError> {
         if *self.peek_kind() == TokenKind::PlusPlus {
             let op = self.advance();
-            let expr = Box::new(self.parse_unary()?);
+            let expr = self.parse_unary()?;
             return Ok(Expr::PrefixInc {
-                expr,
+                expr: Box::new(expr),
                 op_span: op.span,
             });
         }
         if *self.peek_kind() == TokenKind::MinusMinus {
             let op = self.advance();
-            let expr = Box::new(self.parse_unary()?);
+            let expr = self.parse_unary()?;
             return Ok(Expr::PrefixDec {
-                expr,
+                expr: Box::new(expr),
                 op_span: op.span,
             });
         }
@@ -350,21 +350,21 @@ impl Parser {
         let left = self.parse_logical_or()?;
 
         if let Some((compound_op, op_span)) = self.parse_assignment_op() {
-            let value = Box::new(self.parse_assignment()?);
+            let value = self.parse_assignment()?;
 
             if let Some(op) = compound_op {
                 return Ok(Expr::CompoundAssign {
                     target: Box::new(left),
                     op,
                     op_span,
-                    value,
+                    value: Box::new(value),
                 });
             }
 
             return Ok(Expr::Assign {
                 target: Box::new(left),
                 op_span,
-                value,
+                value: Box::new(value),
             });
         }
         Ok(left)
@@ -422,7 +422,7 @@ impl Parser {
         let then_statement = self.parse_statement()?;
         let else_statement = if *self.peek_kind() == TokenKind::KwElse {
             self.expect(TokenKind::KwElse)?;
-            Some(Box::new(self.parse_statement()?))
+            Some(self.parse_statement()?)
         } else {
             None
         };
@@ -430,7 +430,7 @@ impl Parser {
         Ok(Statement::If {
             cond,
             then_branch: Box::new(then_statement),
-            else_branch: else_statement,
+            else_branch: else_statement.map(Box::new),
         })
     }
 
@@ -439,21 +439,27 @@ impl Parser {
         self.expect(TokenKind::LParen)?;
         let cond = self.parse_expr()?;
         self.expect(TokenKind::RParen)?;
-        let body = Box::new(self.parse_statement()?);
+        let body = self.parse_statement()?;
 
-        Ok(Statement::While { cond, body })
+        Ok(Statement::While {
+            cond,
+            body: Box::new(body),
+        })
     }
 
     fn parse_do_while_statement(&mut self) -> Result<Statement, ParseError> {
         self.expect(TokenKind::KwDo)?;
-        let body = Box::new(self.parse_statement()?);
+        let body = self.parse_statement()?;
         self.expect(TokenKind::KwWhile)?;
         self.expect(TokenKind::LParen)?;
         let cond = self.parse_expr()?;
         self.expect(TokenKind::RParen)?;
         self.expect(TokenKind::Semicolon)?;
 
-        Ok(Statement::DoWhile { body, cond })
+        Ok(Statement::DoWhile {
+            body: Box::new(body),
+            cond,
+        })
     }
 
     fn parse_expr_statement(&mut self) -> Result<Statement, ParseError> {
@@ -491,7 +497,7 @@ impl Parser {
         if *self.peek_kind() == TokenKind::Semicolon {
             self.expect(TokenKind::Semicolon)?;
         } else {
-            init = Some(Box::new(self.parse_for_statement_init()?));
+            init = Some(self.parse_for_statement_init()?);
         }
 
         if *self.peek_kind() != TokenKind::Semicolon {
@@ -504,13 +510,13 @@ impl Parser {
         }
         self.expect(TokenKind::RParen)?;
 
-        let body = Box::new(self.parse_statement()?);
+        let body = self.parse_statement()?;
 
         Ok(Statement::For {
-            init,
+            init: init.map(Box::new),
             cond,
             post,
-            body,
+            body: Box::new(body),
         })
     }
 

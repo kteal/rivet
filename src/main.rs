@@ -61,10 +61,10 @@ fn main() {
         process::exit(1);
     });
 
-    if let Err(err) = check(&program) {
+    let typed_program = check(&program).unwrap_or_else(|err| {
         print_error(&path, &source, err.span, &err.message);
         process::exit(1);
-    }
+    });
 
-    print!("{}", generate(&program, CodegenTarget::Rv32));
+    print!("{}", generate(&typed_program, CodegenTarget::Rv32));
 }

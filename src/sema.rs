@@ -2,6 +2,9 @@ use std::collections::HashMap;
 
 use crate::ast::{BinaryOp, Expr, Function, Param, Program, Statement, Type};
 use crate::lexer::Span;
+use crate::typed_ast::{
+    TypedExpr, TypedExprKind, TypedFunction, TypedParam, TypedProgram, TypedStatement,
+};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SemanticError {
@@ -140,41 +143,6 @@ impl Checker {
         })
     }
 
-    fn check_function_params(
-        &self,
-        function_info: &FunctionInfo,
-        args: &[Expr],
-        span: Span,
-    ) -> Result<(), SemanticError> {
-        // Check number of arguments
-        if function_info.params.len() != args.len() {
-            return Err(SemanticError {
-                message: format!(
-                    "function call of '{}' has {} arguments, declaration has {}",
-                    function_info.name,
-                    args.len(),
-                    function_info.params.len()
-                ),
-                span,
-            });
-        }
-
-        // Check argument types
-        for (param, arg) in function_info.params.iter().zip(args) {
-            let arg_type = self.check_expr(arg)?;
-            if !Self::is_assignable(param.ty, arg_type) {
-                return Err(SemanticError {
-                    message: format!(
-                        "cannot pass value of type '{arg_type:?}' to parameter of type '{:?}'",
-                        param.ty
-                    ),
-                    span: arg.diagnostic_span(),
-                });
-            }
-        }
-        Ok(())
-    }
-
     fn check_binary_op_types(
         &self,
         op: &BinaryOp,
@@ -197,9 +165,19 @@ impl Checker {
         }
     }
 
-    fn check_lvalue(&self, expr: &Expr, op_span: Span) -> Result<Type, SemanticError> {
+    fn check_lvalue(&self, expr: &Expr, op_span: Span) -> Result<TypedExpr, SemanticError> {
         match expr {
-            Expr::Variable { name, span } => self.resolve_local(name, *span),
+            Expr::Variable { name, span } => {
+                let ty = self.resolve_local(name, *span)?;
+
+                Ok(TypedExpr {
+                    kind: TypedExprKind::Variable {
+                        name: name.clone(),
+                        span: *span,
+                    },
+                    ty,
+                })
+            }
             _ => Err(SemanticError {
                 message: "cannot assign to non-variable expression".to_string(),
                 span: op_span,
@@ -207,17 +185,50 @@ impl Checker {
         }
     }
 
-    fn check_expr(&self, expr: &Expr) -> Result<Type, SemanticError> {
+    fn check_inc_dec(
+        &self,
+        expr: &Expr,
+        op_span: Span,
+        make_kind: impl FnOnce(Box<TypedExpr>, Span) -> TypedExprKind,
+    ) -> Result<TypedExpr, SemanticError> {
+        let typed_lvalue = self.check_lvalue(expr, op_span)?;
+        let ty = typed_lvalue.ty;
+        Ok(TypedExpr {
+            kind: make_kind(Box::new(typed_lvalue), op_span),
+            ty,
+        })
+    }
+
+    fn check_expr(&self, expr: &Expr) -> Result<TypedExpr, SemanticError> {
         match expr {
-            Expr::IntLiteral { .. } => Ok(Type::Int),
-            Expr::Variable { name, span } => self.resolve_local(name, *span),
-            Expr::Unary {
-                op: _,
-                op_span: _,
-                expr,
-            } => {
-                let _expr_type = self.check_expr(expr)?;
-                Ok(Type::Int)
+            Expr::IntLiteral { value, span } => Ok(TypedExpr {
+                kind: TypedExprKind::IntLiteral {
+                    value: *value,
+                    span: *span,
+                },
+                ty: Type::Int,
+            }),
+            Expr::Variable { name, span } => {
+                let ty = self.resolve_local(name, *span)?;
+
+                Ok(TypedExpr {
+                    kind: TypedExprKind::Variable {
+                        name: name.clone(),
+                        span: *span,
+                    },
+                    ty,
+                })
+            }
+            Expr::Unary { op, op_span, expr } => {
+                let typed_expr = self.check_expr(expr)?;
+                Ok(TypedExpr {
+                    kind: TypedExprKind::Unary {
+                        op: *op,
+                        op_span: *op_span,
+                        expr: Box::new(typed_expr),
+                    },
+                    ty: Type::Int,
+                })
             }
             Expr::Binary {
                 op,
@@ -225,12 +236,21 @@ impl Checker {
                 left,
                 right,
             } => {
-                let left_type = self.check_expr(left)?;
-                let right_type = self.check_expr(right)?;
+                let typed_left = self.check_expr(left)?;
+                let typed_right = self.check_expr(right)?;
 
-                let result_type = self.check_binary_op_types(op, op_span, left_type, right_type)?;
+                let result_type =
+                    self.check_binary_op_types(op, op_span, typed_left.ty, typed_right.ty)?;
 
-                Ok(result_type)
+                Ok(TypedExpr {
+                    kind: TypedExprKind::Binary {
+                        op: *op,
+                        op_span: *op_span,
+                        left: Box::new(typed_left),
+                        right: Box::new(typed_right),
+                    },
+                    ty: result_type,
+                })
             }
             Expr::Call {
                 name,
@@ -238,7 +258,7 @@ impl Checker {
                 args,
             } => {
                 let function_info = self.check_function_declared(name, *name_span)?;
-                // For now, limit to 8 args (no stack-passed arguments)
+
                 if args.len() > 8 {
                     return Err(SemanticError {
                         message: format!(
@@ -249,28 +269,72 @@ impl Checker {
                         span: *name_span,
                     });
                 }
-                self.check_function_params(function_info, args, *name_span)?;
 
-                Ok(function_info.return_type)
+                if function_info.params.len() != args.len() {
+                    return Err(SemanticError {
+                        message: format!(
+                            "function call of '{}' has {} arguments, declaration has {}",
+                            function_info.name,
+                            args.len(),
+                            function_info.params.len()
+                        ),
+                        span: *name_span,
+                    });
+                }
+
+                let typed_args = args
+                    .iter()
+                    .map(|arg| self.check_expr(arg))
+                    .collect::<Result<Vec<_>, _>>()?;
+
+                for (param, typed_arg) in function_info.params.iter().zip(&typed_args) {
+                    if !Self::is_assignable(param.ty, typed_arg.ty) {
+                        return Err(SemanticError {
+                            message: format!(
+                                "cannot pass value of type '{:?}' to parameter of type '{:?}'",
+                                typed_arg.ty, param.ty
+                            ),
+                            span: typed_arg.diagnostic_span(),
+                        });
+                    }
+                }
+
+                Ok(TypedExpr {
+                    ty: function_info.return_type,
+                    kind: TypedExprKind::Call {
+                        name: name.clone(),
+                        name_span: *name_span,
+                        args: typed_args,
+                    },
+                })
             }
             Expr::Assign {
                 target,
                 op_span,
                 value,
             } => {
-                let target_type = self.check_lvalue(target, *op_span)?;
-                let value_type = self.check_expr(value)?;
+                let typed_target = self.check_lvalue(target, *op_span)?;
+                let typed_value = self.check_expr(value)?;
 
-                if !Self::is_assignable(target_type, value_type) {
+                if !Self::is_assignable(typed_target.ty, typed_value.ty) {
                     return Err(SemanticError {
                         message: format!(
-                            "cannot assign value of type '{value_type:?}' to variable of type '{target_type:?}'"
+                            "cannot assign value of type '{:?}' to variable of type '{:?}'",
+                            typed_value.ty, typed_target.ty
                         ),
                         span: *op_span,
                     });
                 }
 
-                Ok(target_type)
+                let ty = typed_target.ty;
+                Ok(TypedExpr {
+                    kind: TypedExprKind::Assign {
+                        target: Box::new(typed_target),
+                        op_span: *op_span,
+                        value: Box::new(typed_value),
+                    },
+                    ty,
+                })
             }
             Expr::CompoundAssign {
                 target,
@@ -278,59 +342,82 @@ impl Checker {
                 op_span,
                 value,
             } => {
-                let target_type = self.check_lvalue(target, *op_span)?;
-                let value_type = self.check_expr(value)?;
+                let typed_target = self.check_lvalue(target, *op_span)?;
+                let typed_value = self.check_expr(value)?;
 
                 let result_type =
-                    self.check_binary_op_types(op, op_span, target_type, value_type)?;
+                    self.check_binary_op_types(op, op_span, typed_target.ty, typed_value.ty)?;
 
-                if !Self::is_assignable(target_type, result_type) {
+                if !Self::is_assignable(typed_target.ty, result_type) {
                     return Err(SemanticError {
                         message: format!(
-                            "cannot assign result of type '{result_type:?}' to variable of type '{target_type:?}'"
+                            "cannot assign value of type '{:?}' to variable of type '{:?}'",
+                            result_type, typed_target.ty
                         ),
                         span: *op_span,
                     });
                 }
 
-                Ok(target_type)
+                let ty = typed_target.ty;
+                Ok(TypedExpr {
+                    kind: TypedExprKind::CompoundAssign {
+                        target: Box::new(typed_target),
+                        op: *op,
+                        op_span: *op_span,
+                        value: Box::new(typed_value),
+                    },
+                    ty,
+                })
             }
             Expr::PrefixInc { expr, op_span } => {
-                let target_type = self.check_lvalue(expr, *op_span)?;
-                Ok(target_type)
+                self.check_inc_dec(expr, *op_span, |expr, op_span| TypedExprKind::PrefixInc {
+                    expr,
+                    op_span,
+                })
             }
+
             Expr::PrefixDec { expr, op_span } => {
-                let target_type = self.check_lvalue(expr, *op_span)?;
-                Ok(target_type)
+                self.check_inc_dec(expr, *op_span, |expr, op_span| TypedExprKind::PrefixDec {
+                    expr,
+                    op_span,
+                })
             }
+
             Expr::PostfixInc { expr, op_span } => {
-                let target_type = self.check_lvalue(expr, *op_span)?;
-                Ok(target_type)
+                self.check_inc_dec(expr, *op_span, |expr, op_span| TypedExprKind::PostfixInc {
+                    expr,
+                    op_span,
+                })
             }
+
             Expr::PostfixDec { expr, op_span } => {
-                let target_type = self.check_lvalue(expr, *op_span)?;
-                Ok(target_type)
+                self.check_inc_dec(expr, *op_span, |expr, op_span| TypedExprKind::PostfixDec {
+                    expr,
+                    op_span,
+                })
             }
         }
     }
 
-    fn check_statement(&mut self, statement: &Statement) -> Result<(), SemanticError> {
+    fn check_statement(&mut self, statement: &Statement) -> Result<TypedStatement, SemanticError> {
         match statement {
             Statement::Return(expr) => {
-                let expr_type = self.check_expr(expr)?;
+                let typed_expr = self.check_expr(expr)?;
 
                 let return_type = self
                     .current_function_return_type
                     .expect("return statement checked outside function");
 
-                if !Self::is_assignable(return_type, expr_type) {
+                if !Self::is_assignable(return_type, typed_expr.ty) {
                     return Err(SemanticError {
                         message: format!(
-                            "cannot return value of type '{expr_type:?}' from function returning '{return_type:?}'"
+                            "cannot return value of type '{:?}' from function returning '{return_type:?}'",
+                            typed_expr.ty
                         ),
                         span: expr.diagnostic_span(),
                     });
                 }
+                Ok(TypedStatement::Return(typed_expr))
             }
             Statement::VarDecl {
                 ty,
@@ -339,45 +426,78 @@ impl Checker {
                 init,
             } => {
                 self.declare_local(*ty, name, *name_span)?;
-                if let Some(init_expr) = init {
-                    let init_type = self.check_expr(init_expr)?;
-                    if !Self::is_assignable(*ty, init_type) {
+                let typed_init = if let Some(init_expr) = init {
+                    let typed_init = self.check_expr(init_expr)?;
+
+                    if !Self::is_assignable(*ty, typed_init.ty) {
                         return Err(SemanticError {
                             message: format!(
-                                "cannot assign value of type '{init_type:?}' to variable of type '{ty:?}'"
+                                "cannot assign value of type '{:?}' to variable of type '{ty:?}'",
+                                typed_init.ty,
                             ),
-                            span: init_expr.diagnostic_span(),
+                            span: typed_init.diagnostic_span(),
                         });
                     }
-                }
+
+                    Some(typed_init)
+                } else {
+                    None
+                };
+
+                Ok(TypedStatement::VarDecl {
+                    ty: *ty,
+                    name: name.clone(),
+                    name_span: *name_span,
+                    init: typed_init,
+                })
             }
-            Statement::Block(body) => self.check_block(body)?,
+            Statement::Block(body) => self.check_block(body),
             Statement::If {
                 cond,
                 then_branch,
                 else_branch,
             } => {
-                self.check_expr(cond)?;
-                self.check_statement(then_branch)?;
-                if let Some(else_statement) = else_branch {
-                    self.check_statement(else_statement)?;
-                }
+                let typed_cond = self.check_expr(cond)?;
+                let typed_then = self.check_statement(then_branch)?;
+                let typed_else = if let Some(else_statement) = else_branch {
+                    Some(self.check_statement(else_statement)?)
+                } else {
+                    None
+                };
+
+                Ok(TypedStatement::If {
+                    cond: typed_cond,
+                    then_branch: Box::new(typed_then),
+                    else_branch: typed_else.map(Box::new),
+                })
             }
             Statement::While { cond, body } => {
                 self.enter_loop();
-                let res = self
-                    .check_expr(cond)
-                    .and_then(|_| self.check_statement(body));
+                let res = (|| -> Result<TypedStatement, SemanticError> {
+                    let typed_cond = self.check_expr(cond)?;
+                    let typed_body = self.check_statement(body)?;
+
+                    Ok(TypedStatement::While {
+                        cond: typed_cond,
+                        body: Box::new(typed_body),
+                    })
+                })();
                 self.exit_loop();
-                res?;
+                res
             }
             Statement::DoWhile { body, cond } => {
                 self.enter_loop();
-                let res = self
-                    .check_statement(body)
-                    .and_then(|_| self.check_expr(cond));
+                let res = (|| -> Result<TypedStatement, SemanticError> {
+                    let typed_body = self.check_statement(body)?;
+                    let typed_cond = self.check_expr(cond)?;
+
+                    Ok(TypedStatement::DoWhile {
+                        body: Box::new(typed_body),
+                        cond: typed_cond,
+                    })
+                })();
                 self.exit_loop();
-                res?;
+                res
             }
             Statement::For {
                 init,
@@ -387,27 +507,40 @@ impl Checker {
             } => {
                 self.enter_loop();
                 self.enter_scope();
-                let res = (|| -> Result<(), SemanticError> {
-                    if let Some(init_statement) = init {
-                        self.check_statement(init_statement)?;
-                    }
-                    if let Some(cond_expr) = cond {
-                        self.check_expr(cond_expr)?;
-                    }
-                    if let Some(post_expr) = post {
-                        self.check_expr(post_expr)?;
-                    }
-                    self.check_statement(body)?;
 
-                    Ok(())
+                let res = (|| -> Result<TypedStatement, SemanticError> {
+                    let typed_init = if let Some(init_statement) = init {
+                        Some(self.check_statement(init_statement)?)
+                    } else {
+                        None
+                    };
+                    let typed_cond = if let Some(cond_expr) = cond {
+                        Some(self.check_expr(cond_expr)?)
+                    } else {
+                        None
+                    };
+                    let typed_post = if let Some(post_expr) = post {
+                        Some(self.check_expr(post_expr)?)
+                    } else {
+                        None
+                    };
+                    let typed_body = self.check_statement(body)?;
+
+                    Ok(TypedStatement::For {
+                        init: typed_init.map(Box::new),
+                        cond: typed_cond,
+                        post: typed_post,
+                        body: Box::new(typed_body),
+                    })
                 })();
                 self.exit_scope();
                 self.exit_loop();
-                res?
+                res
             }
-            Statement::Empty => (),
+            Statement::Empty => Ok(TypedStatement::Empty),
             Statement::ExprStatement(expr) => {
-                self.check_expr(expr)?;
+                let typed_expr = self.check_expr(expr)?;
+                Ok(TypedStatement::ExprStatement(typed_expr))
             }
             Statement::Break { span } => {
                 if !self.in_loop() {
@@ -416,6 +549,7 @@ impl Checker {
                         span: *span,
                     });
                 }
+                Ok(TypedStatement::Break { span: *span })
             }
             Statement::Continue { span } => {
                 if !self.in_loop() {
@@ -424,63 +558,88 @@ impl Checker {
                         span: *span,
                     });
                 }
+                Ok(TypedStatement::Continue { span: *span })
             }
         }
-        Ok(())
     }
 
-    fn check_statements(&mut self, statements: &[Statement]) -> Result<(), SemanticError> {
-        for statement in statements {
-            self.check_statement(statement)?
-        }
-        Ok(())
-    }
-
-    fn check_block(&mut self, body: &[Statement]) -> Result<(), SemanticError> {
+    fn check_block(&mut self, body: &[Statement]) -> Result<TypedStatement, SemanticError> {
         self.enter_scope();
-        let res = self.check_statements(body);
+        let res = (|| -> Result<TypedStatement, SemanticError> {
+            let mut typed_body = vec![];
+            for statement in body {
+                typed_body.push(self.check_statement(statement)?);
+            }
+
+            Ok(TypedStatement::Block(typed_body))
+        })();
         self.exit_scope();
         res
     }
 
-    fn check_function(&mut self, function: &Function) -> Result<(), SemanticError> {
+    fn check_function(&mut self, function: &Function) -> Result<TypedFunction, SemanticError> {
+        self.enter_scope();
         let old_return_type = self
             .current_function_return_type
             .replace(function.return_type);
 
-        self.enter_scope();
-
-        let res = (|| -> Result<(), SemanticError> {
+        let res = (|| -> Result<TypedFunction, SemanticError> {
+            let mut typed_params = vec![];
             for param in &function.params {
                 self.declare_local(param.ty, &param.name, param.name_span)?;
+
+                typed_params.push(TypedParam {
+                    ty: param.ty,
+                    name: param.name.clone(),
+                    name_span: param.name_span,
+                });
             }
-            self.check_statements(&function.body)
+            let mut typed_body = vec![];
+            for statement in &function.body {
+                typed_body.push(self.check_statement(statement)?);
+            }
+
+            Ok(TypedFunction {
+                return_type: function.return_type,
+                name: function.name.clone(),
+                name_span: function.name_span,
+                params: typed_params,
+                body: typed_body,
+            })
         })();
 
-        self.exit_scope();
         self.current_function_return_type = old_return_type;
+        self.exit_scope();
         res
     }
 
-    fn check_program(&mut self, program: &Program) -> Result<(), SemanticError> {
-        for function in &program.functions {
-            self.declare_function(&function)?;
-        }
+    fn check_main_function(&mut self, span: Span) -> Result<(), SemanticError> {
         if !self.functions.contains_key("main") {
             return Err(SemanticError {
                 message: "no 'main' function found".to_string(),
-                span: program.eof_span,
+                span,
             });
         }
-        for function in &program.functions {
-            self.check_function(function)?;
-        }
-
         Ok(())
     }
 }
 
-pub fn check(program: &Program) -> Result<(), SemanticError> {
+pub fn check(program: &Program) -> Result<TypedProgram, SemanticError> {
     let mut checker = Checker::new();
-    checker.check_program(program)
+
+    for function in &program.functions {
+        checker.declare_function(function)?;
+    }
+
+    checker.check_main_function(program.eof_span)?;
+
+    let mut functions = vec![];
+    for function in &program.functions {
+        functions.push(checker.check_function(function)?);
+    }
+
+    Ok(TypedProgram {
+        functions,
+        eof_span: program.eof_span,
+    })
 }

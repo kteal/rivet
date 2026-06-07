@@ -3,13 +3,66 @@ mod common;
 use common::{param, param_with_span, span};
 use rivet::ast::{BinaryOp, Expr, Function, Program, Statement, Type, UnaryOp};
 use rivet::codegen::{CodegenTarget, generate};
+use rivet::sema::check;
+
+fn generate_checked(program: &Program) -> String {
+    let typed_program = check(program).expect("semantic check should succeed");
+    generate(&typed_program, CodegenTarget::Rv32)
+}
 
 fn generate_raw_with_codegen(program: &Program) -> String {
-    generate(program, CodegenTarget::Rv32)
+    generate_checked(program)
 }
 
 fn generate_with_codegen(program: &Program) -> String {
     generate_raw_with_codegen(program).replace("    j main_end\nmain_end:\n", "")
+}
+
+fn empty_main_function() -> Function {
+    Function {
+        return_type: Type::Int,
+        name_span: span(),
+        name: "main".to_string(),
+        params: vec![],
+        body: vec![Statement::Return(Expr::IntLiteral {
+            value: 0,
+            span: span(),
+        })],
+    }
+}
+
+fn add_function() -> Function {
+    Function {
+        return_type: Type::Int,
+        name_span: span(),
+        name: "add".to_string(),
+        params: vec![param("x"), param("y")],
+        body: vec![Statement::Return(Expr::Binary {
+            op: BinaryOp::Add,
+            op_span: span(),
+            left: Box::new(Expr::Variable {
+                name: "x".to_string(),
+                span: span(),
+            }),
+            right: Box::new(Expr::Variable {
+                name: "y".to_string(),
+                span: span(),
+            }),
+        })],
+    }
+}
+
+fn right_function() -> Function {
+    Function {
+        return_type: Type::Int,
+        name_span: span(),
+        name: "right".to_string(),
+        params: vec![],
+        body: vec![Statement::Return(Expr::IntLiteral {
+            value: 1,
+            span: span(),
+        })],
+    }
 }
 
 #[test]
@@ -248,16 +301,19 @@ fn uses_call_result_as_expression_operand() {
 #[test]
 fn stores_single_parameter_in_function_frame() {
     let program = Program {
-        functions: vec![Function {
-            return_type: Type::Int,
-            name_span: span(),
-            name: "id".to_string(),
-            params: vec![param("x")],
-            body: vec![Statement::Return(Expr::Variable {
-                name: "x".to_string(),
-                span: span(),
-            })],
-        }],
+        functions: vec![
+            Function {
+                return_type: Type::Int,
+                name_span: span(),
+                name: "id".to_string(),
+                params: vec![param("x")],
+                body: vec![Statement::Return(Expr::Variable {
+                    name: "x".to_string(),
+                    span: span(),
+                })],
+            },
+            empty_main_function(),
+        ],
         eof_span: span(),
     };
 
@@ -271,24 +327,7 @@ fn stores_single_parameter_in_function_frame() {
 #[test]
 fn stores_multiple_parameters_in_function_frame() {
     let program = Program {
-        functions: vec![Function {
-            return_type: Type::Int,
-            name_span: span(),
-            name: "add".to_string(),
-            params: vec![param("x"), param("y")],
-            body: vec![Statement::Return(Expr::Binary {
-                op: BinaryOp::Add,
-                op_span: span(),
-                left: Box::new(Expr::Variable {
-                    name: "x".to_string(),
-                    span: span(),
-                }),
-                right: Box::new(Expr::Variable {
-                    name: "y".to_string(),
-                    span: span(),
-                }),
-            })],
-        }],
+        functions: vec![add_function(), empty_main_function()],
         eof_span: span(),
     };
 
@@ -303,26 +342,29 @@ fn stores_multiple_parameters_in_function_frame() {
 #[test]
 fn generates_function_call_with_arguments() {
     let program = Program {
-        functions: vec![Function {
-            return_type: Type::Int,
-            name_span: span(),
-            name: "main".to_string(),
-            params: vec![],
-            body: vec![Statement::Return(Expr::Call {
+        functions: vec![
+            add_function(),
+            Function {
+                return_type: Type::Int,
                 name_span: span(),
-                name: "add".to_string(),
-                args: vec![
-                    Expr::IntLiteral {
-                        value: 1,
-                        span: span(),
-                    },
-                    Expr::IntLiteral {
-                        value: 2,
-                        span: span(),
-                    },
-                ],
-            })],
-        }],
+                name: "main".to_string(),
+                params: vec![],
+                body: vec![Statement::Return(Expr::Call {
+                    name_span: span(),
+                    name: "add".to_string(),
+                    args: vec![
+                        Expr::IntLiteral {
+                            value: 1,
+                            span: span(),
+                        },
+                        Expr::IntLiteral {
+                            value: 2,
+                            span: span(),
+                        },
+                    ],
+                })],
+            },
+        ],
         eof_span: span(),
     };
 
@@ -336,42 +378,45 @@ fn generates_function_call_with_arguments() {
 #[test]
 fn generates_function_call_with_expression_arguments() {
     let program = Program {
-        functions: vec![Function {
-            return_type: Type::Int,
-            name_span: span(),
-            name: "main".to_string(),
-            params: vec![],
-            body: vec![Statement::Return(Expr::Call {
+        functions: vec![
+            add_function(),
+            Function {
+                return_type: Type::Int,
                 name_span: span(),
-                name: "add".to_string(),
-                args: vec![
-                    Expr::Binary {
-                        op: BinaryOp::Add,
-                        op_span: span(),
-                        left: Box::new(Expr::IntLiteral {
-                            value: 1,
-                            span: span(),
-                        }),
-                        right: Box::new(Expr::IntLiteral {
-                            value: 2,
-                            span: span(),
-                        }),
-                    },
-                    Expr::Binary {
-                        op: BinaryOp::Add,
-                        op_span: span(),
-                        left: Box::new(Expr::IntLiteral {
-                            value: 3,
-                            span: span(),
-                        }),
-                        right: Box::new(Expr::IntLiteral {
-                            value: 4,
-                            span: span(),
-                        }),
-                    },
-                ],
-            })],
-        }],
+                name: "main".to_string(),
+                params: vec![],
+                body: vec![Statement::Return(Expr::Call {
+                    name_span: span(),
+                    name: "add".to_string(),
+                    args: vec![
+                        Expr::Binary {
+                            op: BinaryOp::Add,
+                            op_span: span(),
+                            left: Box::new(Expr::IntLiteral {
+                                value: 1,
+                                span: span(),
+                            }),
+                            right: Box::new(Expr::IntLiteral {
+                                value: 2,
+                                span: span(),
+                            }),
+                        },
+                        Expr::Binary {
+                            op: BinaryOp::Add,
+                            op_span: span(),
+                            left: Box::new(Expr::IntLiteral {
+                                value: 3,
+                                span: span(),
+                            }),
+                            right: Box::new(Expr::IntLiteral {
+                                value: 4,
+                                span: span(),
+                            }),
+                        },
+                    ],
+                })],
+            },
+        ],
         eof_span: span(),
     };
 
@@ -905,25 +950,28 @@ fn generates_logical_not() {
 #[test]
 fn generates_logical_and_with_short_circuit_branch() {
     let program = Program {
-        functions: vec![Function {
-            return_type: Type::Int,
-            name_span: span(),
-            name: "main".to_string(),
-            params: vec![],
-            body: vec![Statement::Return(Expr::Binary {
-                op: BinaryOp::LogicalAnd,
-                op_span: span(),
-                left: Box::new(Expr::IntLiteral {
-                    value: 0,
-                    span: span(),
-                }),
-                right: Box::new(Expr::Call {
-                    name_span: span(),
-                    name: "right".to_string(),
-                    args: vec![],
-                }),
-            })],
-        }],
+        functions: vec![
+            right_function(),
+            Function {
+                return_type: Type::Int,
+                name_span: span(),
+                name: "main".to_string(),
+                params: vec![],
+                body: vec![Statement::Return(Expr::Binary {
+                    op: BinaryOp::LogicalAnd,
+                    op_span: span(),
+                    left: Box::new(Expr::IntLiteral {
+                        value: 0,
+                        span: span(),
+                    }),
+                    right: Box::new(Expr::Call {
+                        name_span: span(),
+                        name: "right".to_string(),
+                        args: vec![],
+                    }),
+                })],
+            },
+        ],
         eof_span: span(),
     };
 
@@ -942,25 +990,28 @@ fn generates_logical_and_with_short_circuit_branch() {
 #[test]
 fn generates_logical_or_with_short_circuit_branch() {
     let program = Program {
-        functions: vec![Function {
-            return_type: Type::Int,
-            name_span: span(),
-            name: "main".to_string(),
-            params: vec![],
-            body: vec![Statement::Return(Expr::Binary {
-                op: BinaryOp::LogicalOr,
-                op_span: span(),
-                left: Box::new(Expr::IntLiteral {
-                    value: 1,
-                    span: span(),
-                }),
-                right: Box::new(Expr::Call {
-                    name_span: span(),
-                    name: "right".to_string(),
-                    args: vec![],
-                }),
-            })],
-        }],
+        functions: vec![
+            right_function(),
+            Function {
+                return_type: Type::Int,
+                name_span: span(),
+                name: "main".to_string(),
+                params: vec![],
+                body: vec![Statement::Return(Expr::Binary {
+                    op: BinaryOp::LogicalOr,
+                    op_span: span(),
+                    left: Box::new(Expr::IntLiteral {
+                        value: 1,
+                        span: span(),
+                    }),
+                    right: Box::new(Expr::Call {
+                        name_span: span(),
+                        name: "right".to_string(),
+                        args: vec![],
+                    }),
+                })],
+            },
+        ],
         eof_span: span(),
     };
 
