@@ -4,50 +4,27 @@
 ![Nix Flake](https://img.shields.io/badge/Nix-Flake-5277C3?logo=nixos)
 ![Rust](https://img.shields.io/badge/Rust-2024-orange?logo=rust)
 
-`rivet` is a C compiler written in Rust that targets RV32IM assembly. It is working toward a C23 implementation and currently implements a small C23 subset.
+`rivet` is a C compiler written in Rust that targets RV32IM assembly. It is working toward C23 by growing a small, tested C subset.
 
-It currently supports a small C subset with `int`, `char`, `unsigned int`, basic pointer types, fixed-size local array declarations, local variables, functions, calls, block scope, common control flow, assignment expressions, compound assignments, prefix/postfix increment and decrement, dereference expressions, and most integer operators with C-like precedence. It emits RV32IM assembly and reports lexer, parser, and semantic errors with source locations.
+It currently handles integer and character types, basic pointers, fixed-size local arrays, functions, block scope, common control flow, and C-like expression precedence. It emits RV32IM assembly and reports lexer, parser, and semantic errors with source locations.
 
 The current language subset supports programs shaped like:
 
 ```c
-int triangular_until(int x, int stop) {
+int sum3(char *p) {
     int sum = 0;
 
-    for (int i = x; i > 0; i--) {
-        if (i == stop) {
-            break;
-        }
-
-        if (i == 2) {
-            continue;
-        }
-
-        sum = sum + i;
+    for (int i = 0; i < 3; i++) {
+        sum += *p;
+        p++;
     }
 
     return sum;
 }
 
-int adjust(int value, int mask) {
-    char newline = '\n';
-
-    do {
-        value++;
-    } while (value < 6);
-
-    if ((value & mask) == 6 && newline == 10) {
-        return value;
-    } else {
-        return 0;
-    }
-}
-
 int main() {
-    int sum;
-    sum = triangular_until(5, 1);
-    adjust(sum, 7);
-    return sum = adjust(sum, 7);
+    char buf[3] = {'a', 'b', 'c'};
+    return sum3(buf);
 }
 ```
 
@@ -267,8 +244,8 @@ Objects, aggregate types, and declarators:
 - [x] pointer parameters and local declarations
 - [x] pointer arithmetic scaled by pointee size
 - [x] fixed-size local array declarations and stack allocation
+- [x] scalar initializer lists with zero-fill for local arrays
 - [ ] array indexing
-- [ ] array initializer lists
 - [ ] full C declarator grammar
 - [ ] structs and unions
 - [ ] member access: `.` and `->`

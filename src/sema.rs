@@ -1,9 +1,10 @@
 use std::collections::HashMap;
 
-use crate::ast::{BinaryOp, Expr, Function, Param, Program, Statement, Type, UnaryOp};
+use crate::ast::{BinaryOp, Expr, Function, Initializer, Param, Program, Statement, Type, UnaryOp};
 use crate::lexer::Span;
 use crate::typed_ast::{
-    LocalId, TypedExpr, TypedExprKind, TypedFunction, TypedParam, TypedProgram, TypedStatement,
+    LocalId, TypedExpr, TypedExprKind, TypedFunction, TypedInitializer, TypedParam, TypedProgram,
+    TypedStatement,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -433,10 +434,14 @@ impl Checker {
             Expr::Variable { name, span } => {
                 let symbol = self.resolve_local(name, *span)?;
 
-                if matches!(symbol.ty, Type::Array { .. }) {
-                    return Err(SemanticError {
-                        message: "array expression is not supported yet".to_string(),
-                        span: *span,
+                if let Type::Array { element, .. } = &symbol.ty {
+                    return Ok(TypedExpr {
+                        kind: TypedExprKind::Variable {
+                            id: symbol.id,
+                            name: name.clone(),
+                            span: *span,
+                        },
+                        ty: Type::Pointer(element.clone()),
                     });
                 }
 
@@ -570,6 +575,81 @@ impl Checker {
         }
     }
 
+    fn check_initializer(
+        &self,
+        target_ty: &Type,
+        name_span: Span,
+        initializer: &Initializer,
+    ) -> Result<TypedInitializer, SemanticError> {
+        match (target_ty, initializer) {
+            (
+                Type::Array {
+                    element: element_ty,
+                    len: array_len,
+                },
+                Initializer::List(values),
+            ) => {
+                // Arrays must be initialized with a List
+                let mut typed_values = vec![];
+
+                if values.len() > *array_len {
+                    return Err(SemanticError {
+                        message: format!(
+                            "array initializer list must have <= '{array_len}' elements, has '{}' elements",
+                            values.len()
+                        ),
+                        span: name_span,
+                    });
+                }
+
+                for value in values {
+                    let typed_value = self.check_expr(value)?;
+                    if !element_ty.is_assignable_from(&typed_value.ty) {
+                        return Err(SemanticError {
+                            message: format!(
+                                "cannot assign value of type '{:?}' to array of type '{element_ty:?}'",
+                                typed_value.ty,
+                            ),
+                            span: typed_value.diagnostic_span(),
+                        });
+                    }
+                    typed_values.push(typed_value);
+                }
+
+                Ok(TypedInitializer::List(typed_values))
+            }
+            (
+                Type::Char | Type::Int | Type::UnsignedInt | Type::Pointer(_),
+                Initializer::Expr(init_expr),
+            ) => {
+                // Scalars must be initialized with an Expr
+                let typed_init = self.check_expr(init_expr)?;
+                if !target_ty.is_assignable_from(&typed_init.ty) {
+                    return Err(SemanticError {
+                        message: format!(
+                            "cannot assign value of type '{:?}' to variable of type '{target_ty:?}'",
+                            typed_init.ty,
+                        ),
+                        span: typed_init.diagnostic_span(),
+                    });
+                }
+
+                Ok(TypedInitializer::Expr(typed_init))
+            }
+            (Type::Array { .. }, Initializer::Expr(_)) => Err(SemanticError {
+                message: "array must be initialized with list".to_string(),
+                span: name_span,
+            }),
+            (
+                Type::Char | Type::Int | Type::UnsignedInt | Type::Pointer(_),
+                Initializer::List(_),
+            ) => Err(SemanticError {
+                message: format!("cannot initialize scalar type '{target_ty:?}' with list"),
+                span: name_span,
+            }),
+        }
+    }
+
     #[allow(clippy::too_many_lines)]
     fn check_statement(&mut self, statement: &Statement) -> Result<TypedStatement, SemanticError> {
         match statement {
@@ -599,23 +679,10 @@ impl Checker {
                 init,
             } => {
                 let symbol = self.declare_local(ty, name, *name_span)?;
-                let typed_init = if let Some(init_expr) = init {
-                    let typed_init = self.check_expr(init_expr)?;
-
-                    if !ty.is_assignable_from(&typed_init.ty) {
-                        return Err(SemanticError {
-                            message: format!(
-                                "cannot assign value of type '{:?}' to variable of type '{ty:?}'",
-                                typed_init.ty,
-                            ),
-                            span: typed_init.diagnostic_span(),
-                        });
-                    }
-
-                    Some(typed_init)
-                } else {
-                    None
-                };
+                let typed_init = init
+                    .as_ref()
+                    .map(|initializer| self.check_initializer(ty, *name_span, initializer))
+                    .transpose()?;
 
                 Ok(TypedStatement::VarDecl {
                     id: symbol.id,

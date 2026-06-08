@@ -1,4 +1,4 @@
-use crate::ast::{BinaryOp, Expr, Function, Param, Program, Statement, Type, UnaryOp};
+use crate::ast::{BinaryOp, Expr, Function, Initializer, Param, Program, Statement, Type, UnaryOp};
 use crate::lexer::{Span, Token, TokenKind};
 
 const MULTIPLICATIVE_OPS: &[(TokenKind, BinaryOp)] = &[
@@ -162,19 +162,20 @@ impl Parser {
         None
     }
 
-    fn parse_comma_separated_until_rparen<T>(
+    fn parse_comma_separated_until_terminator<T>(
         &mut self,
         parse_item: fn(&mut Self) -> Result<T, ParseError>,
+        terminator: &TokenKind,
     ) -> Result<Vec<T>, ParseError> {
         let mut items = vec![];
 
-        while *self.peek_kind() != TokenKind::RParen {
+        while self.peek_kind() != terminator {
             items.push(parse_item(self)?);
 
             if *self.peek_kind() == TokenKind::Comma {
                 self.expect(&TokenKind::Comma)?;
 
-                if *self.peek_kind() == TokenKind::RParen {
+                if self.peek_kind() == terminator {
                     return Err(ParseError {
                         message: "trailing comma".to_string(),
                         span: self.peek().span,
@@ -316,7 +317,10 @@ impl Parser {
             TokenKind::Ident(name) => {
                 if *self.peek_kind() == TokenKind::LParen {
                     self.expect(&TokenKind::LParen)?;
-                    let args = self.parse_comma_separated_until_rparen(Self::parse_call_arg)?;
+                    let args = self.parse_comma_separated_until_terminator(
+                        Self::parse_call_arg,
+                        &TokenKind::RParen,
+                    )?;
                     self.expect(&TokenKind::RParen)?;
                     Ok(Expr::Call {
                         name,
@@ -526,14 +530,29 @@ impl Parser {
             });
         }
         self.expect(&TokenKind::Equal)?;
-        let expr = self.parse_expr()?;
-        self.expect(&TokenKind::Semicolon)?;
-        Ok(Statement::VarDecl {
-            ty,
-            name,
-            name_span,
-            init: Some(expr),
-        })
+
+        if self.peek_kind() == &TokenKind::LBrace {
+            self.expect(&TokenKind::LBrace)?;
+            let elements =
+                self.parse_comma_separated_until_terminator(Self::parse_expr, &TokenKind::RBrace)?;
+            self.expect(&TokenKind::RBrace)?;
+            self.expect(&TokenKind::Semicolon)?;
+            Ok(Statement::VarDecl {
+                ty,
+                name,
+                name_span,
+                init: Some(Initializer::List(elements)),
+            })
+        } else {
+            let expr = self.parse_expr()?;
+            self.expect(&TokenKind::Semicolon)?;
+            Ok(Statement::VarDecl {
+                ty,
+                name,
+                name_span,
+                init: Some(Initializer::Expr(expr)),
+            })
+        }
     }
 
     fn parse_through_rbrace(&mut self, vec: &mut Vec<Statement>) -> Result<(), ParseError> {
@@ -662,6 +681,7 @@ impl Parser {
                 | TokenKind::Tilde
                 | TokenKind::PlusPlus
                 | TokenKind::MinusMinus
+                | TokenKind::Star
         )
     }
 
@@ -721,7 +741,8 @@ impl Parser {
         } = Self::lower_declarator(&base_ty, &declarator)?;
 
         self.expect(&TokenKind::LParen)?;
-        let params = self.parse_comma_separated_until_rparen(Self::parse_param)?;
+        let params =
+            self.parse_comma_separated_until_terminator(Self::parse_param, &TokenKind::RParen)?;
         self.expect(&TokenKind::RParen)?;
 
         self.expect(&TokenKind::LBrace)?;
@@ -1557,10 +1578,10 @@ mod tests {
                             ty: Type::Int,
                             name_span: span(),
                             name: "x".to_string(),
-                            init: Some(Expr::IntLiteral {
+                            init: Some(Initializer::Expr(Expr::IntLiteral {
                                 value: 5,
                                 span: span()
-                            }),
+                            })),
                         },
                         Statement::Return(Expr::IntLiteral {
                             value: 42,
@@ -1608,10 +1629,10 @@ mod tests {
                             ty: Type::Int,
                             name_span: span(),
                             name: "x".to_string(),
-                            init: Some(Expr::IntLiteral {
+                            init: Some(Initializer::Expr(Expr::IntLiteral {
                                 value: 5,
                                 span: span()
-                            }),
+                            })),
                         },
                         Statement::Return(Expr::Variable {
                             name: "x".to_string(),
@@ -1924,10 +1945,10 @@ mod tests {
                     ty: Type::Int,
                     name_span: span(),
                     name: "i".to_string(),
-                    init: Some(Expr::IntLiteral {
+                    init: Some(Initializer::Expr(Expr::IntLiteral {
                         value: 0,
                         span: span()
-                    }),
+                    })),
                 })),
                 cond: Some(Expr::Binary {
                     op: BinaryOp::Less,

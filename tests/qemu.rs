@@ -341,6 +341,36 @@ fn qemu_local_variable_programs_return_expected_values() {
         "int main() {\n    int nums[10];\n    int x = 9;\n    return x;\n}\n",
         9,
     );
+    run_qemu_case(
+        "char-array-decays-to-pointer-argument",
+        "int write_first(char *p) {\n    *p = 42;\n    return *p;\n}\n\nint main() {\n    char buf[3];\n    return write_first(buf);\n}\n",
+        42,
+    );
+    run_qemu_case(
+        "int-array-decays-to-pointer-argument",
+        "int write_first(int *p) {\n    return *p = 123;\n}\n\nint main() {\n    int nums[3];\n    return write_first(nums);\n}\n",
+        123,
+    );
+    run_qemu_case(
+        "char-array-initializer-list",
+        "int sum3(char *p) {\n    return *p + *(p + 1) + *(p + 2);\n}\n\nint main() {\n    char buf[3] = {1, 2, 3};\n    return sum3(buf);\n}\n",
+        6,
+    );
+    run_qemu_case(
+        "int-array-initializer-list",
+        "int sum3(int *p) {\n    return *p + *(p + 1) + *(p + 2);\n}\n\nint main() {\n    int nums[3] = {10, 20, 30};\n    return sum3(nums);\n}\n",
+        60,
+    );
+    run_qemu_case(
+        "empty-char-array-initializer-list-zero-fills",
+        "int sum3(char *p) {\n    return *p + *(p + 1) + *(p + 2);\n}\n\nint main() {\n    char buf[3] = {};\n    return sum3(buf);\n}\n",
+        0,
+    );
+    run_qemu_case(
+        "empty-int-array-initializer-list-zero-fills",
+        "int sum3(int *p) {\n    return *p + *(p + 1) + *(p + 2);\n}\n\nint main() {\n    int nums[3] = {};\n    return sum3(nums);\n}\n",
+        0,
+    );
 }
 
 #[test]

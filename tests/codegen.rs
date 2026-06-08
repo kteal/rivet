@@ -1,7 +1,7 @@
 mod common;
 
 use common::{param, param_with_span, span};
-use rivet::ast::{BinaryOp, Expr, Function, Program, Statement, Type, UnaryOp};
+use rivet::ast::{BinaryOp, Expr, Function, Initializer, Program, Statement, Type, UnaryOp};
 use rivet::codegen::{CodegenTarget, generate};
 use rivet::sema::check;
 
@@ -115,10 +115,10 @@ fn resets_local_offsets_between_functions() {
                         ty: Type::Int,
                         name_span: span(),
                         name: "x".to_string(),
-                        init: Some(Expr::IntLiteral {
+                        init: Some(Initializer::Expr(Expr::IntLiteral {
                             value: 1,
                             span: span(),
-                        }),
+                        })),
                     },
                     Statement::Return(Expr::Variable {
                         name: "x".to_string(),
@@ -136,10 +136,10 @@ fn resets_local_offsets_between_functions() {
                         ty: Type::Int,
                         name_span: span(),
                         name: "x".to_string(),
-                        init: Some(Expr::IntLiteral {
+                        init: Some(Initializer::Expr(Expr::IntLiteral {
                             value: 2,
                             span: span(),
-                        }),
+                        })),
                     },
                     Statement::Return(Expr::Variable {
                         name: "x".to_string(),
@@ -182,28 +182,28 @@ fn computes_frame_layout_per_function() {
                         ty: Type::Int,
                         name_span: span(),
                         name: "a".to_string(),
-                        init: Some(Expr::IntLiteral {
+                        init: Some(Initializer::Expr(Expr::IntLiteral {
                             value: 1,
                             span: span(),
-                        }),
+                        })),
                     },
                     Statement::VarDecl {
                         ty: Type::Int,
                         name_span: span(),
                         name: "b".to_string(),
-                        init: Some(Expr::IntLiteral {
+                        init: Some(Initializer::Expr(Expr::IntLiteral {
                             value: 2,
                             span: span(),
-                        }),
+                        })),
                     },
                     Statement::VarDecl {
                         ty: Type::Int,
                         name_span: span(),
                         name: "c".to_string(),
-                        init: Some(Expr::IntLiteral {
+                        init: Some(Initializer::Expr(Expr::IntLiteral {
                             value: 3,
                             span: span(),
-                        }),
+                        })),
                     },
                     Statement::Return(Expr::Variable {
                         name: "c".to_string(),
@@ -1109,10 +1109,10 @@ fn generates_single_local_variable() {
                     ty: Type::Int,
                     name_span: span(),
                     name: "x".to_string(),
-                    init: Some(Expr::IntLiteral {
+                    init: Some(Initializer::Expr(Expr::IntLiteral {
                         value: 5,
                         span: span(),
-                    }),
+                    })),
                 },
                 Statement::Return(Expr::Variable {
                     name: "x".to_string(),
@@ -1196,10 +1196,10 @@ fn array_local_reserves_full_frame_slot_and_aligns_next_local() {
                     ty: Type::Int,
                     name_span: span(),
                     name: "x".to_string(),
-                    init: Some(Expr::IntLiteral {
+                    init: Some(Initializer::Expr(Expr::IntLiteral {
                         value: 7,
                         span: span(),
-                    }),
+                    })),
                 },
                 Statement::Return(Expr::Variable {
                     name: "x".to_string(),
@@ -1218,6 +1218,117 @@ fn array_local_reserves_full_frame_slot_and_aligns_next_local() {
 }
 
 #[test]
+fn generates_array_initializer_element_stores() {
+    let program = Program {
+        functions: vec![Function {
+            return_type: Type::Int,
+            name_span: span(),
+            name: "main".to_string(),
+            params: vec![],
+            body: vec![
+                Statement::VarDecl {
+                    ty: Type::Array {
+                        element: Box::new(Type::Char),
+                        len: 3,
+                    },
+                    name_span: span(),
+                    name: "buf".to_string(),
+                    init: Some(Initializer::List(vec![
+                        Expr::IntLiteral {
+                            value: 1,
+                            span: span(),
+                        },
+                        Expr::IntLiteral {
+                            value: 2,
+                            span: span(),
+                        },
+                        Expr::IntLiteral {
+                            value: 3,
+                            span: span(),
+                        },
+                    ])),
+                },
+                Statement::VarDecl {
+                    ty: Type::Array {
+                        element: Box::new(Type::Int),
+                        len: 2,
+                    },
+                    name_span: span(),
+                    name: "nums".to_string(),
+                    init: Some(Initializer::List(vec![
+                        Expr::IntLiteral {
+                            value: 4,
+                            span: span(),
+                        },
+                        Expr::IntLiteral {
+                            value: 5,
+                            span: span(),
+                        },
+                    ])),
+                },
+                Statement::Return(Expr::IntLiteral {
+                    value: 0,
+                    span: span(),
+                }),
+            ],
+        }],
+        eof_span: span(),
+    };
+
+    let asm = generate_raw_with_codegen(&program);
+
+    assert!(asm.contains("    sb a0, -11(s0)\n"));
+    assert!(asm.contains("    sb a0, -10(s0)\n"));
+    assert!(asm.contains("    sb a0, -9(s0)\n"));
+    assert!(asm.contains("    li a0, 4\n    sw a0, -20(s0)\n"));
+    assert!(asm.contains("    li a0, 5\n    sw a0, -16(s0)\n"));
+}
+
+#[test]
+fn generates_zero_stores_for_empty_array_initializer_list() {
+    let program = Program {
+        functions: vec![Function {
+            return_type: Type::Int,
+            name_span: span(),
+            name: "main".to_string(),
+            params: vec![],
+            body: vec![
+                Statement::VarDecl {
+                    ty: Type::Array {
+                        element: Box::new(Type::Char),
+                        len: 2,
+                    },
+                    name_span: span(),
+                    name: "buf".to_string(),
+                    init: Some(Initializer::List(vec![])),
+                },
+                Statement::VarDecl {
+                    ty: Type::Array {
+                        element: Box::new(Type::Int),
+                        len: 2,
+                    },
+                    name_span: span(),
+                    name: "nums".to_string(),
+                    init: Some(Initializer::List(vec![])),
+                },
+                Statement::Return(Expr::IntLiteral {
+                    value: 0,
+                    span: span(),
+                }),
+            ],
+        }],
+        eof_span: span(),
+    };
+
+    let asm = generate_raw_with_codegen(&program);
+
+    assert!(asm.contains("    li a0, 0\n    andi a0, a0, 255\n    sb a0, -10(s0)\n"));
+    assert!(asm.contains("    li a0, 0\n    andi a0, a0, 255\n    sb a0, -9(s0)\n"));
+    assert!(asm.contains("    li a0, 0\n    sw a0, -20(s0)\n"));
+    assert!(asm.contains("    li a0, 0\n    sw a0, -16(s0)\n"));
+}
+
+#[test]
 fn narrows_char_local_initializer() {
     let program = Program {
         functions: vec![Function {
@@ -1230,10 +1341,10 @@ fn narrows_char_local_initializer() {
                     ty: Type::Char,
                     name_span: span(),
                     name: "c".to_string(),
-                    init: Some(Expr::IntLiteral {
+                    init: Some(Initializer::Expr(Expr::IntLiteral {
                         value: 300,
                         span: span(),
-                    }),
+                    })),
                 },
                 Statement::Return(Expr::Variable {
                     name: "c".to_string(),
@@ -1262,10 +1373,10 @@ fn loads_char_local_with_unsigned_byte_load() {
                     ty: Type::Char,
                     name_span: span(),
                     name: "c".to_string(),
-                    init: Some(Expr::IntLiteral {
+                    init: Some(Initializer::Expr(Expr::IntLiteral {
                         value: 255,
                         span: span(),
-                    }),
+                    })),
                 },
                 Statement::Return(Expr::Variable {
                     name: "c".to_string(),
@@ -1336,10 +1447,10 @@ fn generates_compound_assignment() {
                     ty: Type::Int,
                     name_span: span(),
                     name: "x".to_string(),
-                    init: Some(Expr::IntLiteral {
+                    init: Some(Initializer::Expr(Expr::IntLiteral {
                         value: 3,
                         span: span(),
-                    }),
+                    })),
                 },
                 Statement::ExprStatement(Expr::CompoundAssign {
                     target: Box::new(Expr::Variable {
@@ -1382,10 +1493,10 @@ fn generates_compound_assignment_expression_result() {
                     ty: Type::Int,
                     name_span: span(),
                     name: "x".to_string(),
-                    init: Some(Expr::IntLiteral {
+                    init: Some(Initializer::Expr(Expr::IntLiteral {
                         value: 3,
                         span: span(),
-                    }),
+                    })),
                 },
                 Statement::Return(Expr::CompoundAssign {
                     target: Box::new(Expr::Variable {
@@ -1424,10 +1535,10 @@ fn narrows_char_compound_assignment() {
                     ty: Type::Char,
                     name_span: span(),
                     name: "c".to_string(),
-                    init: Some(Expr::IntLiteral {
+                    init: Some(Initializer::Expr(Expr::IntLiteral {
                         value: 250,
                         span: span(),
-                    }),
+                    })),
                 },
                 Statement::ExprStatement(Expr::CompoundAssign {
                     target: Box::new(Expr::Variable {
@@ -1529,10 +1640,10 @@ fn narrows_char_increment_store() {
                     ty: Type::Char,
                     name_span: span(),
                     name: "c".to_string(),
-                    init: Some(Expr::IntLiteral {
+                    init: Some(Initializer::Expr(Expr::IntLiteral {
                         value: 255,
                         span: span(),
-                    }),
+                    })),
                 },
                 Statement::ExprStatement(Expr::PrefixInc {
                     expr: Box::new(Expr::Variable {
@@ -1705,10 +1816,10 @@ fn generates_while_loop() {
                     ty: Type::Int,
                     name_span: span(),
                     name: "x".to_string(),
-                    init: Some(Expr::IntLiteral {
+                    init: Some(Initializer::Expr(Expr::IntLiteral {
                         value: 3,
                         span: span(),
-                    }),
+                    })),
                 },
                 Statement::While {
                     cond: Expr::Variable {
@@ -1832,10 +1943,10 @@ fn generates_do_while_loop_with_body_before_condition() {
                     ty: Type::Int,
                     name_span: span(),
                     name: "x".to_string(),
-                    init: Some(Expr::IntLiteral {
+                    init: Some(Initializer::Expr(Expr::IntLiteral {
                         value: 1,
                         span: span(),
-                    }),
+                    })),
                 },
                 Statement::DoWhile {
                     body: Box::new(Statement::Block(vec![Statement::ExprStatement(
@@ -1931,28 +2042,28 @@ fn counts_locals_inside_do_while_body_for_frame_size() {
                             ty: Type::Int,
                             name_span: span(),
                             name: "a".to_string(),
-                            init: Some(Expr::IntLiteral {
+                            init: Some(Initializer::Expr(Expr::IntLiteral {
                                 value: 1,
                                 span: span(),
-                            }),
+                            })),
                         },
                         Statement::VarDecl {
                             ty: Type::Int,
                             name_span: span(),
                             name: "b".to_string(),
-                            init: Some(Expr::IntLiteral {
+                            init: Some(Initializer::Expr(Expr::IntLiteral {
                                 value: 2,
                                 span: span(),
-                            }),
+                            })),
                         },
                         Statement::VarDecl {
                             ty: Type::Int,
                             name_span: span(),
                             name: "c".to_string(),
-                            init: Some(Expr::IntLiteral {
+                            init: Some(Initializer::Expr(Expr::IntLiteral {
                                 value: 3,
                                 span: span(),
-                            }),
+                            })),
                         },
                     ])),
                     cond: Expr::IntLiteral {
@@ -2023,10 +2134,10 @@ fn generates_for_loop_with_init_condition_and_post() {
                     ty: Type::Int,
                     name_span: span(),
                     name: "i".to_string(),
-                    init: Some(Expr::IntLiteral {
+                    init: Some(Initializer::Expr(Expr::IntLiteral {
                         value: 0,
                         span: span(),
-                    }),
+                    })),
                 },
                 Statement::For {
                     init: Some(Box::new(Statement::ExprStatement(Expr::Assign {
@@ -2136,10 +2247,10 @@ fn generates_continue_in_for_loop_to_post_clause() {
                     ty: Type::Int,
                     name_span: span(),
                     name: "i".to_string(),
-                    init: Some(Expr::IntLiteral {
+                    init: Some(Initializer::Expr(Expr::IntLiteral {
                         value: 0,
                         span: span(),
-                    }),
+                    })),
                 },
                 Statement::For {
                     init: None,
@@ -2205,10 +2316,10 @@ fn counts_locals_inside_for_init_and_body_for_frame_size() {
                         ty: Type::Int,
                         name_span: span(),
                         name: "i".to_string(),
-                        init: Some(Expr::IntLiteral {
+                        init: Some(Initializer::Expr(Expr::IntLiteral {
                             value: 0,
                             span: span(),
-                        }),
+                        })),
                     })),
                     cond: Some(Expr::Binary {
                         op: BinaryOp::Less,
@@ -2228,28 +2339,28 @@ fn counts_locals_inside_for_init_and_body_for_frame_size() {
                             ty: Type::Int,
                             name_span: span(),
                             name: "a".to_string(),
-                            init: Some(Expr::IntLiteral {
+                            init: Some(Initializer::Expr(Expr::IntLiteral {
                                 value: 1,
                                 span: span(),
-                            }),
+                            })),
                         },
                         Statement::VarDecl {
                             ty: Type::Int,
                             name_span: span(),
                             name: "b".to_string(),
-                            init: Some(Expr::IntLiteral {
+                            init: Some(Initializer::Expr(Expr::IntLiteral {
                                 value: 2,
                                 span: span(),
-                            }),
+                            })),
                         },
                         Statement::VarDecl {
                             ty: Type::Int,
                             name_span: span(),
                             name: "c".to_string(),
-                            init: Some(Expr::IntLiteral {
+                            init: Some(Initializer::Expr(Expr::IntLiteral {
                                 value: 3,
                                 span: span(),
-                            }),
+                            })),
                         },
                         Statement::Break { span: span() },
                     ])),
@@ -2281,20 +2392,20 @@ fn for_init_scope_can_shadow_outer_local_without_replacing_it() {
                     ty: Type::Int,
                     name_span: span(),
                     name: "i".to_string(),
-                    init: Some(Expr::IntLiteral {
+                    init: Some(Initializer::Expr(Expr::IntLiteral {
                         value: 5,
                         span: span(),
-                    }),
+                    })),
                 },
                 Statement::For {
                     init: Some(Box::new(Statement::VarDecl {
                         ty: Type::Int,
                         name_span: span(),
                         name: "i".to_string(),
-                        init: Some(Expr::IntLiteral {
+                        init: Some(Initializer::Expr(Expr::IntLiteral {
                             value: 0,
                             span: span(),
-                        }),
+                        })),
                     })),
                     cond: Some(Expr::Binary {
                         op: BinaryOp::Less,
@@ -2360,10 +2471,10 @@ fn counts_locals_inside_while_body_for_frame_size() {
                     ty: Type::Int,
                     name_span: span(),
                     name: "x".to_string(),
-                    init: Some(Expr::IntLiteral {
+                    init: Some(Initializer::Expr(Expr::IntLiteral {
                         value: 1,
                         span: span(),
-                    }),
+                    })),
                 },
                 Statement::While {
                     cond: Expr::Variable {
@@ -2375,28 +2486,28 @@ fn counts_locals_inside_while_body_for_frame_size() {
                             ty: Type::Int,
                             name_span: span(),
                             name: "a".to_string(),
-                            init: Some(Expr::IntLiteral {
+                            init: Some(Initializer::Expr(Expr::IntLiteral {
                                 value: 1,
                                 span: span(),
-                            }),
+                            })),
                         },
                         Statement::VarDecl {
                             ty: Type::Int,
                             name_span: span(),
                             name: "b".to_string(),
-                            init: Some(Expr::IntLiteral {
+                            init: Some(Initializer::Expr(Expr::IntLiteral {
                                 value: 2,
                                 span: span(),
-                            }),
+                            })),
                         },
                         Statement::VarDecl {
                             ty: Type::Int,
                             name_span: span(),
                             name: "c".to_string(),
-                            init: Some(Expr::IntLiteral {
+                            init: Some(Initializer::Expr(Expr::IntLiteral {
                                 value: 3,
                                 span: span(),
-                            }),
+                            })),
                         },
                         Statement::Return(Expr::Binary {
                             op: BinaryOp::Add,

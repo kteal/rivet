@@ -31,7 +31,7 @@ pub enum TypedStatement {
         ty: Type,
         name: String,
         name_span: Span,
-        init: Option<TypedExpr>,
+        init: Option<TypedInitializer>,
     },
     Return(TypedExpr),
     Block(Vec<Self>),
@@ -62,6 +62,12 @@ pub enum TypedStatement {
         post: Option<TypedExpr>,
         body: Box<Self>,
     },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TypedInitializer {
+    Expr(TypedExpr),
+    List(Vec<TypedExpr>),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

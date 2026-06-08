@@ -1,4 +1,4 @@
-use rivet::ast::{BinaryOp, Expr, Statement, Type, UnaryOp};
+use rivet::ast::{BinaryOp, Expr, Initializer, Statement, Type, UnaryOp};
 use rivet::lexer::lex;
 use rivet::parser::parse;
 
@@ -117,7 +117,7 @@ fn parses_char_literals_as_int_literals() {
         Statement::VarDecl {
             ty: Type::Char,
             name,
-            init: Some(Expr::IntLiteral { value: 10, .. }),
+            init: Some(Initializer::Expr(Expr::IntLiteral { value: 10, .. })),
             ..
         } if name == "c"
     ));
@@ -166,7 +166,7 @@ fn parses_variable_declarations() {
         Statement::VarDecl {
             ty: Type::Int,
             name,
-            init: Some(Expr::IntLiteral { value: 1, .. }),
+            init: Some(Initializer::Expr(Expr::IntLiteral { value: 1, .. })),
             ..
         } if name == "x"
     ));
@@ -375,6 +375,25 @@ fn parses_pointer_parameter_and_dereference_expression() {
 }
 
 #[test]
+fn parses_dereference_assignment_expression_statement() {
+    let program = parse_source("int write_first(char *p) { *p = 42; return *p; }");
+    let body = &program.functions[0].body;
+
+    let Statement::ExprStatement(Expr::Assign { target, value, .. }) = &body[0] else {
+        panic!("expected dereference assignment expression statement");
+    };
+
+    assert!(matches!(
+        target.as_ref(),
+        Expr::Unary {
+            op: UnaryOp::Dereference,
+            ..
+        }
+    ));
+    assert!(matches!(value.as_ref(), Expr::IntLiteral { value: 42, .. }));
+}
+
+#[test]
 fn parses_pointer_local_declarations() {
     let program =
         parse_source("int main() { char *buf; int **cursor; unsigned int *sums; return 0; }");
@@ -427,6 +446,39 @@ fn parses_array_local_declarations() {
             len: 10,
         }
     );
+}
+
+#[test]
+fn parses_array_initializer_list() {
+    let program = parse_source("int main() { char buf[3] = {1, 2, 3}; return 0; }");
+
+    let Statement::VarDecl { init, .. } = &program.functions[0].body[0] else {
+        panic!("expected local declaration");
+    };
+
+    let Some(Initializer::List(values)) = init else {
+        panic!("expected initializer list");
+    };
+
+    assert_eq!(values.len(), 3);
+    assert!(matches!(values[0], Expr::IntLiteral { value: 1, .. }));
+    assert!(matches!(values[1], Expr::IntLiteral { value: 2, .. }));
+    assert!(matches!(values[2], Expr::IntLiteral { value: 3, .. }));
+}
+
+#[test]
+fn parses_empty_array_initializer_list() {
+    let program = parse_source("int main() { int nums[2] = {}; return 0; }");
+
+    let Statement::VarDecl { init, .. } = &program.functions[0].body[0] else {
+        panic!("expected local declaration");
+    };
+
+    let Some(Initializer::List(values)) = init else {
+        panic!("expected initializer list");
+    };
+
+    assert!(values.is_empty());
 }
 
 #[test]

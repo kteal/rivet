@@ -1,7 +1,7 @@
 mod common;
 
 use common::{param, param_with_span, span, span_from};
-use rivet::ast::{BinaryOp, Expr, Function, Program, Statement, Type, UnaryOp};
+use rivet::ast::{BinaryOp, Expr, Function, Initializer, Program, Statement, Type, UnaryOp};
 use rivet::sema::check;
 use rivet::typed_ast::{TypedExprKind, TypedStatement};
 
@@ -74,10 +74,10 @@ fn accepts_same_local_name_in_different_functions() {
                         ty: Type::Int,
                         name_span: span(),
                         name: "x".to_string(),
-                        init: Some(Expr::IntLiteral {
+                        init: Some(Initializer::Expr(Expr::IntLiteral {
                             value: 1,
                             span: span(),
-                        }),
+                        })),
                     },
                     Statement::Return(Expr::Variable {
                         name: "x".to_string(),
@@ -92,10 +92,10 @@ fn accepts_same_local_name_in_different_functions() {
                         ty: Type::Int,
                         name_span: span(),
                         name: "x".to_string(),
-                        init: Some(Expr::IntLiteral {
+                        init: Some(Initializer::Expr(Expr::IntLiteral {
                             value: 2,
                             span: span(),
-                        }),
+                        })),
                     },
                     Statement::Return(Expr::Variable {
                         name: "x".to_string(),
@@ -371,10 +371,10 @@ fn rejects_local_redeclaring_parameter_in_function_scope() {
                     ty: Type::Int,
                     name_span: span(),
                     name: "x".to_string(),
-                    init: Some(Expr::IntLiteral {
+                    init: Some(Initializer::Expr(Expr::IntLiteral {
                         value: 1,
                         span: span(),
-                    }),
+                    })),
                 },
                 Statement::Return(Expr::Variable {
                     name: "x".to_string(),
@@ -401,10 +401,10 @@ fn accepts_inner_block_shadowing_parameter() {
                     ty: Type::Int,
                     name_span: span(),
                     name: "x".to_string(),
-                    init: Some(Expr::IntLiteral {
+                    init: Some(Initializer::Expr(Expr::IntLiteral {
                         value: 1,
                         span: span(),
-                    }),
+                    })),
                 },
                 Statement::Return(Expr::Variable {
                     name: "x".to_string(),
@@ -671,10 +671,10 @@ fn accepts_declared_local_usage() {
             ty: Type::Int,
             name_span: span(),
             name: "x".to_string(),
-            init: Some(Expr::IntLiteral {
+            init: Some(Initializer::Expr(Expr::IntLiteral {
                 value: 1,
                 span: span(),
-            }),
+            })),
         },
         Statement::ExprStatement(Expr::Assign {
             op_span: span(),
@@ -765,10 +765,10 @@ fn accepts_compound_assignment_to_int() {
             ty: Type::Int,
             name_span: span(),
             name: "x".to_string(),
-            init: Some(Expr::IntLiteral {
+            init: Some(Initializer::Expr(Expr::IntLiteral {
                 value: 3,
                 span: span(),
-            }),
+            })),
         },
         Statement::ExprStatement(Expr::CompoundAssign {
             target: Box::new(Expr::Variable {
@@ -798,10 +798,10 @@ fn accepts_compound_assignment_to_char_from_int_expression() {
             ty: Type::Char,
             name_span: span(),
             name: "c".to_string(),
-            init: Some(Expr::IntLiteral {
+            init: Some(Initializer::Expr(Expr::IntLiteral {
                 value: 1,
                 span: span(),
-            }),
+            })),
         },
         Statement::ExprStatement(Expr::CompoundAssign {
             target: Box::new(Expr::Variable {
@@ -831,10 +831,10 @@ fn accepts_compound_assignment_expression_in_return() {
             ty: Type::Int,
             name_span: span(),
             name: "x".to_string(),
-            init: Some(Expr::IntLiteral {
+            init: Some(Initializer::Expr(Expr::IntLiteral {
                 value: 3,
                 span: span(),
-            }),
+            })),
         },
         Statement::Return(Expr::CompoundAssign {
             target: Box::new(Expr::Variable {
@@ -885,19 +885,19 @@ fn typed_shift_uses_promoted_left_operand_type() {
             ty: Type::Int,
             name_span: span(),
             name: "x".to_string(),
-            init: Some(Expr::IntLiteral {
+            init: Some(Initializer::Expr(Expr::IntLiteral {
                 value: 1,
                 span: span(),
-            }),
+            })),
         },
         Statement::VarDecl {
             ty: Type::UnsignedInt,
             name_span: span(),
             name: "shift".to_string(),
-            init: Some(Expr::IntLiteral {
+            init: Some(Initializer::Expr(Expr::IntLiteral {
                 value: 1,
                 span: span(),
-            }),
+            })),
         },
         Statement::Return(Expr::Binary {
             op: BinaryOp::ShiftRight,
@@ -934,10 +934,10 @@ fn typed_unary_negate_preserves_unsigned_operand_type() {
             ty: Type::UnsignedInt,
             name_span: span(),
             name: "x".to_string(),
-            init: Some(Expr::IntLiteral {
+            init: Some(Initializer::Expr(Expr::IntLiteral {
                 value: 1,
                 span: span(),
-            }),
+            })),
         },
         Statement::Return(Expr::Unary {
             op: UnaryOp::Negate,
@@ -966,10 +966,10 @@ fn typed_unary_bitwise_not_preserves_unsigned_operand_type() {
             ty: Type::UnsignedInt,
             name_span: span(),
             name: "x".to_string(),
-            init: Some(Expr::IntLiteral {
+            init: Some(Initializer::Expr(Expr::IntLiteral {
                 value: 1,
                 span: span(),
-            }),
+            })),
         },
         Statement::Return(Expr::Unary {
             op: UnaryOp::BitwiseNot,
@@ -998,10 +998,10 @@ fn typed_unary_logical_not_returns_int_for_unsigned_operand() {
             ty: Type::UnsignedInt,
             name_span: span(),
             name: "x".to_string(),
-            init: Some(Expr::IntLiteral {
+            init: Some(Initializer::Expr(Expr::IntLiteral {
                 value: 1,
                 span: span(),
-            }),
+            })),
         },
         Statement::Return(Expr::Unary {
             op: UnaryOp::LogicalNot,
@@ -1341,10 +1341,10 @@ fn rejects_assignment_through_non_pointer_dereference() {
             ty: Type::Int,
             name_span: span(),
             name: "x".to_string(),
-            init: Some(Expr::IntLiteral {
+            init: Some(Initializer::Expr(Expr::IntLiteral {
                 value: 1,
                 span: span(),
-            }),
+            })),
         },
         Statement::Return(Expr::Assign {
             target: Box::new(Expr::Unary {
@@ -1450,10 +1450,10 @@ fn typed_char_compound_assignment_has_target_type() {
             ty: Type::Char,
             name_span: span(),
             name: "c".to_string(),
-            init: Some(Expr::IntLiteral {
+            init: Some(Initializer::Expr(Expr::IntLiteral {
                 value: 1,
                 span: span(),
-            }),
+            })),
         },
         Statement::Return(Expr::CompoundAssign {
             target: Box::new(Expr::Variable {
@@ -1486,10 +1486,10 @@ fn typed_postfix_increment_preserves_postfix_kind() {
             ty: Type::Int,
             name_span: span(),
             name: "x".to_string(),
-            init: Some(Expr::IntLiteral {
+            init: Some(Initializer::Expr(Expr::IntLiteral {
                 value: 1,
                 span: span(),
-            }),
+            })),
         },
         Statement::Return(Expr::PostfixInc {
             expr: Box::new(Expr::Variable {
@@ -1643,10 +1643,10 @@ fn accepts_prefix_and_postfix_increment_decrement() {
             ty: Type::Int,
             name_span: span(),
             name: "x".to_string(),
-            init: Some(Expr::IntLiteral {
+            init: Some(Initializer::Expr(Expr::IntLiteral {
                 value: 1,
                 span: span(),
-            }),
+            })),
         },
         Statement::ExprStatement(Expr::PrefixInc {
             expr: Box::new(Expr::Variable {
@@ -1713,19 +1713,19 @@ fn accepts_initializer_using_earlier_local() {
             ty: Type::Int,
             name_span: span(),
             name: "x".to_string(),
-            init: Some(Expr::IntLiteral {
+            init: Some(Initializer::Expr(Expr::IntLiteral {
                 value: 1,
                 span: span(),
-            }),
+            })),
         },
         Statement::VarDecl {
             ty: Type::Int,
             name_span: span(),
             name: "y".to_string(),
-            init: Some(Expr::Variable {
+            init: Some(Initializer::Expr(Expr::Variable {
                 name: "x".to_string(),
                 span: span(),
-            }),
+            })),
         },
         Statement::Return(Expr::Variable {
             name: "y".to_string(),
@@ -1743,10 +1743,10 @@ fn accepts_initializer_using_declared_name_itself() {
             ty: Type::Int,
             name_span: span(),
             name: "x".to_string(),
-            init: Some(Expr::Variable {
+            init: Some(Initializer::Expr(Expr::Variable {
                 name: "x".to_string(),
                 span: span(),
-            }),
+            })),
         },
         Statement::Return(Expr::Variable {
             name: "x".to_string(),
@@ -1773,10 +1773,10 @@ fn accepts_local_array_declaration_without_value_use() {
             ty: Type::Int,
             name_span: span(),
             name: "x".to_string(),
-            init: Some(Expr::IntLiteral {
+            init: Some(Initializer::Expr(Expr::IntLiteral {
                 value: 1,
                 span: span(),
-            }),
+            })),
         },
         Statement::Return(Expr::Variable {
             name: "x".to_string(),
@@ -1788,7 +1788,69 @@ fn accepts_local_array_declaration_without_value_use() {
 }
 
 #[test]
-fn rejects_array_expression_value_use() {
+fn typed_array_variable_expression_decays_to_pointer_argument() {
+    let program = Program {
+        functions: vec![
+            Function {
+                return_type: Type::Int,
+                name_span: span(),
+                name: "takes_char_pointer".to_string(),
+                params: vec![param_with_span(
+                    Type::Pointer(Box::new(Type::Char)),
+                    "p",
+                    span(),
+                )],
+                body: vec![Statement::Return(Expr::Unary {
+                    op: UnaryOp::Dereference,
+                    op_span: span(),
+                    expr: Box::new(Expr::Variable {
+                        name: "p".to_string(),
+                        span: span(),
+                    }),
+                })],
+            },
+            Function {
+                return_type: Type::Int,
+                name_span: span(),
+                name: "main".to_string(),
+                params: vec![],
+                body: vec![
+                    Statement::VarDecl {
+                        ty: Type::Array {
+                            element: Box::new(Type::Char),
+                            len: 3,
+                        },
+                        name_span: span(),
+                        name: "buf".to_string(),
+                        init: None,
+                    },
+                    Statement::Return(Expr::Call {
+                        name_span: span(),
+                        name: "takes_char_pointer".to_string(),
+                        args: vec![Expr::Variable {
+                            name: "buf".to_string(),
+                            span: span(),
+                        }],
+                    }),
+                ],
+            },
+        ],
+        eof_span: span(),
+    };
+
+    let typed_program = check(&program).expect("semantic check should succeed");
+    let TypedStatement::Return(expr) = &typed_program.functions[1].body[1] else {
+        panic!("expected return statement");
+    };
+    let TypedExprKind::Call { args, .. } = &expr.kind else {
+        panic!("expected call expression");
+    };
+
+    assert_eq!(args[0].ty, Type::Pointer(Box::new(Type::Char)));
+}
+
+#[test]
+fn accepts_local_array_initializer_list() {
     let program = main_program(vec![
         Statement::VarDecl {
             ty: Type::Array {
@@ -1797,17 +1859,171 @@ fn rejects_array_expression_value_use() {
             },
             name_span: span(),
             name: "buf".to_string(),
-            init: None,
+            init: Some(Initializer::List(vec![
+                Expr::IntLiteral {
+                    value: 1,
+                    span: span(),
+                },
+                Expr::IntLiteral {
+                    value: 2,
+                    span: span(),
+                },
+                Expr::IntLiteral {
+                    value: 3,
+                    span: span(),
+                },
+            ])),
         },
-        Statement::Return(Expr::Variable {
+        Statement::Return(Expr::IntLiteral {
+            value: 0,
+            span: span(),
+        }),
+    ]);
+
+    check(&program).expect("semantic check should succeed");
+}
+
+#[test]
+fn accepts_local_array_initializer_list_with_shorter_length() {
+    let program = main_program(vec![
+        Statement::VarDecl {
+            ty: Type::Array {
+                element: Box::new(Type::Char),
+                len: 3,
+            },
+            name_span: span(),
             name: "buf".to_string(),
+            init: Some(Initializer::List(vec![
+                Expr::IntLiteral {
+                    value: 1,
+                    span: span(),
+                },
+                Expr::IntLiteral {
+                    value: 2,
+                    span: span(),
+                },
+            ])),
+        },
+        Statement::Return(Expr::IntLiteral {
+            value: 0,
+            span: span(),
+        }),
+    ]);
+
+    check(&program).expect("semantic check should succeed");
+}
+
+#[test]
+fn accepts_empty_local_array_initializer_list() {
+    let program = main_program(vec![
+        Statement::VarDecl {
+            ty: Type::Array {
+                element: Box::new(Type::Int),
+                len: 2,
+            },
+            name_span: span(),
+            name: "nums".to_string(),
+            init: Some(Initializer::List(vec![])),
+        },
+        Statement::Return(Expr::IntLiteral {
+            value: 0,
+            span: span(),
+        }),
+    ]);
+
+    check(&program).expect("semantic check should succeed");
+}
+
+#[test]
+fn rejects_array_initializer_list_with_larger_length() {
+    let program = main_program(vec![
+        Statement::VarDecl {
+            ty: Type::Array {
+                element: Box::new(Type::Char),
+                len: 3,
+            },
+            name_span: span(),
+            name: "buf".to_string(),
+            init: Some(Initializer::List(vec![
+                Expr::IntLiteral {
+                    value: 1,
+                    span: span(),
+                },
+                Expr::IntLiteral {
+                    value: 2,
+                    span: span(),
+                },
+                Expr::IntLiteral {
+                    value: 3,
+                    span: span(),
+                },
+                Expr::IntLiteral {
+                    value: 4,
+                    span: span(),
+                },
+            ])),
+        },
+        Statement::Return(Expr::IntLiteral {
+            value: 0,
             span: span(),
         }),
     ]);
 
     let err = check(&program).expect_err("semantic check should fail");
 
-    assert_eq!(err.message, "array expression is not supported yet");
+    assert_eq!(
+        err.message,
+        "array initializer list must have <= '3' elements, has '4' elements"
+    );
+}
+
+#[test]
+fn rejects_array_initializer_expression() {
+    let program = main_program(vec![
+        Statement::VarDecl {
+            ty: Type::Array {
+                element: Box::new(Type::Char),
+                len: 3,
+            },
+            name_span: span(),
+            name: "buf".to_string(),
+            init: Some(Initializer::Expr(Expr::IntLiteral {
+                value: 1,
+                span: span(),
+            })),
+        },
+        Statement::Return(Expr::IntLiteral {
+            value: 0,
+            span: span(),
+        }),
+    ]);
+
+    let err = check(&program).expect_err("semantic check should fail");
+
+    assert_eq!(err.message, "array must be initialized with list");
+}
+
+#[test]
+fn rejects_scalar_initializer_list() {
+    let program = main_program(vec![
+        Statement::VarDecl {
+            ty: Type::Int,
+            name_span: span(),
+            name: "x".to_string(),
+            init: Some(Initializer::List(vec![Expr::IntLiteral {
+                value: 1,
+                span: span(),
+            }])),
+        },
+        Statement::Return(Expr::IntLiteral {
+            value: 0,
+            span: span(),
+        }),
+    ]);
+
+    let err = check(&program).expect_err("semantic check should fail");
+
+    assert_eq!(err.message, "cannot initialize scalar type 'Int' with list");
 }
 
 #[test]
@@ -1817,19 +2033,19 @@ fn rejects_duplicate_local_declaration() {
             ty: Type::Int,
             name_span: span(),
             name: "x".to_string(),
-            init: Some(Expr::IntLiteral {
+            init: Some(Initializer::Expr(Expr::IntLiteral {
                 value: 1,
                 span: span(),
-            }),
+            })),
         },
         Statement::VarDecl {
             ty: Type::Int,
             name_span: span(),
             name: "x".to_string(),
-            init: Some(Expr::IntLiteral {
+            init: Some(Initializer::Expr(Expr::IntLiteral {
                 value: 2,
                 span: span(),
-            }),
+            })),
         },
         Statement::Return(Expr::Variable {
             name: "x".to_string(),
@@ -1886,19 +2102,19 @@ fn rejects_initializer_using_later_local() {
             ty: Type::Int,
             name_span: span(),
             name: "y".to_string(),
-            init: Some(Expr::Variable {
+            init: Some(Initializer::Expr(Expr::Variable {
                 name: "x".to_string(),
                 span: span(),
-            }),
+            })),
         },
         Statement::VarDecl {
             ty: Type::Int,
             name_span: span(),
             name: "x".to_string(),
-            init: Some(Expr::IntLiteral {
+            init: Some(Initializer::Expr(Expr::IntLiteral {
                 value: 1,
                 span: span(),
-            }),
+            })),
         },
         Statement::Return(Expr::Variable {
             name: "y".to_string(),
@@ -1918,10 +2134,10 @@ fn rejects_undeclared_local_inside_nested_expression() {
             ty: Type::Int,
             name_span: span(),
             name: "x".to_string(),
-            init: Some(Expr::IntLiteral {
+            init: Some(Initializer::Expr(Expr::IntLiteral {
                 value: 1,
                 span: span(),
-            }),
+            })),
         },
         Statement::Return(Expr::Binary {
             op: BinaryOp::Multiply,
@@ -1966,14 +2182,14 @@ fn accepts_char_function_return_used_as_char_initializer() {
                         ty: Type::Char,
                         name_span: span(),
                         name: "result".to_string(),
-                        init: Some(Expr::Call {
+                        init: Some(Initializer::Expr(Expr::Call {
                             name_span: span(),
                             name: "id".to_string(),
                             args: vec![Expr::Variable {
                                 name: "c".to_string(),
                                 span: span(),
                             }],
-                        }),
+                        })),
                     },
                     Statement::Return(Expr::IntLiteral {
                         value: 0,
@@ -1995,10 +2211,10 @@ fn accepts_char_initializer_from_int_literal() {
             ty: Type::Char,
             name_span: span(),
             name: "c".to_string(),
-            init: Some(Expr::IntLiteral {
+            init: Some(Initializer::Expr(Expr::IntLiteral {
                 value: 1,
                 span: span(),
-            }),
+            })),
         },
         Statement::Return(Expr::IntLiteral {
             value: 0,
@@ -2016,7 +2232,7 @@ fn accepts_char_initializer_from_int_expression() {
             ty: Type::Char,
             name_span: span(),
             name: "c".to_string(),
-            init: Some(Expr::Binary {
+            init: Some(Initializer::Expr(Expr::Binary {
                 op: BinaryOp::Add,
                 op_span: span(),
                 left: Box::new(Expr::IntLiteral {
@@ -2027,7 +2243,7 @@ fn accepts_char_initializer_from_int_expression() {
                     value: 2,
                     span: span(),
                 }),
-            }),
+            })),
         },
         Statement::Return(Expr::IntLiteral {
             value: 0,
@@ -2080,19 +2296,19 @@ fn accepts_int_initializer_from_char_expression() {
             ty: Type::Char,
             name_span: span(),
             name: "c".to_string(),
-            init: Some(Expr::IntLiteral {
+            init: Some(Initializer::Expr(Expr::IntLiteral {
                 value: 65,
                 span: span(),
-            }),
+            })),
         },
         Statement::VarDecl {
             ty: Type::Int,
             name_span: span(),
             name: "i".to_string(),
-            init: Some(Expr::Variable {
+            init: Some(Initializer::Expr(Expr::Variable {
                 name: "c".to_string(),
                 span: span(),
-            }),
+            })),
         },
         Statement::Return(Expr::Variable {
             name: "i".to_string(),
@@ -2170,10 +2386,10 @@ fn accepts_int_argument_from_char_expression() {
                         ty: Type::Char,
                         name_span: span(),
                         name: "c".to_string(),
-                        init: Some(Expr::IntLiteral {
+                        init: Some(Initializer::Expr(Expr::IntLiteral {
                             value: 65,
                             span: span(),
-                        }),
+                        })),
                     },
                     Statement::Return(Expr::Call {
                         name_span: span(),
@@ -2277,10 +2493,10 @@ fn accepts_block_using_outer_local() {
             ty: Type::Int,
             name_span: span(),
             name: "x".to_string(),
-            init: Some(Expr::IntLiteral {
+            init: Some(Initializer::Expr(Expr::IntLiteral {
                 value: 1,
                 span: span(),
-            }),
+            })),
         },
         Statement::Block(vec![Statement::Return(Expr::Variable {
             name: "x".to_string(),
@@ -2298,10 +2514,10 @@ fn rejects_use_of_local_after_block_scope_ends() {
             ty: Type::Int,
             name_span: span(),
             name: "x".to_string(),
-            init: Some(Expr::IntLiteral {
+            init: Some(Initializer::Expr(Expr::IntLiteral {
                 value: 1,
                 span: span(),
-            }),
+            })),
         }]),
         Statement::Return(Expr::Variable {
             name: "x".to_string(),
@@ -2321,20 +2537,20 @@ fn accepts_shadowing_in_inner_block() {
             ty: Type::Int,
             name_span: span(),
             name: "x".to_string(),
-            init: Some(Expr::IntLiteral {
+            init: Some(Initializer::Expr(Expr::IntLiteral {
                 value: 1,
                 span: span(),
-            }),
+            })),
         },
         Statement::Block(vec![
             Statement::VarDecl {
                 ty: Type::Int,
                 name_span: span(),
                 name: "x".to_string(),
-                init: Some(Expr::IntLiteral {
+                init: Some(Initializer::Expr(Expr::IntLiteral {
                     value: 2,
                     span: span(),
-                }),
+                })),
             },
             Statement::Return(Expr::Variable {
                 name: "x".to_string(),
@@ -2354,19 +2570,19 @@ fn rejects_duplicate_local_in_same_block() {
                 ty: Type::Int,
                 name_span: span(),
                 name: "x".to_string(),
-                init: Some(Expr::IntLiteral {
+                init: Some(Initializer::Expr(Expr::IntLiteral {
                     value: 1,
                     span: span(),
-                }),
+                })),
             },
             Statement::VarDecl {
                 ty: Type::Int,
                 name_span: span(),
                 name: "x".to_string(),
-                init: Some(Expr::IntLiteral {
+                init: Some(Initializer::Expr(Expr::IntLiteral {
                     value: 2,
                     span: span(),
-                }),
+                })),
             },
         ]),
         Statement::Return(Expr::IntLiteral {
@@ -2387,10 +2603,10 @@ fn accepts_if_else_with_locals_in_branches() {
             ty: Type::Int,
             name_span: span(),
             name: "x".to_string(),
-            init: Some(Expr::IntLiteral {
+            init: Some(Initializer::Expr(Expr::IntLiteral {
                 value: 1,
                 span: span(),
-            }),
+            })),
         },
         Statement::If {
             cond: Expr::Binary {
@@ -2410,10 +2626,10 @@ fn accepts_if_else_with_locals_in_branches() {
                     ty: Type::Int,
                     name_span: span(),
                     name: "y".to_string(),
-                    init: Some(Expr::Variable {
+                    init: Some(Initializer::Expr(Expr::Variable {
                         name: "x".to_string(),
                         span: span(),
-                    }),
+                    })),
                 },
                 Statement::Return(Expr::Variable {
                     name: "y".to_string(),
@@ -2425,10 +2641,10 @@ fn accepts_if_else_with_locals_in_branches() {
                     ty: Type::Int,
                     name_span: span(),
                     name: "z".to_string(),
-                    init: Some(Expr::Variable {
+                    init: Some(Initializer::Expr(Expr::Variable {
                         name: "x".to_string(),
                         span: span(),
-                    }),
+                    })),
                 },
                 Statement::Return(Expr::Variable {
                     name: "z".to_string(),
@@ -2448,10 +2664,10 @@ fn accepts_while_with_local_condition_and_body() {
             ty: Type::Int,
             name_span: span(),
             name: "x".to_string(),
-            init: Some(Expr::IntLiteral {
+            init: Some(Initializer::Expr(Expr::IntLiteral {
                 value: 3,
                 span: span(),
-            }),
+            })),
         },
         Statement::While {
             cond: Expr::Variable {

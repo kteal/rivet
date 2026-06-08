@@ -1,6 +1,7 @@
 use crate::ast::{BinaryOp, Type, UnaryOp};
 use crate::typed_ast::{
-    LocalId, TypedExpr, TypedExprKind, TypedFunction, TypedProgram, TypedStatement,
+    LocalId, TypedExpr, TypedExprKind, TypedFunction, TypedInitializer, TypedProgram,
+    TypedStatement,
 };
 use std::collections::HashMap;
 use std::fmt::{self, Write};
@@ -224,16 +225,7 @@ impl Codegen {
     }
 
     fn emit_store_local(&mut self, local: &FrameSlot) {
-        match local.ty {
-            Type::Int | Type::UnsignedInt | Type::Pointer(_) => {
-                self.emit_line(format_args!("sw a0, {}(s0)", local.offset));
-            }
-            Type::Char => {
-                self.emit_narrow_to_type(&Type::Char);
-                self.emit_line(format_args!("sb a0, {}(s0)", local.offset));
-            }
-            Type::Array { .. } => unreachable!("array values are not supported in codegen yet"),
-        }
+        self.emit_store_to_base_offset(&local.ty, "s0", local.offset);
     }
 
     fn emit_store_param(&mut self, reg: usize, local: &FrameSlot) {
@@ -277,13 +269,17 @@ impl Codegen {
     }
 
     fn emit_store_to_addr(&mut self, ty: &Type) {
+        self.emit_store_to_base_offset(ty, "t0", 0);
+    }
+
+    fn emit_store_to_base_offset(&mut self, ty: &Type, base: &str, offset: i32) {
         match ty {
             Type::Char => {
                 self.emit_narrow_to_type(ty);
-                self.emit_line(format_args!("sb a0, 0(t0)"));
+                self.emit_line(format_args!("sb a0, {offset}({base})"));
             }
             Type::Int | Type::UnsignedInt | Type::Pointer(_) => {
-                self.emit_line(format_args!("sw a0, 0(t0)"));
+                self.emit_line(format_args!("sw a0, {offset}({base})"));
             }
             Type::Array { .. } => unreachable!("array values are not supported in codegen yet"),
         }
@@ -531,9 +527,12 @@ impl Codegen {
                 right,
                 ..
             } => self.emit_binary(*op, operand_ty, left, right),
-            TypedExprKind::Variable { .. } => {
+            TypedExprKind::Variable { id, .. } => {
                 self.emit_addr(expr);
-                self.emit_load_from_addr(&expr.ty);
+                let slot = self.resolve_local(*id);
+                if !matches!(slot.ty, Type::Array { .. }) {
+                    self.emit_load_from_addr(&expr.ty);
+                }
             }
             TypedExprKind::Unary {
                 op, expr: operand, ..
@@ -702,10 +701,48 @@ impl Codegen {
                 self.emit_line(format_args!("j {return_label}"));
             }
             TypedStatement::VarDecl { id, init, .. } => {
-                if let Some(init_expr) = init {
-                    self.emit_expr(init_expr);
-                    let slot = self.resolve_local(*id).clone();
-                    self.emit_store_local(&slot);
+                if let Some(initializer) = init {
+                    match initializer {
+                        TypedInitializer::Expr(init_expr) => {
+                            self.emit_expr(init_expr);
+                            let slot = self.resolve_local(*id).clone();
+                            self.emit_store_local(&slot);
+                        }
+                        TypedInitializer::List(values) => {
+                            let (element_ty, array_len, offset) = {
+                                let slot = self.resolve_local(*id);
+
+                                let Type::Array { element, len } = &slot.ty else {
+                                    unreachable!("sema guarantees that this is an array");
+                                };
+
+                                ((*element).clone(), *len, slot.offset)
+                            };
+
+                            for (i, expr) in values.iter().enumerate() {
+                                self.emit_expr(expr);
+                                self.emit_store_to_base_offset(
+                                    &element_ty,
+                                    "s0",
+                                    offset
+                                        + i32::try_from(i * element_ty.size())
+                                            .expect("type size too large for i32"),
+                                );
+                            }
+
+                            // Zero-initialize remaining elements
+                            for i in values.len()..array_len {
+                                self.emit_line(format_args!("li a0, 0"));
+                                self.emit_store_to_base_offset(
+                                    &element_ty,
+                                    "s0",
+                                    offset
+                                        + i32::try_from(i * element_ty.size())
+                                            .expect("type size too large for i32"),
+                                );
+                            }
+                        }
+                    }
                 }
             }
             TypedStatement::Block(body) => {

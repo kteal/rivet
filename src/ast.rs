@@ -28,7 +28,7 @@ pub enum Statement {
         ty: Type,
         name: String,
         name_span: Span,
-        init: Option<Expr>,
+        init: Option<Initializer>,
     },
     Return(Expr),
     Block(Vec<Self>),
@@ -59,6 +59,12 @@ pub enum Statement {
         post: Option<Expr>,
         body: Box<Self>,
     },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Initializer {
+    Expr(Expr),
+    List(Vec<Expr>),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
