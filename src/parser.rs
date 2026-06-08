@@ -1,6 +1,6 @@
 use crate::ast::{
-    BinaryOp, Expr, Function, Initializer, IntLiteralSuffix, Param, Program, Statement, Type,
-    UnaryOp,
+    BinaryOp, Expr, Function, Initializer, IntLiteralBase, IntLiteralSuffix, Param, Program,
+    Statement, Type, UnaryOp,
 };
 use crate::lexer::{Span, Token, TokenKind};
 
@@ -127,14 +127,21 @@ impl Parser {
         }
     }
 
-    fn expect_int_literal(&mut self) -> Result<(u64, IntLiteralSuffix, Span), ParseError> {
+    fn expect_int_literal(
+        &mut self,
+    ) -> Result<(u64, IntLiteralSuffix, IntLiteralBase, Span), ParseError> {
         let token = self.advance();
 
         match token {
             Token {
-                kind: TokenKind::IntLiteral { value, suffix },
+                kind:
+                    TokenKind::IntLiteral {
+                        value,
+                        suffix,
+                        base,
+                    },
                 span,
-            } => Ok((value, suffix, span)),
+            } => Ok((value, suffix, base, span)),
 
             token => Err(ParseError {
                 message: format!("expected integer literal token, got '{:?}'", token.kind),
@@ -303,7 +310,7 @@ impl Parser {
         // Array declaration
         if self.peek_kind() == &TokenKind::LBracket {
             self.advance();
-            let (len, _, len_span) = self.expect_int_literal()?;
+            let (len, _, _, len_span) = self.expect_int_literal()?;
 
             // Don't allow array length <1
             if len < 1 {
@@ -392,14 +399,20 @@ impl Parser {
         let token = self.advance();
 
         match token.kind {
-            TokenKind::IntLiteral { value, suffix } => Ok(Expr::IntLiteral {
+            TokenKind::IntLiteral {
                 value,
                 suffix,
+                base,
+            } => Ok(Expr::IntLiteral {
+                value,
+                suffix,
+                base,
                 span: token.span,
             }),
             TokenKind::CharLiteral(value) => Ok(Expr::IntLiteral {
                 value: value.try_into().unwrap(),
                 suffix: IntLiteralSuffix::None,
+                base: IntLiteralBase::Decimal,
                 span: token.span,
             }),
             TokenKind::Ident(name) => {
@@ -917,6 +930,7 @@ mod tests {
                 TokenKind::IntLiteral {
                     value: 1,
                     suffix: IntLiteralSuffix::None,
+                    base: IntLiteralBase::Decimal,
                 },
                 0,
                 1,
@@ -960,6 +974,7 @@ mod tests {
                 TokenKind::IntLiteral {
                     value: 1,
                     suffix: IntLiteralSuffix::None,
+                    base: IntLiteralBase::Decimal,
                 },
                 11,
                 12,
@@ -987,6 +1002,7 @@ mod tests {
                 TokenKind::IntLiteral {
                     value: 1,
                     suffix: IntLiteralSuffix::None,
+                    base: IntLiteralBase::Decimal,
                 },
                 8,
                 9,
@@ -996,6 +1012,7 @@ mod tests {
                 TokenKind::IntLiteral {
                     value: 2,
                     suffix: IntLiteralSuffix::None,
+                    base: IntLiteralBase::Decimal,
                 },
                 12,
                 13,
@@ -1006,6 +1023,7 @@ mod tests {
                 TokenKind::IntLiteral {
                     value: 3,
                     suffix: IntLiteralSuffix::None,
+                    base: IntLiteralBase::Decimal,
                 },
                 17,
                 18,
@@ -1025,11 +1043,13 @@ mod tests {
                     left: Box::new(Expr::IntLiteral {
                         value: 1,
                         suffix: IntLiteralSuffix::None,
+                        base: IntLiteralBase::Decimal,
                         span: Span { start: 8, end: 9 },
                     }),
                     right: Box::new(Expr::IntLiteral {
                         value: 2,
                         suffix: IntLiteralSuffix::None,
+                        base: IntLiteralBase::Decimal,
                         span: Span { start: 12, end: 13 },
                     }),
                 }),
@@ -1037,6 +1057,7 @@ mod tests {
                 value: Box::new(Expr::IntLiteral {
                     value: 3,
                     suffix: IntLiteralSuffix::None,
+                    base: IntLiteralBase::Decimal,
                     span: Span { start: 17, end: 18 },
                 }),
             })
@@ -1052,6 +1073,7 @@ mod tests {
                 TokenKind::IntLiteral {
                     value: 1,
                     suffix: IntLiteralSuffix::None,
+                    base: IntLiteralBase::Decimal,
                 },
                 8,
                 9,
@@ -1061,6 +1083,7 @@ mod tests {
                 TokenKind::IntLiteral {
                     value: 2,
                     suffix: IntLiteralSuffix::None,
+                    base: IntLiteralBase::Decimal,
                 },
                 12,
                 13,
@@ -1071,6 +1094,7 @@ mod tests {
                 TokenKind::IntLiteral {
                     value: 3,
                     suffix: IntLiteralSuffix::None,
+                    base: IntLiteralBase::Decimal,
                 },
                 18,
                 19,
@@ -1090,11 +1114,13 @@ mod tests {
                     left: Box::new(Expr::IntLiteral {
                         value: 1,
                         suffix: IntLiteralSuffix::None,
+                        base: IntLiteralBase::Decimal,
                         span: Span { start: 8, end: 9 },
                     }),
                     right: Box::new(Expr::IntLiteral {
                         value: 2,
                         suffix: IntLiteralSuffix::None,
+                        base: IntLiteralBase::Decimal,
                         span: Span { start: 12, end: 13 },
                     }),
                 }),
@@ -1103,6 +1129,7 @@ mod tests {
                 value: Box::new(Expr::IntLiteral {
                     value: 3,
                     suffix: IntLiteralSuffix::None,
+                    base: IntLiteralBase::Decimal,
                     span: Span { start: 18, end: 19 },
                 }),
             })
@@ -1135,12 +1162,14 @@ mod tests {
             TokenKind::KwReturn,
             TokenKind::IntLiteral {
                 value: 1,
-                suffix: IntLiteralSuffix::None
+                suffix: IntLiteralSuffix::None,
+                base: IntLiteralBase::Decimal,
             },
             TokenKind::Plus,
             TokenKind::IntLiteral {
                 value: 2,
-                suffix: IntLiteralSuffix::None
+                suffix: IntLiteralSuffix::None,
+                base: IntLiteralBase::Decimal,
             },
             TokenKind::Semicolon,
         ];
@@ -1157,11 +1186,13 @@ mod tests {
                 left: Box::new(Expr::IntLiteral {
                     value: 1,
                     suffix: IntLiteralSuffix::None,
+                    base: IntLiteralBase::Decimal,
                     span: span()
                 }),
                 right: Box::new(Expr::IntLiteral {
                     value: 2,
                     suffix: IntLiteralSuffix::None,
+                    base: IntLiteralBase::Decimal,
                     span: span()
                 }),
             })
@@ -1174,7 +1205,8 @@ mod tests {
             TokenKind::Bang,
             TokenKind::IntLiteral {
                 value: 0,
-                suffix: IntLiteralSuffix::None
+                suffix: IntLiteralSuffix::None,
+                base: IntLiteralBase::Decimal,
             },
             TokenKind::Semicolon
         ];
@@ -1191,6 +1223,7 @@ mod tests {
                 expr: Box::new(Expr::IntLiteral {
                     value: 0,
                     suffix: IntLiteralSuffix::None,
+                    base: IntLiteralBase::Decimal,
                     span: span()
                 }),
             })
@@ -1206,7 +1239,8 @@ mod tests {
         let tokens = tokens![
             TokenKind::IntLiteral {
                 value: 1,
-                suffix: IntLiteralSuffix::None
+                suffix: IntLiteralSuffix::None,
+                base: IntLiteralBase::Decimal,
             },
             TokenKind::Eof
         ];
@@ -1260,18 +1294,21 @@ mod tests {
             TokenKind::LParen,
             TokenKind::IntLiteral {
                 value: 1,
-                suffix: IntLiteralSuffix::None
+                suffix: IntLiteralSuffix::None,
+                base: IntLiteralBase::Decimal,
             },
             TokenKind::Plus,
             TokenKind::IntLiteral {
                 value: 2,
-                suffix: IntLiteralSuffix::None
+                suffix: IntLiteralSuffix::None,
+                base: IntLiteralBase::Decimal,
             },
             TokenKind::RParen,
             TokenKind::Star,
             TokenKind::IntLiteral {
                 value: 3,
-                suffix: IntLiteralSuffix::None
+                suffix: IntLiteralSuffix::None,
+                base: IntLiteralBase::Decimal,
             },
             TokenKind::Semicolon,
             TokenKind::RBrace,
@@ -1297,17 +1334,20 @@ mod tests {
                             left: Box::new(Expr::IntLiteral {
                                 value: 1,
                                 suffix: IntLiteralSuffix::None,
+                                base: IntLiteralBase::Decimal,
                                 span: span()
                             }),
                             right: Box::new(Expr::IntLiteral {
                                 value: 2,
                                 suffix: IntLiteralSuffix::None,
+                                base: IntLiteralBase::Decimal,
                                 span: span()
                             }),
                         }),
                         right: Box::new(Expr::IntLiteral {
                             value: 3,
                             suffix: IntLiteralSuffix::None,
+                            base: IntLiteralBase::Decimal,
                             span: span()
                         }),
                     })],
@@ -1328,17 +1368,20 @@ mod tests {
             TokenKind::KwReturn,
             TokenKind::IntLiteral {
                 value: 1,
-                suffix: IntLiteralSuffix::None
+                suffix: IntLiteralSuffix::None,
+                base: IntLiteralBase::Decimal,
             },
             TokenKind::Plus,
             TokenKind::IntLiteral {
                 value: 2,
-                suffix: IntLiteralSuffix::None
+                suffix: IntLiteralSuffix::None,
+                base: IntLiteralBase::Decimal,
             },
             TokenKind::Less,
             TokenKind::IntLiteral {
                 value: 4,
-                suffix: IntLiteralSuffix::None
+                suffix: IntLiteralSuffix::None,
+                base: IntLiteralBase::Decimal,
             },
             TokenKind::Semicolon,
             TokenKind::RBrace,
@@ -1364,17 +1407,20 @@ mod tests {
                             left: Box::new(Expr::IntLiteral {
                                 value: 1,
                                 suffix: IntLiteralSuffix::None,
+                                base: IntLiteralBase::Decimal,
                                 span: span()
                             }),
                             right: Box::new(Expr::IntLiteral {
                                 value: 2,
                                 suffix: IntLiteralSuffix::None,
+                                base: IntLiteralBase::Decimal,
                                 span: span()
                             }),
                         }),
                         right: Box::new(Expr::IntLiteral {
                             value: 4,
                             suffix: IntLiteralSuffix::None,
+                            base: IntLiteralBase::Decimal,
                             span: span()
                         }),
                     })],
@@ -1390,17 +1436,20 @@ mod tests {
             TokenKind::KwReturn,
             TokenKind::IntLiteral {
                 value: 1,
-                suffix: IntLiteralSuffix::None
+                suffix: IntLiteralSuffix::None,
+                base: IntLiteralBase::Decimal,
             },
             TokenKind::Plus,
             TokenKind::IntLiteral {
                 value: 2,
-                suffix: IntLiteralSuffix::None
+                suffix: IntLiteralSuffix::None,
+                base: IntLiteralBase::Decimal,
             },
             TokenKind::LessLess,
             TokenKind::IntLiteral {
                 value: 3,
-                suffix: IntLiteralSuffix::None
+                suffix: IntLiteralSuffix::None,
+                base: IntLiteralBase::Decimal,
             },
             TokenKind::Semicolon,
         ];
@@ -1420,17 +1469,20 @@ mod tests {
                     left: Box::new(Expr::IntLiteral {
                         value: 1,
                         suffix: IntLiteralSuffix::None,
+                        base: IntLiteralBase::Decimal,
                         span: span()
                     }),
                     right: Box::new(Expr::IntLiteral {
                         value: 2,
                         suffix: IntLiteralSuffix::None,
+                        base: IntLiteralBase::Decimal,
                         span: span()
                     }),
                 }),
                 right: Box::new(Expr::IntLiteral {
                     value: 3,
                     suffix: IntLiteralSuffix::None,
+                    base: IntLiteralBase::Decimal,
                     span: span()
                 }),
             })
@@ -1443,17 +1495,20 @@ mod tests {
             TokenKind::KwReturn,
             TokenKind::IntLiteral {
                 value: 1,
-                suffix: IntLiteralSuffix::None
+                suffix: IntLiteralSuffix::None,
+                base: IntLiteralBase::Decimal,
             },
             TokenKind::LessLess,
             TokenKind::IntLiteral {
                 value: 2,
-                suffix: IntLiteralSuffix::None
+                suffix: IntLiteralSuffix::None,
+                base: IntLiteralBase::Decimal,
             },
             TokenKind::Less,
             TokenKind::IntLiteral {
                 value: 8,
-                suffix: IntLiteralSuffix::None
+                suffix: IntLiteralSuffix::None,
+                base: IntLiteralBase::Decimal,
             },
             TokenKind::Semicolon,
         ];
@@ -1473,17 +1528,20 @@ mod tests {
                     left: Box::new(Expr::IntLiteral {
                         value: 1,
                         suffix: IntLiteralSuffix::None,
+                        base: IntLiteralBase::Decimal,
                         span: span()
                     }),
                     right: Box::new(Expr::IntLiteral {
                         value: 2,
                         suffix: IntLiteralSuffix::None,
+                        base: IntLiteralBase::Decimal,
                         span: span()
                     }),
                 }),
                 right: Box::new(Expr::IntLiteral {
                     value: 8,
                     suffix: IntLiteralSuffix::None,
+                    base: IntLiteralBase::Decimal,
                     span: span()
                 }),
             })
@@ -1625,18 +1683,21 @@ mod tests {
             TokenKind::LParen,
             TokenKind::IntLiteral {
                 value: 1,
-                suffix: IntLiteralSuffix::None
+                suffix: IntLiteralSuffix::None,
+                base: IntLiteralBase::Decimal,
             },
             TokenKind::Plus,
             TokenKind::IntLiteral {
                 value: 2,
-                suffix: IntLiteralSuffix::None
+                suffix: IntLiteralSuffix::None,
+                base: IntLiteralBase::Decimal,
             },
             TokenKind::RParen,
             TokenKind::EqualEqual,
             TokenKind::IntLiteral {
                 value: 3,
-                suffix: IntLiteralSuffix::None
+                suffix: IntLiteralSuffix::None,
+                base: IntLiteralBase::Decimal,
             },
             TokenKind::Semicolon,
             TokenKind::RBrace,
@@ -1662,17 +1723,20 @@ mod tests {
                             left: Box::new(Expr::IntLiteral {
                                 value: 1,
                                 suffix: IntLiteralSuffix::None,
+                                base: IntLiteralBase::Decimal,
                                 span: span()
                             }),
                             right: Box::new(Expr::IntLiteral {
                                 value: 2,
                                 suffix: IntLiteralSuffix::None,
+                                base: IntLiteralBase::Decimal,
                                 span: span()
                             }),
                         }),
                         right: Box::new(Expr::IntLiteral {
                             value: 3,
                             suffix: IntLiteralSuffix::None,
+                            base: IntLiteralBase::Decimal,
                             span: span()
                         }),
                     })],
@@ -1695,7 +1759,8 @@ mod tests {
             TokenKind::GreaterEqual,
             TokenKind::IntLiteral {
                 value: 10,
-                suffix: IntLiteralSuffix::None
+                suffix: IntLiteralSuffix::None,
+                base: IntLiteralBase::Decimal,
             },
             TokenKind::Semicolon,
             TokenKind::RBrace,
@@ -1722,6 +1787,7 @@ mod tests {
                         right: Box::new(Expr::IntLiteral {
                             value: 10,
                             suffix: IntLiteralSuffix::None,
+                            base: IntLiteralBase::Decimal,
                             span: span()
                         }),
                     })],
@@ -1742,17 +1808,20 @@ mod tests {
             TokenKind::KwReturn,
             TokenKind::IntLiteral {
                 value: 1,
-                suffix: IntLiteralSuffix::None
+                suffix: IntLiteralSuffix::None,
+                base: IntLiteralBase::Decimal,
             },
             TokenKind::Less,
             TokenKind::IntLiteral {
                 value: 2,
-                suffix: IntLiteralSuffix::None
+                suffix: IntLiteralSuffix::None,
+                base: IntLiteralBase::Decimal,
             },
             TokenKind::Less,
             TokenKind::IntLiteral {
                 value: 3,
-                suffix: IntLiteralSuffix::None
+                suffix: IntLiteralSuffix::None,
+                base: IntLiteralBase::Decimal,
             },
             TokenKind::Semicolon,
             TokenKind::RBrace,
@@ -1778,17 +1847,20 @@ mod tests {
                             left: Box::new(Expr::IntLiteral {
                                 value: 1,
                                 suffix: IntLiteralSuffix::None,
+                                base: IntLiteralBase::Decimal,
                                 span: span()
                             }),
                             right: Box::new(Expr::IntLiteral {
                                 value: 2,
                                 suffix: IntLiteralSuffix::None,
+                                base: IntLiteralBase::Decimal,
                                 span: span()
                             }),
                         }),
                         right: Box::new(Expr::IntLiteral {
                             value: 3,
                             suffix: IntLiteralSuffix::None,
+                            base: IntLiteralBase::Decimal,
                             span: span()
                         }),
                     })],
@@ -1811,13 +1883,15 @@ mod tests {
             TokenKind::Equal,
             TokenKind::IntLiteral {
                 value: 5,
-                suffix: IntLiteralSuffix::None
+                suffix: IntLiteralSuffix::None,
+                base: IntLiteralBase::Decimal,
             },
             TokenKind::Semicolon,
             TokenKind::KwReturn,
             TokenKind::IntLiteral {
                 value: 42,
-                suffix: IntLiteralSuffix::None
+                suffix: IntLiteralSuffix::None,
+                base: IntLiteralBase::Decimal,
             },
             TokenKind::Semicolon,
             TokenKind::RBrace,
@@ -1842,12 +1916,14 @@ mod tests {
                             init: Some(Initializer::Expr(Expr::IntLiteral {
                                 value: 5,
                                 suffix: IntLiteralSuffix::None,
+                                base: IntLiteralBase::Decimal,
                                 span: span()
                             })),
                         },
                         Statement::Return(Expr::IntLiteral {
                             value: 42,
                             suffix: IntLiteralSuffix::None,
+                            base: IntLiteralBase::Decimal,
                             span: span()
                         }),
                     ],
@@ -1870,7 +1946,8 @@ mod tests {
             TokenKind::Equal,
             TokenKind::IntLiteral {
                 value: 5,
-                suffix: IntLiteralSuffix::None
+                suffix: IntLiteralSuffix::None,
+                base: IntLiteralBase::Decimal,
             },
             TokenKind::Semicolon,
             TokenKind::KwReturn,
@@ -1898,6 +1975,7 @@ mod tests {
                             init: Some(Initializer::Expr(Expr::IntLiteral {
                                 value: 5,
                                 suffix: IntLiteralSuffix::None,
+                                base: IntLiteralBase::Decimal,
                                 span: span()
                             })),
                         },
@@ -1918,17 +1996,20 @@ mod tests {
             TokenKind::KwReturn,
             TokenKind::IntLiteral {
                 value: 1,
-                suffix: IntLiteralSuffix::None
+                suffix: IntLiteralSuffix::None,
+                base: IntLiteralBase::Decimal,
             },
             TokenKind::Plus,
             TokenKind::IntLiteral {
                 value: 2,
-                suffix: IntLiteralSuffix::None
+                suffix: IntLiteralSuffix::None,
+                base: IntLiteralBase::Decimal,
             },
             TokenKind::Star,
             TokenKind::IntLiteral {
                 value: 3,
-                suffix: IntLiteralSuffix::None
+                suffix: IntLiteralSuffix::None,
+                base: IntLiteralBase::Decimal,
             },
             TokenKind::Semicolon,
         ];
@@ -1945,6 +2026,7 @@ mod tests {
                 left: Box::new(Expr::IntLiteral {
                     value: 1,
                     suffix: IntLiteralSuffix::None,
+                    base: IntLiteralBase::Decimal,
                     span: span()
                 }),
                 right: Box::new(Expr::Binary {
@@ -1953,11 +2035,13 @@ mod tests {
                     left: Box::new(Expr::IntLiteral {
                         value: 2,
                         suffix: IntLiteralSuffix::None,
+                        base: IntLiteralBase::Decimal,
                         span: span()
                     }),
                     right: Box::new(Expr::IntLiteral {
                         value: 3,
                         suffix: IntLiteralSuffix::None,
+                        base: IntLiteralBase::Decimal,
                         span: span()
                     }),
                 }),
@@ -1997,17 +2081,20 @@ mod tests {
             TokenKind::KwReturn,
             TokenKind::IntLiteral {
                 value: 1,
-                suffix: IntLiteralSuffix::None
+                suffix: IntLiteralSuffix::None,
+                base: IntLiteralBase::Decimal,
             },
             TokenKind::PipePipe,
             TokenKind::IntLiteral {
                 value: 0,
-                suffix: IntLiteralSuffix::None
+                suffix: IntLiteralSuffix::None,
+                base: IntLiteralBase::Decimal,
             },
             TokenKind::AmpersandAmpersand,
             TokenKind::IntLiteral {
                 value: 2,
-                suffix: IntLiteralSuffix::None
+                suffix: IntLiteralSuffix::None,
+                base: IntLiteralBase::Decimal,
             },
             TokenKind::Semicolon,
         ];
@@ -2024,6 +2111,7 @@ mod tests {
                 left: Box::new(Expr::IntLiteral {
                     value: 1,
                     suffix: IntLiteralSuffix::None,
+                    base: IntLiteralBase::Decimal,
                     span: span()
                 }),
                 right: Box::new(Expr::Binary {
@@ -2032,11 +2120,13 @@ mod tests {
                     left: Box::new(Expr::IntLiteral {
                         value: 0,
                         suffix: IntLiteralSuffix::None,
+                        base: IntLiteralBase::Decimal,
                         span: span()
                     }),
                     right: Box::new(Expr::IntLiteral {
                         value: 2,
                         suffix: IntLiteralSuffix::None,
+                        base: IntLiteralBase::Decimal,
                         span: span()
                     }),
                 }),
@@ -2050,17 +2140,20 @@ mod tests {
             TokenKind::KwReturn,
             TokenKind::IntLiteral {
                 value: 1,
-                suffix: IntLiteralSuffix::None
+                suffix: IntLiteralSuffix::None,
+                base: IntLiteralBase::Decimal,
             },
             TokenKind::Pipe,
             TokenKind::IntLiteral {
                 value: 2,
-                suffix: IntLiteralSuffix::None
+                suffix: IntLiteralSuffix::None,
+                base: IntLiteralBase::Decimal,
             },
             TokenKind::AmpersandAmpersand,
             TokenKind::IntLiteral {
                 value: 3,
-                suffix: IntLiteralSuffix::None
+                suffix: IntLiteralSuffix::None,
+                base: IntLiteralBase::Decimal,
             },
             TokenKind::Semicolon,
         ];
@@ -2080,17 +2173,20 @@ mod tests {
                     left: Box::new(Expr::IntLiteral {
                         value: 1,
                         suffix: IntLiteralSuffix::None,
+                        base: IntLiteralBase::Decimal,
                         span: span()
                     }),
                     right: Box::new(Expr::IntLiteral {
                         value: 2,
                         suffix: IntLiteralSuffix::None,
+                        base: IntLiteralBase::Decimal,
                         span: span()
                     }),
                 }),
                 right: Box::new(Expr::IntLiteral {
                     value: 3,
                     suffix: IntLiteralSuffix::None,
+                    base: IntLiteralBase::Decimal,
                     span: span()
                 }),
             })
@@ -2103,17 +2199,20 @@ mod tests {
             TokenKind::KwReturn,
             TokenKind::IntLiteral {
                 value: 1,
-                suffix: IntLiteralSuffix::None
+                suffix: IntLiteralSuffix::None,
+                base: IntLiteralBase::Decimal,
             },
             TokenKind::AmpersandAmpersand,
             TokenKind::IntLiteral {
                 value: 2,
-                suffix: IntLiteralSuffix::None
+                suffix: IntLiteralSuffix::None,
+                base: IntLiteralBase::Decimal,
             },
             TokenKind::AmpersandAmpersand,
             TokenKind::IntLiteral {
                 value: 3,
-                suffix: IntLiteralSuffix::None
+                suffix: IntLiteralSuffix::None,
+                base: IntLiteralBase::Decimal,
             },
             TokenKind::Semicolon,
         ];
@@ -2133,17 +2232,20 @@ mod tests {
                     left: Box::new(Expr::IntLiteral {
                         value: 1,
                         suffix: IntLiteralSuffix::None,
+                        base: IntLiteralBase::Decimal,
                         span: span()
                     }),
                     right: Box::new(Expr::IntLiteral {
                         value: 2,
                         suffix: IntLiteralSuffix::None,
+                        base: IntLiteralBase::Decimal,
                         span: span()
                     }),
                 }),
                 right: Box::new(Expr::IntLiteral {
                     value: 3,
                     suffix: IntLiteralSuffix::None,
+                    base: IntLiteralBase::Decimal,
                     span: span()
                 }),
             })
@@ -2159,14 +2261,16 @@ mod tests {
             TokenKind::Equal,
             TokenKind::IntLiteral {
                 value: 0,
-                suffix: IntLiteralSuffix::None
+                suffix: IntLiteralSuffix::None,
+                base: IntLiteralBase::Decimal,
             },
             TokenKind::Semicolon,
             TokenKind::Ident("i".to_string()),
             TokenKind::Less,
             TokenKind::IntLiteral {
                 value: 10,
-                suffix: IntLiteralSuffix::None
+                suffix: IntLiteralSuffix::None,
+                base: IntLiteralBase::Decimal,
             },
             TokenKind::Semicolon,
             TokenKind::Ident("i".to_string()),
@@ -2175,7 +2279,8 @@ mod tests {
             TokenKind::Plus,
             TokenKind::IntLiteral {
                 value: 1,
-                suffix: IntLiteralSuffix::None
+                suffix: IntLiteralSuffix::None,
+                base: IntLiteralBase::Decimal,
             },
             TokenKind::RParen,
             TokenKind::Semicolon,
@@ -2197,6 +2302,7 @@ mod tests {
                     value: Box::new(Expr::IntLiteral {
                         value: 0,
                         suffix: IntLiteralSuffix::None,
+                        base: IntLiteralBase::Decimal,
                         span: span()
                     }),
                 }))),
@@ -2210,6 +2316,7 @@ mod tests {
                     right: Box::new(Expr::IntLiteral {
                         value: 10,
                         suffix: IntLiteralSuffix::None,
+                        base: IntLiteralBase::Decimal,
                         span: span()
                     }),
                 }),
@@ -2229,6 +2336,7 @@ mod tests {
                         right: Box::new(Expr::IntLiteral {
                             value: 1,
                             suffix: IntLiteralSuffix::None,
+                            base: IntLiteralBase::Decimal,
                             span: span()
                         }),
                     }),
@@ -2248,14 +2356,16 @@ mod tests {
             TokenKind::Equal,
             TokenKind::IntLiteral {
                 value: 0,
-                suffix: IntLiteralSuffix::None
+                suffix: IntLiteralSuffix::None,
+                base: IntLiteralBase::Decimal,
             },
             TokenKind::Semicolon,
             TokenKind::Ident("i".to_string()),
             TokenKind::Less,
             TokenKind::IntLiteral {
                 value: 10,
-                suffix: IntLiteralSuffix::None
+                suffix: IntLiteralSuffix::None,
+                base: IntLiteralBase::Decimal,
             },
             TokenKind::Semicolon,
             TokenKind::Ident("i".to_string()),
@@ -2264,7 +2374,8 @@ mod tests {
             TokenKind::Plus,
             TokenKind::IntLiteral {
                 value: 1,
-                suffix: IntLiteralSuffix::None
+                suffix: IntLiteralSuffix::None,
+                base: IntLiteralBase::Decimal,
             },
             TokenKind::RParen,
             TokenKind::Semicolon,
@@ -2284,6 +2395,7 @@ mod tests {
                     init: Some(Initializer::Expr(Expr::IntLiteral {
                         value: 0,
                         suffix: IntLiteralSuffix::None,
+                        base: IntLiteralBase::Decimal,
                         span: span()
                     })),
                 })),
@@ -2297,6 +2409,7 @@ mod tests {
                     right: Box::new(Expr::IntLiteral {
                         value: 10,
                         suffix: IntLiteralSuffix::None,
+                        base: IntLiteralBase::Decimal,
                         span: span()
                     }),
                 }),
@@ -2316,6 +2429,7 @@ mod tests {
                         right: Box::new(Expr::IntLiteral {
                             value: 1,
                             suffix: IntLiteralSuffix::None,
+                            base: IntLiteralBase::Decimal,
                             span: span()
                         }),
                     }),
@@ -2335,7 +2449,8 @@ mod tests {
             TokenKind::Less,
             TokenKind::IntLiteral {
                 value: 10,
-                suffix: IntLiteralSuffix::None
+                suffix: IntLiteralSuffix::None,
+                base: IntLiteralBase::Decimal,
             },
             TokenKind::Semicolon,
             TokenKind::RParen,
@@ -2360,6 +2475,7 @@ mod tests {
                     right: Box::new(Expr::IntLiteral {
                         value: 10,
                         suffix: IntLiteralSuffix::None,
+                        base: IntLiteralBase::Decimal,
                         span: span()
                     }),
                 }),

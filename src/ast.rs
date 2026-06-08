@@ -72,6 +72,7 @@ pub enum Expr {
     IntLiteral {
         value: u64,
         suffix: IntLiteralSuffix,
+        base: IntLiteralBase,
         span: Span,
     },
     Variable {
@@ -184,6 +185,22 @@ pub enum IntLiteralSuffix {
     Unsigned,
     Long,
     UnsignedLong,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum IntLiteralBase {
+    Decimal,
+    Hex,
+}
+
+impl IntLiteralBase {
+    #[must_use]
+    pub const fn radix(&self) -> u32 {
+        match self {
+            Self::Decimal => 10,
+            Self::Hex => 16,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

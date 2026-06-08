@@ -1,4 +1,6 @@
-use rivet::ast::{BinaryOp, Expr, Initializer, IntLiteralSuffix, Statement, Type, UnaryOp};
+use rivet::ast::{
+    BinaryOp, Expr, Initializer, IntLiteralBase, IntLiteralSuffix, Statement, Type, UnaryOp,
+};
 use rivet::lexer::lex;
 use rivet::parser::parse;
 
@@ -79,6 +81,34 @@ fn parses_large_integer_literal_magnitudes() {
 
     assert_eq!(value, 4_294_967_295);
     assert_eq!(suffix, IntLiteralSuffix::Unsigned);
+}
+
+#[test]
+fn parses_hex_integer_literals() {
+    let body = main_body("int main() { 0xff; 0XFFU; 0xffffUL; 0XffffLU; return 0; }");
+
+    let expected = [
+        (255, IntLiteralSuffix::None),
+        (255, IntLiteralSuffix::Unsigned),
+        (65_535, IntLiteralSuffix::UnsignedLong),
+        (65_535, IntLiteralSuffix::UnsignedLong),
+    ];
+
+    for (statement, (expected_value, expected_suffix)) in body.iter().zip(expected) {
+        let Statement::ExprStatement(Expr::IntLiteral {
+            value,
+            suffix,
+            base,
+            ..
+        }) = statement
+        else {
+            panic!("expected integer literal expression statement");
+        };
+
+        assert_eq!(*value, expected_value);
+        assert_eq!(*suffix, expected_suffix);
+        assert_eq!(*base, IntLiteralBase::Hex);
+    }
 }
 
 #[test]

@@ -2,7 +2,8 @@ mod common;
 
 use common::{param, param_with_span, span, span_from};
 use rivet::ast::{
-    BinaryOp, Expr, Function, Initializer, IntLiteralSuffix, Program, Statement, Type, UnaryOp,
+    BinaryOp, Expr, Function, Initializer, IntLiteralBase, IntLiteralSuffix, Program, Statement,
+    Type, UnaryOp,
 };
 use rivet::sema::check;
 use rivet::typed_ast::{TypedExprKind, TypedStatement};
@@ -49,6 +50,7 @@ fn accepts_multiple_functions() {
                 vec![Statement::Return(Expr::IntLiteral {
                     value: 1,
                     suffix: IntLiteralSuffix::None,
+                    base: IntLiteralBase::Decimal,
                     span: span(),
                 })],
             ),
@@ -57,6 +59,7 @@ fn accepts_multiple_functions() {
                 vec![Statement::Return(Expr::IntLiteral {
                     value: 0,
                     suffix: IntLiteralSuffix::None,
+                    base: IntLiteralBase::Decimal,
                     span: span(),
                 })],
             ),
@@ -81,6 +84,7 @@ fn accepts_same_local_name_in_different_functions() {
                         init: Some(Initializer::Expr(Expr::IntLiteral {
                             value: 1,
                             suffix: IntLiteralSuffix::None,
+                            base: IntLiteralBase::Decimal,
                             span: span(),
                         })),
                     },
@@ -100,6 +104,7 @@ fn accepts_same_local_name_in_different_functions() {
                         init: Some(Initializer::Expr(Expr::IntLiteral {
                             value: 2,
                             suffix: IntLiteralSuffix::None,
+                            base: IntLiteralBase::Decimal,
                             span: span(),
                         })),
                     },
@@ -114,6 +119,7 @@ fn accepts_same_local_name_in_different_functions() {
                 vec![Statement::Return(Expr::IntLiteral {
                     value: 0,
                     suffix: IntLiteralSuffix::None,
+                    base: IntLiteralBase::Decimal,
                     span: span(),
                 })],
             ),
@@ -133,6 +139,7 @@ fn rejects_duplicate_function_names() {
                 vec![Statement::Return(Expr::IntLiteral {
                     value: 0,
                     suffix: IntLiteralSuffix::None,
+                    base: IntLiteralBase::Decimal,
                     span: span(),
                 })],
             ),
@@ -141,6 +148,7 @@ fn rejects_duplicate_function_names() {
                 vec![Statement::Return(Expr::IntLiteral {
                     value: 1,
                     suffix: IntLiteralSuffix::None,
+                    base: IntLiteralBase::Decimal,
                     span: span(),
                 })],
             ),
@@ -161,6 +169,7 @@ fn rejects_program_without_main_function() {
             vec![Statement::Return(Expr::IntLiteral {
                 value: 1,
                 suffix: IntLiteralSuffix::None,
+                base: IntLiteralBase::Decimal,
                 span: span(),
             })],
         )],
@@ -181,6 +190,7 @@ fn accepts_call_to_declared_function() {
                 vec![Statement::Return(Expr::IntLiteral {
                     value: 1,
                     suffix: IntLiteralSuffix::None,
+                    base: IntLiteralBase::Decimal,
                     span: span(),
                 })],
             ),
@@ -216,6 +226,7 @@ fn accepts_forward_call_to_later_function() {
                 vec![Statement::Return(Expr::IntLiteral {
                     value: 1,
                     suffix: IntLiteralSuffix::None,
+                    base: IntLiteralBase::Decimal,
                     span: span(),
                 })],
             ),
@@ -246,6 +257,7 @@ fn accepts_empty_statement() {
         Statement::Return(Expr::IntLiteral {
             value: 0,
             suffix: IntLiteralSuffix::None,
+            base: IntLiteralBase::Decimal,
             span: span(),
         }),
     ]);
@@ -262,6 +274,7 @@ fn accepts_expression_statement() {
                 vec![Statement::Return(Expr::IntLiteral {
                     value: 1,
                     suffix: IntLiteralSuffix::None,
+                    base: IntLiteralBase::Decimal,
                     span: span(),
                 })],
             ),
@@ -276,6 +289,7 @@ fn accepts_expression_statement() {
                     Statement::Return(Expr::IntLiteral {
                         value: 0,
                         suffix: IntLiteralSuffix::None,
+                        base: IntLiteralBase::Decimal,
                         span: span(),
                     }),
                 ],
@@ -297,6 +311,7 @@ fn rejects_expression_statement_with_undeclared_variable() {
         Statement::Return(Expr::IntLiteral {
             value: 0,
             suffix: IntLiteralSuffix::None,
+            base: IntLiteralBase::Decimal,
             span: span(),
         }),
     ]);
@@ -390,6 +405,7 @@ fn rejects_local_redeclaring_parameter_in_function_scope() {
                     init: Some(Initializer::Expr(Expr::IntLiteral {
                         value: 1,
                         suffix: IntLiteralSuffix::None,
+                        base: IntLiteralBase::Decimal,
                         span: span(),
                     })),
                 },
@@ -421,6 +437,7 @@ fn accepts_inner_block_shadowing_parameter() {
                     init: Some(Initializer::Expr(Expr::IntLiteral {
                         value: 1,
                         suffix: IntLiteralSuffix::None,
+                        base: IntLiteralBase::Decimal,
                         span: span(),
                     })),
                 },
@@ -465,11 +482,13 @@ fn accepts_call_with_matching_argument_count() {
                         Expr::IntLiteral {
                             value: 1,
                             suffix: IntLiteralSuffix::None,
+                            base: IntLiteralBase::Decimal,
                             span: span(),
                         },
                         Expr::IntLiteral {
                             value: 2,
                             suffix: IntLiteralSuffix::None,
+                            base: IntLiteralBase::Decimal,
                             span: span(),
                         },
                     ],
@@ -502,6 +521,7 @@ fn rejects_call_with_too_few_arguments() {
                     args: vec![Expr::IntLiteral {
                         value: 1,
                         suffix: IntLiteralSuffix::None,
+                        base: IntLiteralBase::Decimal,
                         span: span(),
                     }],
                 })],
@@ -539,11 +559,13 @@ fn rejects_call_with_too_many_arguments_for_signature() {
                         Expr::IntLiteral {
                             value: 1,
                             suffix: IntLiteralSuffix::None,
+                            base: IntLiteralBase::Decimal,
                             span: span(),
                         },
                         Expr::IntLiteral {
                             value: 2,
                             suffix: IntLiteralSuffix::None,
+                            base: IntLiteralBase::Decimal,
                             span: span(),
                         },
                     ],
@@ -570,6 +592,7 @@ fn rejects_function_with_more_than_eight_parameters() {
             vec![Statement::Return(Expr::IntLiteral {
                 value: 0,
                 suffix: IntLiteralSuffix::None,
+                base: IntLiteralBase::Decimal,
                 span: span(),
             })],
         )],
@@ -606,6 +629,7 @@ fn too_many_parameter_errors_point_at_ninth_parameter() {
             body: vec![Statement::Return(Expr::IntLiteral {
                 value: 0,
                 suffix: IntLiteralSuffix::None,
+                base: IntLiteralBase::Decimal,
                 span: span(),
             })],
         }],
@@ -630,6 +654,7 @@ fn rejects_call_with_more_than_eight_arguments() {
                 vec![Statement::Return(Expr::IntLiteral {
                     value: 0,
                     suffix: IntLiteralSuffix::None,
+                    base: IntLiteralBase::Decimal,
                     span: span(),
                 })],
             ),
@@ -642,46 +667,55 @@ fn rejects_call_with_more_than_eight_arguments() {
                         Expr::IntLiteral {
                             value: 1,
                             suffix: IntLiteralSuffix::None,
+                            base: IntLiteralBase::Decimal,
                             span: span(),
                         },
                         Expr::IntLiteral {
                             value: 2,
                             suffix: IntLiteralSuffix::None,
+                            base: IntLiteralBase::Decimal,
                             span: span(),
                         },
                         Expr::IntLiteral {
                             value: 3,
                             suffix: IntLiteralSuffix::None,
+                            base: IntLiteralBase::Decimal,
                             span: span(),
                         },
                         Expr::IntLiteral {
                             value: 4,
                             suffix: IntLiteralSuffix::None,
+                            base: IntLiteralBase::Decimal,
                             span: span(),
                         },
                         Expr::IntLiteral {
                             value: 5,
                             suffix: IntLiteralSuffix::None,
+                            base: IntLiteralBase::Decimal,
                             span: span(),
                         },
                         Expr::IntLiteral {
                             value: 6,
                             suffix: IntLiteralSuffix::None,
+                            base: IntLiteralBase::Decimal,
                             span: span(),
                         },
                         Expr::IntLiteral {
                             value: 7,
                             suffix: IntLiteralSuffix::None,
+                            base: IntLiteralBase::Decimal,
                             span: span(),
                         },
                         Expr::IntLiteral {
                             value: 8,
                             suffix: IntLiteralSuffix::None,
+                            base: IntLiteralBase::Decimal,
                             span: span(),
                         },
                         Expr::IntLiteral {
                             value: 9,
                             suffix: IntLiteralSuffix::None,
+                            base: IntLiteralBase::Decimal,
                             span: span(),
                         },
                     ],
@@ -709,6 +743,7 @@ fn accepts_declared_local_usage() {
             init: Some(Initializer::Expr(Expr::IntLiteral {
                 value: 1,
                 suffix: IntLiteralSuffix::None,
+                base: IntLiteralBase::Decimal,
                 span: span(),
             })),
         },
@@ -728,6 +763,7 @@ fn accepts_declared_local_usage() {
                 right: Box::new(Expr::IntLiteral {
                     value: 2,
                     suffix: IntLiteralSuffix::None,
+                    base: IntLiteralBase::Decimal,
                     span: span(),
                 }),
             }),
@@ -759,6 +795,7 @@ fn accepts_declaration_without_initializer_assigned_before_use() {
             value: Box::new(Expr::IntLiteral {
                 value: 3,
                 suffix: IntLiteralSuffix::None,
+                base: IntLiteralBase::Decimal,
                 span: span(),
             }),
         }),
@@ -789,6 +826,7 @@ fn accepts_assignment_expression_in_return() {
             value: Box::new(Expr::IntLiteral {
                 value: 3,
                 suffix: IntLiteralSuffix::None,
+                base: IntLiteralBase::Decimal,
                 span: span(),
             }),
         }),
@@ -807,6 +845,7 @@ fn accepts_compound_assignment_to_int() {
             init: Some(Initializer::Expr(Expr::IntLiteral {
                 value: 3,
                 suffix: IntLiteralSuffix::None,
+                base: IntLiteralBase::Decimal,
                 span: span(),
             })),
         },
@@ -820,6 +859,7 @@ fn accepts_compound_assignment_to_int() {
             value: Box::new(Expr::IntLiteral {
                 value: 4,
                 suffix: IntLiteralSuffix::None,
+                base: IntLiteralBase::Decimal,
                 span: span(),
             }),
         }),
@@ -842,6 +882,7 @@ fn accepts_compound_assignment_to_char_from_int_expression() {
             init: Some(Initializer::Expr(Expr::IntLiteral {
                 value: 1,
                 suffix: IntLiteralSuffix::None,
+                base: IntLiteralBase::Decimal,
                 span: span(),
             })),
         },
@@ -855,6 +896,7 @@ fn accepts_compound_assignment_to_char_from_int_expression() {
             value: Box::new(Expr::IntLiteral {
                 value: 2,
                 suffix: IntLiteralSuffix::None,
+                base: IntLiteralBase::Decimal,
                 span: span(),
             }),
         }),
@@ -877,6 +919,7 @@ fn accepts_compound_assignment_expression_in_return() {
             init: Some(Initializer::Expr(Expr::IntLiteral {
                 value: 3,
                 suffix: IntLiteralSuffix::None,
+                base: IntLiteralBase::Decimal,
                 span: span(),
             })),
         },
@@ -890,6 +933,7 @@ fn accepts_compound_assignment_expression_in_return() {
             value: Box::new(Expr::IntLiteral {
                 value: 4,
                 suffix: IntLiteralSuffix::None,
+                base: IntLiteralBase::Decimal,
                 span: span(),
             }),
         }),
@@ -906,11 +950,13 @@ fn typed_binary_expression_has_result_type() {
         left: Box::new(Expr::IntLiteral {
             value: 1,
             suffix: IntLiteralSuffix::None,
+            base: IntLiteralBase::Decimal,
             span: span(),
         }),
         right: Box::new(Expr::IntLiteral {
             value: 2,
             suffix: IntLiteralSuffix::None,
+            base: IntLiteralBase::Decimal,
             span: span(),
         }),
     })]);
@@ -935,6 +981,7 @@ fn typed_shift_uses_promoted_left_operand_type() {
             init: Some(Initializer::Expr(Expr::IntLiteral {
                 value: 1,
                 suffix: IntLiteralSuffix::None,
+                base: IntLiteralBase::Decimal,
                 span: span(),
             })),
         },
@@ -945,6 +992,7 @@ fn typed_shift_uses_promoted_left_operand_type() {
             init: Some(Initializer::Expr(Expr::IntLiteral {
                 value: 1,
                 suffix: IntLiteralSuffix::None,
+                base: IntLiteralBase::Decimal,
                 span: span(),
             })),
         },
@@ -986,6 +1034,7 @@ fn typed_unary_negate_preserves_unsigned_operand_type() {
             init: Some(Initializer::Expr(Expr::IntLiteral {
                 value: 1,
                 suffix: IntLiteralSuffix::None,
+                base: IntLiteralBase::Decimal,
                 span: span(),
             })),
         },
@@ -1019,6 +1068,7 @@ fn typed_unary_bitwise_not_preserves_unsigned_operand_type() {
             init: Some(Initializer::Expr(Expr::IntLiteral {
                 value: 1,
                 suffix: IntLiteralSuffix::None,
+                base: IntLiteralBase::Decimal,
                 span: span(),
             })),
         },
@@ -1052,6 +1102,7 @@ fn typed_unary_logical_not_returns_int_for_unsigned_operand() {
             init: Some(Initializer::Expr(Expr::IntLiteral {
                 value: 1,
                 suffix: IntLiteralSuffix::None,
+                base: IntLiteralBase::Decimal,
                 span: span(),
             })),
         },
@@ -1102,6 +1153,7 @@ fn typed_pointer_dereference_has_pointee_type() {
                 vec![Statement::Return(Expr::IntLiteral {
                     value: 0,
                     suffix: IntLiteralSuffix::None,
+                    base: IntLiteralBase::Decimal,
                     span: span(),
                 })],
             ),
@@ -1151,6 +1203,7 @@ fn accepts_assignment_through_pointer_dereference() {
                     value: Box::new(Expr::IntLiteral {
                         value: 3,
                         suffix: IntLiteralSuffix::None,
+                        base: IntLiteralBase::Decimal,
                         span: span(),
                     }),
                 })],
@@ -1160,6 +1213,7 @@ fn accepts_assignment_through_pointer_dereference() {
                 vec![Statement::Return(Expr::IntLiteral {
                     value: 0,
                     suffix: IntLiteralSuffix::None,
+                    base: IntLiteralBase::Decimal,
                     span: span(),
                 })],
             ),
@@ -1214,6 +1268,7 @@ fn accepts_compound_assignment_through_pointer_dereference() {
                     value: Box::new(Expr::IntLiteral {
                         value: 3,
                         suffix: IntLiteralSuffix::None,
+                        base: IntLiteralBase::Decimal,
                         span: span(),
                     }),
                 })],
@@ -1223,6 +1278,7 @@ fn accepts_compound_assignment_through_pointer_dereference() {
                 vec![Statement::Return(Expr::IntLiteral {
                     value: 0,
                     suffix: IntLiteralSuffix::None,
+                    base: IntLiteralBase::Decimal,
                     span: span(),
                 })],
             ),
@@ -1277,6 +1333,7 @@ fn accepts_increment_through_pointer_dereference() {
                 vec![Statement::Return(Expr::IntLiteral {
                     value: 0,
                     suffix: IntLiteralSuffix::None,
+                    base: IntLiteralBase::Decimal,
                     span: span(),
                 })],
             ),
@@ -1317,6 +1374,7 @@ fn typed_pointer_arithmetic_has_pointer_operand_and_result_type() {
                     right: Box::new(Expr::IntLiteral {
                         value: 2,
                         suffix: IntLiteralSuffix::None,
+                        base: IntLiteralBase::Decimal,
                         span: span(),
                     }),
                 })],
@@ -1326,6 +1384,7 @@ fn typed_pointer_arithmetic_has_pointer_operand_and_result_type() {
                 vec![Statement::Return(Expr::IntLiteral {
                     value: 0,
                     suffix: IntLiteralSuffix::None,
+                    base: IntLiteralBase::Decimal,
                     span: span(),
                 })],
             ),
@@ -1366,12 +1425,14 @@ fn accepts_pointer_compound_assignment_by_integer() {
             value: Box::new(Expr::IntLiteral {
                 value: 1,
                 suffix: IntLiteralSuffix::None,
+                base: IntLiteralBase::Decimal,
                 span: span(),
             }),
         }),
         Statement::Return(Expr::IntLiteral {
             value: 0,
             suffix: IntLiteralSuffix::None,
+            base: IntLiteralBase::Decimal,
             span: span(),
         }),
     ]);
@@ -1387,6 +1448,7 @@ fn rejects_dereference_of_non_pointer_expression() {
         expr: Box::new(Expr::IntLiteral {
             value: 1,
             suffix: IntLiteralSuffix::None,
+            base: IntLiteralBase::Decimal,
             span: span(),
         }),
     })]);
@@ -1407,6 +1469,7 @@ fn rejects_assignment_through_non_pointer_dereference() {
             init: Some(Initializer::Expr(Expr::IntLiteral {
                 value: 1,
                 suffix: IntLiteralSuffix::None,
+                base: IntLiteralBase::Decimal,
                 span: span(),
             })),
         },
@@ -1423,6 +1486,7 @@ fn rejects_assignment_through_non_pointer_dereference() {
             value: Box::new(Expr::IntLiteral {
                 value: 3,
                 suffix: IntLiteralSuffix::None,
+                base: IntLiteralBase::Decimal,
                 span: span(),
             }),
         }),
@@ -1497,6 +1561,7 @@ fn rejects_assignment_between_different_pointer_types() {
         Statement::Return(Expr::IntLiteral {
             value: 0,
             suffix: IntLiteralSuffix::None,
+            base: IntLiteralBase::Decimal,
             span: span(),
         }),
     ]);
@@ -1519,6 +1584,7 @@ fn typed_char_compound_assignment_has_target_type() {
             init: Some(Initializer::Expr(Expr::IntLiteral {
                 value: 1,
                 suffix: IntLiteralSuffix::None,
+                base: IntLiteralBase::Decimal,
                 span: span(),
             })),
         },
@@ -1532,6 +1598,7 @@ fn typed_char_compound_assignment_has_target_type() {
             value: Box::new(Expr::IntLiteral {
                 value: 2,
                 suffix: IntLiteralSuffix::None,
+                base: IntLiteralBase::Decimal,
                 span: span(),
             }),
         }),
@@ -1557,6 +1624,7 @@ fn typed_postfix_increment_preserves_postfix_kind() {
             init: Some(Initializer::Expr(Expr::IntLiteral {
                 value: 1,
                 suffix: IntLiteralSuffix::None,
+                base: IntLiteralBase::Decimal,
                 span: span(),
             })),
         },
@@ -1604,6 +1672,7 @@ fn typed_call_preserves_typed_arguments() {
                     args: vec![Expr::IntLiteral {
                         value: 65,
                         suffix: IntLiteralSuffix::None,
+                        base: IntLiteralBase::Decimal,
                         span: span(),
                     }],
                 })],
@@ -1639,6 +1708,7 @@ fn rejects_assignment_expression_to_undeclared_local() {
         value: Box::new(Expr::IntLiteral {
             value: 3,
             suffix: IntLiteralSuffix::None,
+            base: IntLiteralBase::Decimal,
             span: span(),
         }),
     })]);
@@ -1658,11 +1728,13 @@ fn rejects_assignment_to_non_lvalue_expression() {
             left: Box::new(Expr::IntLiteral {
                 value: 1,
                 suffix: IntLiteralSuffix::None,
+                base: IntLiteralBase::Decimal,
                 span: span(),
             }),
             right: Box::new(Expr::IntLiteral {
                 value: 2,
                 suffix: IntLiteralSuffix::None,
+                base: IntLiteralBase::Decimal,
                 span: span(),
             }),
         }),
@@ -1670,6 +1742,7 @@ fn rejects_assignment_to_non_lvalue_expression() {
         value: Box::new(Expr::IntLiteral {
             value: 3,
             suffix: IntLiteralSuffix::None,
+            base: IntLiteralBase::Decimal,
             span: span(),
         }),
     })]);
@@ -1690,11 +1763,13 @@ fn rejects_compound_assignment_to_non_lvalue_expression() {
             left: Box::new(Expr::IntLiteral {
                 value: 1,
                 suffix: IntLiteralSuffix::None,
+                base: IntLiteralBase::Decimal,
                 span: span(),
             }),
             right: Box::new(Expr::IntLiteral {
                 value: 2,
                 suffix: IntLiteralSuffix::None,
+                base: IntLiteralBase::Decimal,
                 span: span(),
             }),
         }),
@@ -1703,6 +1778,7 @@ fn rejects_compound_assignment_to_non_lvalue_expression() {
         value: Box::new(Expr::IntLiteral {
             value: 3,
             suffix: IntLiteralSuffix::None,
+            base: IntLiteralBase::Decimal,
             span: span(),
         }),
     })]);
@@ -1723,6 +1799,7 @@ fn accepts_prefix_and_postfix_increment_decrement() {
             init: Some(Initializer::Expr(Expr::IntLiteral {
                 value: 1,
                 suffix: IntLiteralSuffix::None,
+                base: IntLiteralBase::Decimal,
                 span: span(),
             })),
         },
@@ -1769,11 +1846,13 @@ fn rejects_increment_of_non_lvalue_expression() {
             left: Box::new(Expr::IntLiteral {
                 value: 1,
                 suffix: IntLiteralSuffix::None,
+                base: IntLiteralBase::Decimal,
                 span: span(),
             }),
             right: Box::new(Expr::IntLiteral {
                 value: 2,
                 suffix: IntLiteralSuffix::None,
+                base: IntLiteralBase::Decimal,
                 span: span(),
             }),
         }),
@@ -1796,6 +1875,7 @@ fn accepts_initializer_using_earlier_local() {
             init: Some(Initializer::Expr(Expr::IntLiteral {
                 value: 1,
                 suffix: IntLiteralSuffix::None,
+                base: IntLiteralBase::Decimal,
                 span: span(),
             })),
         },
@@ -1857,6 +1937,7 @@ fn accepts_local_array_declaration_without_value_use() {
             init: Some(Initializer::Expr(Expr::IntLiteral {
                 value: 1,
                 suffix: IntLiteralSuffix::None,
+                base: IntLiteralBase::Decimal,
                 span: span(),
             })),
         },
@@ -1945,16 +2026,19 @@ fn accepts_local_array_initializer_list() {
                 Expr::IntLiteral {
                     value: 1,
                     suffix: IntLiteralSuffix::None,
+                    base: IntLiteralBase::Decimal,
                     span: span(),
                 },
                 Expr::IntLiteral {
                     value: 2,
                     suffix: IntLiteralSuffix::None,
+                    base: IntLiteralBase::Decimal,
                     span: span(),
                 },
                 Expr::IntLiteral {
                     value: 3,
                     suffix: IntLiteralSuffix::None,
+                    base: IntLiteralBase::Decimal,
                     span: span(),
                 },
             ])),
@@ -1962,6 +2046,7 @@ fn accepts_local_array_initializer_list() {
         Statement::Return(Expr::IntLiteral {
             value: 0,
             suffix: IntLiteralSuffix::None,
+            base: IntLiteralBase::Decimal,
             span: span(),
         }),
     ]);
@@ -1983,11 +2068,13 @@ fn accepts_local_array_initializer_list_with_shorter_length() {
                 Expr::IntLiteral {
                     value: 1,
                     suffix: IntLiteralSuffix::None,
+                    base: IntLiteralBase::Decimal,
                     span: span(),
                 },
                 Expr::IntLiteral {
                     value: 2,
                     suffix: IntLiteralSuffix::None,
+                    base: IntLiteralBase::Decimal,
                     span: span(),
                 },
             ])),
@@ -1995,6 +2082,7 @@ fn accepts_local_array_initializer_list_with_shorter_length() {
         Statement::Return(Expr::IntLiteral {
             value: 0,
             suffix: IntLiteralSuffix::None,
+            base: IntLiteralBase::Decimal,
             span: span(),
         }),
     ]);
@@ -2017,6 +2105,7 @@ fn accepts_empty_local_array_initializer_list() {
         Statement::Return(Expr::IntLiteral {
             value: 0,
             suffix: IntLiteralSuffix::None,
+            base: IntLiteralBase::Decimal,
             span: span(),
         }),
     ]);
@@ -2038,21 +2127,25 @@ fn rejects_array_initializer_list_with_larger_length() {
                 Expr::IntLiteral {
                     value: 1,
                     suffix: IntLiteralSuffix::None,
+                    base: IntLiteralBase::Decimal,
                     span: span(),
                 },
                 Expr::IntLiteral {
                     value: 2,
                     suffix: IntLiteralSuffix::None,
+                    base: IntLiteralBase::Decimal,
                     span: span(),
                 },
                 Expr::IntLiteral {
                     value: 3,
                     suffix: IntLiteralSuffix::None,
+                    base: IntLiteralBase::Decimal,
                     span: span(),
                 },
                 Expr::IntLiteral {
                     value: 4,
                     suffix: IntLiteralSuffix::None,
+                    base: IntLiteralBase::Decimal,
                     span: span(),
                 },
             ])),
@@ -2060,6 +2153,7 @@ fn rejects_array_initializer_list_with_larger_length() {
         Statement::Return(Expr::IntLiteral {
             value: 0,
             suffix: IntLiteralSuffix::None,
+            base: IntLiteralBase::Decimal,
             span: span(),
         }),
     ]);
@@ -2085,12 +2179,14 @@ fn rejects_array_initializer_expression() {
             init: Some(Initializer::Expr(Expr::IntLiteral {
                 value: 1,
                 suffix: IntLiteralSuffix::None,
+                base: IntLiteralBase::Decimal,
                 span: span(),
             })),
         },
         Statement::Return(Expr::IntLiteral {
             value: 0,
             suffix: IntLiteralSuffix::None,
+            base: IntLiteralBase::Decimal,
             span: span(),
         }),
     ]);
@@ -2110,12 +2206,14 @@ fn rejects_scalar_initializer_list() {
             init: Some(Initializer::List(vec![Expr::IntLiteral {
                 value: 1,
                 suffix: IntLiteralSuffix::None,
+                base: IntLiteralBase::Decimal,
                 span: span(),
             }])),
         },
         Statement::Return(Expr::IntLiteral {
             value: 0,
             suffix: IntLiteralSuffix::None,
+            base: IntLiteralBase::Decimal,
             span: span(),
         }),
     ]);
@@ -2135,6 +2233,7 @@ fn rejects_duplicate_local_declaration() {
             init: Some(Initializer::Expr(Expr::IntLiteral {
                 value: 1,
                 suffix: IntLiteralSuffix::None,
+                base: IntLiteralBase::Decimal,
                 span: span(),
             })),
         },
@@ -2145,6 +2244,7 @@ fn rejects_duplicate_local_declaration() {
             init: Some(Initializer::Expr(Expr::IntLiteral {
                 value: 2,
                 suffix: IntLiteralSuffix::None,
+                base: IntLiteralBase::Decimal,
                 span: span(),
             })),
         },
@@ -2171,12 +2271,14 @@ fn rejects_assignment_to_undeclared_local() {
             value: Box::new(Expr::IntLiteral {
                 value: 1,
                 suffix: IntLiteralSuffix::None,
+                base: IntLiteralBase::Decimal,
                 span: span(),
             }),
         }),
         Statement::Return(Expr::IntLiteral {
             value: 0,
             suffix: IntLiteralSuffix::None,
+            base: IntLiteralBase::Decimal,
             span: span(),
         }),
     ]);
@@ -2217,6 +2319,7 @@ fn rejects_initializer_using_later_local() {
             init: Some(Initializer::Expr(Expr::IntLiteral {
                 value: 1,
                 suffix: IntLiteralSuffix::None,
+                base: IntLiteralBase::Decimal,
                 span: span(),
             })),
         },
@@ -2241,6 +2344,7 @@ fn rejects_undeclared_local_inside_nested_expression() {
             init: Some(Initializer::Expr(Expr::IntLiteral {
                 value: 1,
                 suffix: IntLiteralSuffix::None,
+                base: IntLiteralBase::Decimal,
                 span: span(),
             })),
         },
@@ -2299,6 +2403,7 @@ fn accepts_char_function_return_used_as_char_initializer() {
                     Statement::Return(Expr::IntLiteral {
                         value: 0,
                         suffix: IntLiteralSuffix::None,
+                        base: IntLiteralBase::Decimal,
                         span: span(),
                     }),
                 ],
@@ -2320,12 +2425,14 @@ fn accepts_char_initializer_from_int_literal() {
             init: Some(Initializer::Expr(Expr::IntLiteral {
                 value: 1,
                 suffix: IntLiteralSuffix::None,
+                base: IntLiteralBase::Decimal,
                 span: span(),
             })),
         },
         Statement::Return(Expr::IntLiteral {
             value: 0,
             suffix: IntLiteralSuffix::None,
+            base: IntLiteralBase::Decimal,
             span: span(),
         }),
     ]);
@@ -2346,11 +2453,13 @@ fn accepts_char_initializer_from_int_expression() {
                 left: Box::new(Expr::IntLiteral {
                     value: 1,
                     suffix: IntLiteralSuffix::None,
+                    base: IntLiteralBase::Decimal,
                     span: span(),
                 }),
                 right: Box::new(Expr::IntLiteral {
                     value: 2,
                     suffix: IntLiteralSuffix::None,
+                    base: IntLiteralBase::Decimal,
                     span: span(),
                 }),
             })),
@@ -2358,6 +2467,7 @@ fn accepts_char_initializer_from_int_expression() {
         Statement::Return(Expr::IntLiteral {
             value: 0,
             suffix: IntLiteralSuffix::None,
+            base: IntLiteralBase::Decimal,
             span: span(),
         }),
     ]);
@@ -2394,6 +2504,7 @@ fn accepts_char_assignment_from_int_expression() {
         Statement::Return(Expr::IntLiteral {
             value: 0,
             suffix: IntLiteralSuffix::None,
+            base: IntLiteralBase::Decimal,
             span: span(),
         }),
     ]);
@@ -2411,6 +2522,7 @@ fn accepts_int_initializer_from_char_expression() {
             init: Some(Initializer::Expr(Expr::IntLiteral {
                 value: 65,
                 suffix: IntLiteralSuffix::None,
+                base: IntLiteralBase::Decimal,
                 span: span(),
             })),
         },
@@ -2444,6 +2556,7 @@ fn accepts_char_argument_from_int_expression() {
                 body: vec![Statement::Return(Expr::IntLiteral {
                     value: 0,
                     suffix: IntLiteralSuffix::None,
+                    base: IntLiteralBase::Decimal,
                     span: span(),
                 })],
             },
@@ -2503,6 +2616,7 @@ fn accepts_int_argument_from_char_expression() {
                         init: Some(Initializer::Expr(Expr::IntLiteral {
                             value: 65,
                             suffix: IntLiteralSuffix::None,
+                            base: IntLiteralBase::Decimal,
                             span: span(),
                         })),
                     },
@@ -2537,11 +2651,13 @@ fn accepts_char_return_from_int_expression() {
                 left: Box::new(Expr::IntLiteral {
                     value: 1,
                     suffix: IntLiteralSuffix::None,
+                    base: IntLiteralBase::Decimal,
                     span: span(),
                 }),
                 right: Box::new(Expr::IntLiteral {
                     value: 2,
                     suffix: IntLiteralSuffix::None,
+                    base: IntLiteralBase::Decimal,
                     span: span(),
                 }),
             })],
@@ -2613,6 +2729,7 @@ fn accepts_block_using_outer_local() {
             init: Some(Initializer::Expr(Expr::IntLiteral {
                 value: 1,
                 suffix: IntLiteralSuffix::None,
+                base: IntLiteralBase::Decimal,
                 span: span(),
             })),
         },
@@ -2635,6 +2752,7 @@ fn rejects_use_of_local_after_block_scope_ends() {
             init: Some(Initializer::Expr(Expr::IntLiteral {
                 value: 1,
                 suffix: IntLiteralSuffix::None,
+                base: IntLiteralBase::Decimal,
                 span: span(),
             })),
         }]),
@@ -2659,6 +2777,7 @@ fn accepts_shadowing_in_inner_block() {
             init: Some(Initializer::Expr(Expr::IntLiteral {
                 value: 1,
                 suffix: IntLiteralSuffix::None,
+                base: IntLiteralBase::Decimal,
                 span: span(),
             })),
         },
@@ -2670,6 +2789,7 @@ fn accepts_shadowing_in_inner_block() {
                 init: Some(Initializer::Expr(Expr::IntLiteral {
                     value: 2,
                     suffix: IntLiteralSuffix::None,
+                    base: IntLiteralBase::Decimal,
                     span: span(),
                 })),
             },
@@ -2694,6 +2814,7 @@ fn rejects_duplicate_local_in_same_block() {
                 init: Some(Initializer::Expr(Expr::IntLiteral {
                     value: 1,
                     suffix: IntLiteralSuffix::None,
+                    base: IntLiteralBase::Decimal,
                     span: span(),
                 })),
             },
@@ -2704,6 +2825,7 @@ fn rejects_duplicate_local_in_same_block() {
                 init: Some(Initializer::Expr(Expr::IntLiteral {
                     value: 2,
                     suffix: IntLiteralSuffix::None,
+                    base: IntLiteralBase::Decimal,
                     span: span(),
                 })),
             },
@@ -2711,6 +2833,7 @@ fn rejects_duplicate_local_in_same_block() {
         Statement::Return(Expr::IntLiteral {
             value: 0,
             suffix: IntLiteralSuffix::None,
+            base: IntLiteralBase::Decimal,
             span: span(),
         }),
     ]);
@@ -2730,6 +2853,7 @@ fn accepts_if_else_with_locals_in_branches() {
             init: Some(Initializer::Expr(Expr::IntLiteral {
                 value: 1,
                 suffix: IntLiteralSuffix::None,
+                base: IntLiteralBase::Decimal,
                 span: span(),
             })),
         },
@@ -2744,6 +2868,7 @@ fn accepts_if_else_with_locals_in_branches() {
                 right: Box::new(Expr::IntLiteral {
                     value: 2,
                     suffix: IntLiteralSuffix::None,
+                    base: IntLiteralBase::Decimal,
                     span: span(),
                 }),
             },
@@ -2793,6 +2918,7 @@ fn accepts_while_with_local_condition_and_body() {
             init: Some(Initializer::Expr(Expr::IntLiteral {
                 value: 3,
                 suffix: IntLiteralSuffix::None,
+                base: IntLiteralBase::Decimal,
                 span: span(),
             })),
         },
@@ -2818,6 +2944,7 @@ fn accepts_while_with_local_condition_and_body() {
                         right: Box::new(Expr::IntLiteral {
                             value: 1,
                             suffix: IntLiteralSuffix::None,
+                            base: IntLiteralBase::Decimal,
                             span: span(),
                         }),
                     }),
@@ -2840,6 +2967,7 @@ fn accepts_break_and_continue_inside_loop() {
             cond: Expr::IntLiteral {
                 value: 1,
                 suffix: IntLiteralSuffix::None,
+                base: IntLiteralBase::Decimal,
                 span: span(),
             },
             body: Box::new(Statement::Block(vec![
@@ -2850,6 +2978,7 @@ fn accepts_break_and_continue_inside_loop() {
         Statement::Return(Expr::IntLiteral {
             value: 0,
             suffix: IntLiteralSuffix::None,
+            base: IntLiteralBase::Decimal,
             span: span(),
         }),
     ]);
@@ -2868,12 +2997,14 @@ fn accepts_break_and_continue_inside_do_while_loop() {
             cond: Expr::IntLiteral {
                 value: 1,
                 suffix: IntLiteralSuffix::None,
+                base: IntLiteralBase::Decimal,
                 span: span(),
             },
         },
         Statement::Return(Expr::IntLiteral {
             value: 0,
             suffix: IntLiteralSuffix::None,
+            base: IntLiteralBase::Decimal,
             span: span(),
         }),
     ]);
@@ -2888,12 +3019,14 @@ fn accepts_break_inside_nested_if_in_loop() {
             cond: Expr::IntLiteral {
                 value: 1,
                 suffix: IntLiteralSuffix::None,
+                base: IntLiteralBase::Decimal,
                 span: span(),
             },
             body: Box::new(Statement::If {
                 cond: Expr::IntLiteral {
                     value: 1,
                     suffix: IntLiteralSuffix::None,
+                    base: IntLiteralBase::Decimal,
                     span: span(),
                 },
                 then_branch: Box::new(Statement::Break { span: span() }),
@@ -2903,6 +3036,7 @@ fn accepts_break_inside_nested_if_in_loop() {
         Statement::Return(Expr::IntLiteral {
             value: 0,
             suffix: IntLiteralSuffix::None,
+            base: IntLiteralBase::Decimal,
             span: span(),
         }),
     ]);
@@ -2939,12 +3073,14 @@ fn rejects_while_condition_using_undeclared_local() {
             body: Box::new(Statement::Return(Expr::IntLiteral {
                 value: 0,
                 suffix: IntLiteralSuffix::None,
+                base: IntLiteralBase::Decimal,
                 span: span(),
             })),
         },
         Statement::Return(Expr::IntLiteral {
             value: 0,
             suffix: IntLiteralSuffix::None,
+            base: IntLiteralBase::Decimal,
             span: span(),
         }),
     ]);
@@ -2967,6 +3103,7 @@ fn rejects_do_while_condition_using_undeclared_local() {
         Statement::Return(Expr::IntLiteral {
             value: 0,
             suffix: IntLiteralSuffix::None,
+            base: IntLiteralBase::Decimal,
             span: span(),
         }),
     ]);
@@ -2982,11 +3119,13 @@ fn rejects_indexing_non_array_non_pointer() {
         base: Box::new(Expr::IntLiteral {
             value: 42,
             suffix: IntLiteralSuffix::None,
+            base: IntLiteralBase::Decimal,
             span: span(),
         }),
         index: Box::new(Expr::IntLiteral {
             value: 0,
             suffix: IntLiteralSuffix::None,
+            base: IntLiteralBase::Decimal,
             span: span(),
         }),
         span: span(),
@@ -3066,12 +3205,14 @@ fn rejects_assigning_to_array_variable() {
             value: Box::new(Expr::IntLiteral {
                 value: 0,
                 suffix: IntLiteralSuffix::None,
+                base: IntLiteralBase::Decimal,
                 span: span(),
             }),
         }),
         Statement::Return(Expr::IntLiteral {
             value: 0,
             suffix: IntLiteralSuffix::None,
+            base: IntLiteralBase::Decimal,
             span: span(),
         }),
     ]);
@@ -3094,6 +3235,7 @@ fn typed_integer_literal_suffixes_choose_literal_type() {
         let program = main_program(vec![Statement::Return(Expr::IntLiteral {
             value: 1,
             suffix,
+            base: IntLiteralBase::Decimal,
             span: span(),
         })]);
 
@@ -3119,6 +3261,7 @@ fn accepts_integer_literal_suffix_boundary_values() {
         let program = main_program(vec![Statement::Return(Expr::IntLiteral {
             value,
             suffix,
+            base: IntLiteralBase::Decimal,
             span: span(),
         })]);
 
@@ -3155,6 +3298,7 @@ fn rejects_integer_literals_that_do_not_fit_suffix_type() {
         let program = main_program(vec![Statement::Return(Expr::IntLiteral {
             value,
             suffix,
+            base: IntLiteralBase::Decimal,
             span: span(),
         })]);
 
@@ -3162,4 +3306,46 @@ fn rejects_integer_literals_that_do_not_fit_suffix_type() {
 
         assert_eq!(err.message, expected_message);
     }
+}
+
+#[test]
+fn typed_unsuffixed_hex_literals_use_hex_candidate_types() {
+    let cases = [
+        (0x7fff_ffff, Type::Int),
+        (0x8000_0000, Type::UnsignedInt),
+        (0xffff_ffff, Type::UnsignedInt),
+    ];
+
+    for (value, expected_ty) in cases {
+        let program = main_program(vec![Statement::Return(Expr::IntLiteral {
+            value,
+            suffix: IntLiteralSuffix::None,
+            base: IntLiteralBase::Hex,
+            span: span(),
+        })]);
+
+        let typed_program = check(&program).expect("semantic check should succeed");
+        let TypedStatement::Return(expr) = &typed_program.functions[0].body[0] else {
+            panic!("expected typed return statement");
+        };
+
+        assert_eq!(expr.ty, expected_ty);
+    }
+}
+
+#[test]
+fn rejects_unsuffixed_hex_literals_that_do_not_fit_current_integer_types() {
+    let program = main_program(vec![Statement::Return(Expr::IntLiteral {
+        value: u64::from(u32::MAX) + 1,
+        suffix: IntLiteralSuffix::None,
+        base: IntLiteralBase::Hex,
+        span: span(),
+    })]);
+
+    let err = check(&program).expect_err("semantic check should fail");
+
+    assert_eq!(
+        err.message,
+        "integer literal '4294967296' is too large for type 'Int'"
+    );
 }

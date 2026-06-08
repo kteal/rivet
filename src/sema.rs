@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 
 use crate::ast::{
-    BinaryOp, Expr, Function, Initializer, IntLiteralSuffix, Param, Program, Statement, Type,
-    UnaryOp,
+    BinaryOp, Expr, Function, Initializer, IntLiteralBase, IntLiteralSuffix, Param, Program,
+    Statement, Type, UnaryOp,
 };
 use crate::lexer::Span;
 use crate::typed_ast::{
@@ -501,10 +501,11 @@ impl Checker {
             Expr::IntLiteral {
                 value,
                 suffix,
+                base,
                 span,
             } => {
-                let ty = match suffix {
-                    IntLiteralSuffix::None => {
+                let ty = match (suffix, base) {
+                    (IntLiteralSuffix::None, IntLiteralBase::Decimal) => {
                         if value <= &(i32::MAX as u64) {
                             Type::Int
                         } else {
@@ -517,7 +518,22 @@ impl Checker {
                             });
                         }
                     }
-                    IntLiteralSuffix::Unsigned => {
+                    (IntLiteralSuffix::None, IntLiteralBase::Hex) => {
+                        if value <= &(i32::MAX as u64) {
+                            Type::Int
+                        } else if value <= &u64::from(u32::MAX) {
+                            Type::UnsignedInt
+                        } else {
+                            return Err(SemanticError {
+                                message: format!(
+                                    "integer literal '{value}' is too large for type '{:?}'",
+                                    Type::Int
+                                ),
+                                span: *span,
+                            });
+                        }
+                    }
+                    (IntLiteralSuffix::Unsigned, _) => {
                         if value <= &u64::from(u32::MAX) {
                             Type::UnsignedInt
                         } else {
@@ -530,7 +546,7 @@ impl Checker {
                             });
                         }
                     }
-                    IntLiteralSuffix::Long => {
+                    (IntLiteralSuffix::Long, _) => {
                         if value <= &(i32::MAX as u64) {
                             Type::Long
                         } else {
@@ -543,7 +559,7 @@ impl Checker {
                             });
                         }
                     }
-                    IntLiteralSuffix::UnsignedLong => {
+                    (IntLiteralSuffix::UnsignedLong, _) => {
                         if value <= &u64::from(u32::MAX) {
                             Type::UnsignedLong
                         } else {

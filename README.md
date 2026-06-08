@@ -162,9 +162,9 @@ Lexing and preprocessing:
 
 - [x] integer literals
 - [x] integer literal suffixes: `U`, `L`, `UL`
+- [x] hexadecimal integer literals
 - [x] character constants
 - [x] comments
-- [ ] hexadecimal integer literals
 - [ ] string literals
 - [ ] preprocessing tokens and macro expansion
 - [ ] `#include`

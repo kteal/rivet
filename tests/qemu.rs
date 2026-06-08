@@ -359,6 +359,35 @@ fn qemu_long_programs_return_expected_values() {
 }
 
 #[test]
+fn qemu_hex_integer_literal_programs_return_expected_values() {
+    run_qemu_case(
+        "hex-literal-equals-decimal-value",
+        "int main() {\n    return 0xff == 255;\n}\n",
+        1,
+    );
+    run_qemu_case(
+        "uppercase-hex-literal-with-unsigned-suffix",
+        "int main() {\n    return 0XFFU == 255U;\n}\n",
+        1,
+    );
+    run_qemu_case(
+        "hex-literal-with-unsigned-long-suffix",
+        "int main() {\n    return 0xffffUL == 65535U;\n}\n",
+        1,
+    );
+    run_qemu_case(
+        "hex-literal-with-long-unsigned-suffix",
+        "int main() {\n    return 0xffffLU == 65535U;\n}\n",
+        1,
+    );
+    run_qemu_case(
+        "large-unsuffixed-hex-literal-uses-unsigned-int",
+        "int main() {\n    return 0xffffffff > 1;\n}\n",
+        1,
+    );
+}
+
+#[test]
 fn qemu_signed_type_spelling_programs_return_expected_values() {
     run_qemu_case(
         "signed-is-int",
