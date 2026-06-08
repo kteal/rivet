@@ -129,7 +129,7 @@ impl TypedExpr {
                         BinaryOp::LogicalOr => Some(i32::from(l != 0 || r != 0)),
                         BinaryOp::ShiftLeft if (0..32).contains(&r) => Some(l << r),
                         BinaryOp::ShiftRight if (0..32).contains(&r) => Some(l >> r),
-                        _ => None
+                        _ => None,
                     }
                 } else {
                     None

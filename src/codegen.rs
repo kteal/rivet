@@ -218,8 +218,13 @@ impl Codegen {
 
     fn emit_narrow_to_type(&mut self, ty: &Type) {
         match ty {
-            Type::Int | Type::UnsignedInt | Type::Pointer(_) => (),
-            Type::Char => self.emit_line(format_args!("andi a0, a0, 255")),
+            Type::Int | Type::UnsignedInt | Type::Pointer(_) | Type::Long | Type::UnsignedLong => {
+                #[allow(clippy::no_effect)]
+                ();
+            }
+            Type::Char | Type::UnsignedChar | Type::SignedChar => {
+                self.emit_line(format_args!("andi a0, a0, 255"))
+            }
             Type::Array { .. } => unreachable!("array values are not supported in codegen yet"),
         }
     }
@@ -230,10 +235,10 @@ impl Codegen {
 
     fn emit_store_param(&mut self, reg: usize, local: &FrameSlot) {
         match local.ty {
-            Type::Int | Type::UnsignedInt | Type::Pointer(_) => {
+            Type::Int | Type::UnsignedInt | Type::Pointer(_) | Type::Long | Type::UnsignedLong => {
                 self.emit_line(format_args!("sw a{reg}, {}(s0)", local.offset));
             }
-            Type::Char => {
+            Type::Char | Type::UnsignedChar | Type::SignedChar => {
                 self.emit_line(format_args!("andi a{reg}, a{reg}, 255"));
                 self.emit_line(format_args!("sb a{reg}, {}(s0)", local.offset));
             }
@@ -283,8 +288,9 @@ impl Codegen {
 
     fn emit_load_from_addr(&mut self, ty: &Type) {
         match ty {
-            Type::Char => self.emit_line(format_args!("lbu a0, 0(a0)")),
-            Type::Int | Type::UnsignedInt | Type::Pointer(_) => {
+            Type::Char | Type::UnsignedChar => self.emit_line(format_args!("lbu a0, 0(a0)")),
+            Type::SignedChar => self.emit_line(format_args!("lb a0, 0(a0)")),
+            Type::Int | Type::UnsignedInt | Type::Pointer(_) | Type::Long | Type::UnsignedLong => {
                 self.emit_line(format_args!("lw a0, 0(a0)"));
             }
             Type::Array { .. } => unreachable!("array values are not supported in codegen yet"),
@@ -297,11 +303,11 @@ impl Codegen {
 
     fn emit_store_to_base_offset(&mut self, ty: &Type, base: &str, offset: i32) {
         match ty {
-            Type::Char => {
+            Type::Char | Type::UnsignedChar | Type::SignedChar => {
                 self.emit_narrow_to_type(ty);
                 self.emit_line(format_args!("sb a0, {offset}({base})"));
             }
-            Type::Int | Type::UnsignedInt | Type::Pointer(_) => {
+            Type::Int | Type::UnsignedInt | Type::Pointer(_) | Type::Long | Type::UnsignedLong => {
                 self.emit_line(format_args!("sw a0, {offset}({base})"));
             }
             Type::Array { .. } => unreachable!("array values are not supported in codegen yet"),
@@ -342,22 +348,31 @@ impl Codegen {
         self.emit_label(&end_label);
     }
 
+    #[allow(clippy::too_many_lines)]
     fn emit_binary_op(&mut self, op: BinaryOp, ty: &Type) {
         match op {
             BinaryOp::Add => self.emit_line(format_args!("add a0, t0, a0")),
             BinaryOp::Subtract => self.emit_line(format_args!("sub a0, t0, a0")),
             BinaryOp::Multiply => self.emit_line(format_args!("mul a0, t0, a0")),
             BinaryOp::Divide => match ty {
-                Type::Int | Type::Char => self.emit_line(format_args!("div a0, t0, a0")),
-                Type::UnsignedInt => self.emit_line(format_args!("divu a0, t0, a0")),
+                Type::Int | Type::Char | Type::Long | Type::SignedChar => {
+                    self.emit_line(format_args!("div a0, t0, a0"));
+                }
+                Type::UnsignedInt | Type::UnsignedLong | Type::UnsignedChar => {
+                    self.emit_line(format_args!("divu a0, t0, a0"));
+                }
                 Type::Pointer(_) => {
                     unreachable!("pointer arithmetic should be handled before emit_binary_op")
                 }
                 Type::Array { .. } => unreachable!("array values are not supported in codegen yet"),
             },
             BinaryOp::Remainder => match ty {
-                Type::Int | Type::Char => self.emit_line(format_args!("rem a0, t0, a0")),
-                Type::UnsignedInt => self.emit_line(format_args!("remu a0, t0, a0")),
+                Type::Int | Type::Char | Type::Long | Type::SignedChar => {
+                    self.emit_line(format_args!("rem a0, t0, a0"));
+                }
+                Type::UnsignedInt | Type::UnsignedLong | Type::UnsignedChar => {
+                    self.emit_line(format_args!("remu a0, t0, a0"));
+                }
                 Type::Pointer(_) => {
                     unreachable!("pointer arithmetic should be handled before emit_binary_op")
                 }
@@ -372,19 +387,23 @@ impl Codegen {
                 self.emit_line(format_args!("snez a0, a0"));
             }
             BinaryOp::Less => match ty {
-                Type::Int | Type::Char => self.emit_line(format_args!("slt a0, t0, a0")),
-                Type::UnsignedInt => self.emit_line(format_args!("sltu a0, t0, a0")),
+                Type::Int | Type::Char | Type::Long | Type::SignedChar => {
+                    self.emit_line(format_args!("slt a0, t0, a0"));
+                }
+                Type::UnsignedInt | Type::UnsignedLong | Type::UnsignedChar => {
+                    self.emit_line(format_args!("sltu a0, t0, a0"));
+                }
                 Type::Pointer(_) => {
                     unreachable!("pointer arithmetic should be handled before emit_binary_op")
                 }
                 Type::Array { .. } => unreachable!("array values are not supported in codegen yet"),
             },
             BinaryOp::LessEqual => match ty {
-                Type::Int | Type::Char => {
+                Type::Int | Type::Char | Type::Long | Type::SignedChar => {
                     self.emit_line(format_args!("slt a0, a0, t0"));
                     self.emit_line(format_args!("xori a0, a0, 1"));
                 }
-                Type::UnsignedInt => {
+                Type::UnsignedInt | Type::UnsignedLong | Type::UnsignedChar => {
                     self.emit_line(format_args!("sltu a0, a0, t0"));
                     self.emit_line(format_args!("xori a0, a0, 1"));
                 }
@@ -394,19 +413,23 @@ impl Codegen {
                 Type::Array { .. } => unreachable!("array values are not supported in codegen yet"),
             },
             BinaryOp::Greater => match ty {
-                Type::Int | Type::Char => self.emit_line(format_args!("slt a0, a0, t0")),
-                Type::UnsignedInt => self.emit_line(format_args!("sltu a0, a0, t0")),
+                Type::Int | Type::Char | Type::Long | Type::SignedChar => {
+                    self.emit_line(format_args!("slt a0, a0, t0"));
+                }
+                Type::UnsignedInt | Type::UnsignedLong | Type::UnsignedChar => {
+                    self.emit_line(format_args!("sltu a0, a0, t0"));
+                }
                 Type::Pointer(_) => {
                     unreachable!("pointer arithmetic should be handled before emit_binary_op")
                 }
                 Type::Array { .. } => unreachable!("array values are not supported in codegen yet"),
             },
             BinaryOp::GreaterEqual => match ty {
-                Type::Int | Type::Char => {
+                Type::Int | Type::Char | Type::Long | Type::SignedChar => {
                     self.emit_line(format_args!("slt a0, t0, a0"));
                     self.emit_line(format_args!("xori a0, a0, 1"));
                 }
-                Type::UnsignedInt => {
+                Type::UnsignedInt | Type::UnsignedLong | Type::UnsignedChar => {
                     self.emit_line(format_args!("sltu a0, t0, a0"));
                     self.emit_line(format_args!("xori a0, a0, 1"));
                 }
@@ -420,8 +443,12 @@ impl Codegen {
             BinaryOp::BitOr => self.emit_line(format_args!("or a0, a0, t0")),
             BinaryOp::ShiftLeft => self.emit_line(format_args!("sll a0, t0, a0")),
             BinaryOp::ShiftRight => match ty {
-                Type::Int | Type::Char => self.emit_line(format_args!("sra a0, t0, a0")),
-                Type::UnsignedInt => self.emit_line(format_args!("srl a0, t0, a0")),
+                Type::Int | Type::Char | Type::Long | Type::SignedChar => {
+                    self.emit_line(format_args!("sra a0, t0, a0"));
+                }
+                Type::UnsignedInt | Type::UnsignedLong | Type::UnsignedChar => {
+                    self.emit_line(format_args!("srl a0, t0, a0"));
+                }
                 Type::Pointer(_) => {
                     unreachable!("pointer arithmetic should be handled before emit_binary_op")
                 }
@@ -569,11 +596,7 @@ impl Codegen {
                     UnaryOp::Negate => self.emit_line(format_args!("neg a0, a0")),
                     UnaryOp::LogicalNot => self.emit_line(format_args!("seqz a0, a0")),
                     UnaryOp::BitwiseNot => self.emit_line(format_args!("not a0, a0")),
-                    UnaryOp::Dereference => match expr.ty.size() {
-                        1 => self.emit_line(format_args!("lbu a0, 0(a0)")),
-                        4 => self.emit_line(format_args!("lw a0, 0(a0)")),
-                        _ => panic!("codegen does not support arbitrary data sizes"),
-                    },
+                    UnaryOp::Dereference => self.emit_load_from_addr(&expr.ty),
                 }
             }
             TypedExprKind::Call { name, args, .. } => {

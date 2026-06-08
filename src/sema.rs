@@ -209,16 +209,15 @@ impl Checker {
                     operand_ty: left_type.clone(),
                     result_ty: Type::Int,
                 });
-            } else {
-                return Err(SemanticError {
-                    message: format!(
-                        "invalid operands to binary operator '{op:?}'\n\
-                         left operand has type '{left_type:?}'\n\
-                         right operand has type '{right_type:?}'"
-                    ),
-                    span: op_span,
-                });
             }
+            return Err(SemanticError {
+                message: format!(
+                    "invalid operands to binary operator '{op:?}'\n\
+                     left operand has type '{left_type:?}'\n\
+                     right operand has type '{right_type:?}'"
+                ),
+                span: op_span,
+            });
         }
 
         if !left_type.is_integer() || !right_type.is_integer() {
@@ -433,7 +432,7 @@ impl Checker {
             .collect::<Result<Vec<_>, _>>()?;
 
         for (param, typed_arg) in function_info.params.iter().zip(&typed_args) {
-            if !Self::is_assignable_expr(&param.ty, &typed_arg) {
+            if !Self::is_assignable_expr(&param.ty, typed_arg) {
                 return Err(SemanticError {
                     message: format!(
                         "cannot pass value of type '{:?}' to parameter of type '{:?}'",
@@ -696,7 +695,7 @@ impl Checker {
 
                 for value in values {
                     let typed_value = self.check_expr(value)?;
-                    if !Self::is_assignable_expr(&element_ty, &typed_value) {
+                    if !Self::is_assignable_expr(element_ty, &typed_value) {
                         return Err(SemanticError {
                             message: format!(
                                 "cannot assign value of type '{:?}' to array of type '{element_ty:?}'",
@@ -711,12 +710,19 @@ impl Checker {
                 Ok(TypedInitializer::List(typed_values))
             }
             (
-                Type::Char | Type::Int | Type::UnsignedInt | Type::Pointer(_),
+                Type::Char
+                | Type::UnsignedChar
+                | Type::SignedChar
+                | Type::Int
+                | Type::UnsignedInt
+                | Type::Pointer(_)
+                | Type::Long
+                | Type::UnsignedLong,
                 Initializer::Expr(init_expr),
             ) => {
                 // Scalars must be initialized with an Expr
                 let typed_init = self.check_expr(init_expr)?;
-                if !Self::is_assignable_expr(&target_ty, &typed_init) {
+                if !Self::is_assignable_expr(target_ty, &typed_init) {
                     return Err(SemanticError {
                         message: format!(
                             "cannot assign value of type '{:?}' to variable of type '{target_ty:?}'",
@@ -733,7 +739,14 @@ impl Checker {
                 span: name_span,
             }),
             (
-                Type::Char | Type::Int | Type::UnsignedInt | Type::Pointer(_),
+                Type::Char
+                | Type::UnsignedChar
+                | Type::SignedChar
+                | Type::Int
+                | Type::UnsignedInt
+                | Type::Pointer(_)
+                | Type::Long
+                | Type::UnsignedLong,
                 Initializer::List(_),
             ) => Err(SemanticError {
                 message: format!("cannot initialize scalar type '{target_ty:?}' with list"),
@@ -753,7 +766,7 @@ impl Checker {
                     .as_ref()
                     .expect("return statement checked outside function");
 
-                if !Self::is_assignable_expr(&return_type, &typed_expr) {
+                if !Self::is_assignable_expr(return_type, &typed_expr) {
                     return Err(SemanticError {
                         message: format!(
                             "cannot return value of type '{:?}' from function returning '{return_type:?}'",

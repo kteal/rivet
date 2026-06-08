@@ -180,8 +180,12 @@ pub enum UnaryOp {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Type {
     Int,
-    Char,
     UnsignedInt,
+    Char,
+    SignedChar,
+    UnsignedChar,
+    Long,
+    UnsignedLong,
     Pointer(Box<Self>),
     Array { element: Box<Self>, len: usize },
 }
@@ -189,7 +193,16 @@ pub enum Type {
 impl Type {
     #[must_use]
     pub const fn is_integer(&self) -> bool {
-        matches!(self, Self::Int | Self::Char | Self::UnsignedInt)
+        matches!(
+            self,
+            Self::Int
+                | Self::Char
+                | Self::UnsignedChar
+                | Self::SignedChar
+                | Self::UnsignedInt
+                | Self::Long
+                | Self::UnsignedLong
+        )
     }
 
     #[must_use]
@@ -200,8 +213,8 @@ impl Type {
     #[must_use]
     pub fn size(&self) -> usize {
         match self {
-            Self::Char => 1,
-            Self::Int | Self::UnsignedInt | Self::Pointer(_) => 4,
+            Self::Char | Self::SignedChar | Self::UnsignedChar => 1,
+            Self::Int | Self::UnsignedInt | Self::Pointer(_) | Self::Long | Self::UnsignedLong => 4,
             Self::Array { element, len } => element.size() * len,
         }
     }
@@ -209,7 +222,14 @@ impl Type {
     #[must_use]
     pub fn align(&self) -> usize {
         match self {
-            Self::Char | Self::Int | Self::UnsignedInt | Self::Pointer(_) => self.size(),
+            Self::Char
+            | Self::UnsignedChar
+            | Self::SignedChar
+            | Self::Int
+            | Self::UnsignedInt
+            | Self::Pointer(_)
+            | Self::Long
+            | Self::UnsignedLong => self.size(),
             Self::Array { element, .. } => element.align(),
         }
     }
@@ -222,15 +242,27 @@ impl Type {
     #[must_use]
     pub const fn promoted(&self) -> Option<Self> {
         match self {
-            Self::Char | Self::Int => Some(Self::Int),
+            Self::Char | Self::UnsignedChar | Self::SignedChar | Self::Int => Some(Self::Int),
             Self::UnsignedInt => Some(Self::UnsignedInt),
+            Self::Long => Some(Self::Long),
+            Self::UnsignedLong => Some(Self::UnsignedLong),
             Self::Pointer(_) | Self::Array { .. } => None,
         }
     }
 
     #[must_use]
     pub fn usual_arithmetic_type(left: &Self, right: &Self) -> Self {
-        if *left == Self::UnsignedInt || *right == Self::UnsignedInt {
+        let left = left.promoted().expect("left must be integer");
+        let right = right.promoted().expect("right must be integer");
+
+        if (left == Self::UnsignedLong || right == Self::UnsignedLong)
+            || ((left == Self::Long || right == Self::Long)
+                && (left == Self::UnsignedInt || right == Self::UnsignedInt))
+        {
+            Self::UnsignedLong
+        } else if left == Self::Long || right == Self::Long {
+            Self::Long
+        } else if left == Self::UnsignedInt || right == Self::UnsignedInt {
             Self::UnsignedInt
         } else {
             Self::Int

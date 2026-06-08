@@ -6,7 +6,7 @@
 
 `rivet` is a C compiler written in Rust that targets RV32IM assembly. It is working toward C23 by growing a small, tested C subset.
 
-It currently handles integer and character types, basic pointers, fixed-size local arrays, array indexing, functions, block scope, common control flow, and C-like expression precedence. It emits RV32IM assembly and reports lexer, parser, and semantic errors with source locations.
+It currently handles common integer and character types, basic pointers, fixed-size local arrays, array indexing, functions, block scope, common control flow, and C-like expression precedence. It emits RV32IM assembly and reports lexer, parser, and semantic errors with source locations.
 
 The current language subset supports programs shaped like:
 
@@ -212,13 +212,20 @@ Types and semantic analysis:
 - [x] semantic errors for undeclared and duplicate locals
 - [x] basic type checking and implicit conversions for `int`, `char`, and `unsigned int`
 - [x] `char`
+- [x] `signed char`
+- [x] `unsigned char`
 - [x] `unsigned int`
+- [x] bare `unsigned` as `unsigned int`
+- [x] `long`
+- [x] `unsigned long`
+- [x] `signed`, `signed int`, `signed long`, and `signed long int`
 - [x] basic pointer types such as `char *` and `int *`
 - [x] pointer dereference type checking
 - [x] pointer arithmetic with integer offsets
 - [ ] full integer conversion rules
-- [ ] remaining signedness spelling and combinations: `signed`, bare `unsigned`, `unsigned char`, etc.
-- [ ] other non-`int` scalar types: `short`, `long`
+- [ ] integer literal suffixes: `U`, `L`, `UL`
+- [ ] remaining signedness spelling and combinations
+- [ ] other non-`int` scalar types: `short`, `unsigned short`
 - [ ] fixed-width and standard integer typedef compatibility
 - [ ] `bool`, `true`, `false`
 - [ ] enum types and enumerators

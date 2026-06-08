@@ -420,6 +420,35 @@ fn parses_pointer_local_declarations() {
 }
 
 #[test]
+fn parses_signed_type_specifiers() {
+    let program = parse_source(
+        "int main() { signed a; signed int b; signed long c; signed long int d; return 0; }",
+    );
+
+    let body = &program.functions[0].body;
+
+    let Statement::VarDecl { ty: a_ty, .. } = &body[0] else {
+        panic!("expected first local declaration");
+    };
+    assert_eq!(*a_ty, Type::Int);
+
+    let Statement::VarDecl { ty: b_ty, .. } = &body[1] else {
+        panic!("expected second local declaration");
+    };
+    assert_eq!(*b_ty, Type::Int);
+
+    let Statement::VarDecl { ty: c_ty, .. } = &body[2] else {
+        panic!("expected third local declaration");
+    };
+    assert_eq!(*c_ty, Type::Long);
+
+    let Statement::VarDecl { ty: d_ty, .. } = &body[3] else {
+        panic!("expected fourth local declaration");
+    };
+    assert_eq!(*d_ty, Type::Long);
+}
+
+#[test]
 fn parses_array_local_declarations() {
     let program = parse_source("int main() { char buf[3]; int nums[10]; return 0; }");
 

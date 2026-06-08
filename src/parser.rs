@@ -62,6 +62,15 @@ struct LoweredDeclarator {
     name_span: Span,
 }
 
+#[derive(Default, Clone, Copy, PartialEq, Eq)]
+struct TypeSpec {
+    unsigned: bool,
+    signed: bool,
+    int_count: usize,
+    char_count: usize,
+    long_count: usize,
+}
+
 struct Parser {
     tokens: Vec<Token>,
     pos: usize,
@@ -172,7 +181,7 @@ impl Parser {
         while self.peek_kind() != terminator {
             items.push(parse_item(self)?);
 
-            if *self.peek_kind() == TokenKind::Comma {
+            if self.peek_kind() == &TokenKind::Comma {
                 self.expect(&TokenKind::Comma)?;
 
                 if self.peek_kind() == terminator {
@@ -194,25 +203,95 @@ impl Parser {
     const fn is_type_decl(token_kind: &TokenKind) -> bool {
         matches!(
             token_kind,
-            TokenKind::KwInt | TokenKind::KwChar | TokenKind::KwUnsigned
+            TokenKind::KwInt
+                | TokenKind::KwChar
+                | TokenKind::KwUnsigned
+                | TokenKind::KwLong
+                | TokenKind::KwSigned
         )
     }
 
-    fn parse_type(&mut self) -> Result<Type, ParseError> {
-        let token = self.advance();
+    fn lower_type_spec(spec: TypeSpec, span: Span) -> Result<Type, ParseError> {
+        match (
+            spec.unsigned,
+            spec.signed,
+            spec.int_count,
+            spec.char_count,
+            spec.long_count,
+        ) {
+            // signed, signed int
+            (false, _, 1, 0, 0) | (false, true, 0, 0, 0) => Ok(Type::Int),
 
-        match token.kind {
-            TokenKind::KwInt => Ok(Type::Int),
-            TokenKind::KwChar => Ok(Type::Char),
-            TokenKind::KwUnsigned => {
-                self.expect(&TokenKind::KwInt)?;
-                Ok(Type::UnsignedInt)
-            }
-            found => Err(ParseError {
-                message: format!("expected type declaration, found {found:?}"),
-                span: token.span,
+            // unsigned, unsigned int
+            (true, false, 0 | 1, 0, 0) => Ok(Type::UnsignedInt),
+
+            // char
+            (false, false, 0, 1, 0) => Ok(Type::Char),
+
+            // unsigned char
+            (true, false, 0, 1, 0) => Ok(Type::UnsignedChar),
+
+            // signed char
+            (false, true, 0, 1, 0) => Ok(Type::SignedChar),
+
+            // long, long int, signed long, signed long int
+            (false, _, 0 | 1, 0, 1) => Ok(Type::Long),
+
+            // unsigned long, unsigned long int
+            (true, false, 0 | 1, 0, 1) => Ok(Type::UnsignedLong),
+
+            _ => Err(ParseError {
+                message: "unsupported or invalid type specifier combination".to_string(),
+                span,
             }),
         }
+    }
+
+    fn parse_type(&mut self) -> Result<Type, ParseError> {
+        let start = self.peek().span;
+        let mut spec = TypeSpec::default();
+        let mut saw_any = false;
+
+        loop {
+            match self.peek_kind() {
+                TokenKind::KwUnsigned => {
+                    self.advance();
+                    spec.unsigned = true;
+                    saw_any = true;
+                }
+                TokenKind::KwSigned => {
+                    self.advance();
+                    spec.signed = true;
+                    saw_any = true;
+                }
+                TokenKind::KwInt => {
+                    self.advance();
+                    spec.int_count += 1;
+                    saw_any = true;
+                }
+                TokenKind::KwChar => {
+                    self.advance();
+                    spec.char_count += 1;
+                    saw_any = true;
+                }
+                TokenKind::KwLong => {
+                    self.advance();
+                    spec.long_count += 1;
+                    saw_any = true;
+                }
+                _ => break,
+            }
+        }
+
+        if !saw_any {
+            let token = self.advance();
+            return Err(ParseError {
+                message: format!("expected type declaration, found {:?}", token.kind),
+                span: token.span,
+            });
+        }
+
+        Self::lower_type_spec(spec, start)
     }
 
     fn parse_direct_declarator(&mut self) -> Result<Declarator, ParseError> {
@@ -315,7 +394,7 @@ impl Parser {
                 span: token.span,
             }),
             TokenKind::Ident(name) => {
-                if *self.peek_kind() == TokenKind::LParen {
+                if self.peek_kind() == &TokenKind::LParen {
                     self.expect(&TokenKind::LParen)?;
                     let args = self.parse_comma_separated_until_terminator(
                         Self::parse_call_arg,
@@ -406,7 +485,7 @@ impl Parser {
     }
 
     fn parse_unary(&mut self) -> Result<Expr, ParseError> {
-        if *self.peek_kind() == TokenKind::PlusPlus {
+        if self.peek_kind() == &TokenKind::PlusPlus {
             let op = self.advance();
             let expr = self.parse_unary()?;
             return Ok(Expr::PrefixInc {
@@ -414,7 +493,7 @@ impl Parser {
                 op_span: op.span,
             });
         }
-        if *self.peek_kind() == TokenKind::MinusMinus {
+        if self.peek_kind() == &TokenKind::MinusMinus {
             let op = self.advance();
             let expr = self.parse_unary()?;
             return Ok(Expr::PrefixDec {
@@ -531,7 +610,7 @@ impl Parser {
             name_span,
         } = Self::lower_declarator(&base_ty, &declarator)?;
 
-        if *self.peek_kind() == TokenKind::Semicolon {
+        if self.peek_kind() == &TokenKind::Semicolon {
             self.expect(&TokenKind::Semicolon)?;
             return Ok(Statement::VarDecl {
                 ty,
@@ -567,7 +646,7 @@ impl Parser {
     }
 
     fn parse_through_rbrace(&mut self, vec: &mut Vec<Statement>) -> Result<(), ParseError> {
-        while *self.peek_kind() != TokenKind::RBrace {
+        while self.peek_kind() != &TokenKind::RBrace {
             vec.push(self.parse_statement()?);
         }
         self.expect(&TokenKind::RBrace)?;
@@ -580,7 +659,7 @@ impl Parser {
         let cond = self.parse_expr()?;
         self.expect(&TokenKind::RParen)?;
         let then_statement = self.parse_statement()?;
-        let else_statement = if *self.peek_kind() == TokenKind::KwElse {
+        let else_statement = if self.peek_kind() == &TokenKind::KwElse {
             self.expect(&TokenKind::KwElse)?;
             Some(self.parse_statement()?)
         } else {
@@ -654,18 +733,18 @@ impl Parser {
         let mut cond = None;
         let mut post = None;
 
-        if *self.peek_kind() == TokenKind::Semicolon {
+        if self.peek_kind() == &TokenKind::Semicolon {
             self.expect(&TokenKind::Semicolon)?;
         } else {
             init = Some(self.parse_for_statement_init()?);
         }
 
-        if *self.peek_kind() != TokenKind::Semicolon {
+        if self.peek_kind() != &TokenKind::Semicolon {
             cond = Some(self.parse_expr()?);
         }
         self.expect(&TokenKind::Semicolon)?;
 
-        if *self.peek_kind() != TokenKind::RParen {
+        if self.peek_kind() != &TokenKind::RParen {
             post = Some(self.parse_expr()?);
         }
         self.expect(&TokenKind::RParen)?;
@@ -772,7 +851,7 @@ impl Parser {
     fn parse_program(&mut self) -> Result<Program, ParseError> {
         let mut functions = vec![];
 
-        while *self.peek_kind() != TokenKind::Eof {
+        while self.peek_kind() != &TokenKind::Eof {
             functions.push(self.parse_function()?);
         }
         let token = self.expect(&TokenKind::Eof)?;

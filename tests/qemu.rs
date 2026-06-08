@@ -203,6 +203,21 @@ fn qemu_bitwise_and_shift_programs_return_expected_values() {
 #[test]
 fn qemu_unsigned_int_programs_return_expected_values() {
     run_qemu_case(
+        "bare-unsigned-local-initializer",
+        "int main() {\n    unsigned x = 42;\n    return x;\n}\n",
+        42,
+    );
+    run_qemu_case(
+        "bare-unsigned-parameter-and-return",
+        "unsigned id(unsigned x) {\n    return x;\n}\n\nint main() {\n    return id(7);\n}\n",
+        7,
+    );
+    run_qemu_case(
+        "bare-unsigned-comparison-uses-unsigned-operands",
+        "int main() {\n    unsigned x = 0 - 1;\n    return x > 1;\n}\n",
+        1,
+    );
+    run_qemu_case(
         "unsigned-local-initializer",
         "int main() {\n    unsigned int x = 42;\n    return x;\n}\n",
         42,
@@ -280,6 +295,133 @@ fn qemu_unsigned_int_programs_return_expected_values() {
     run_qemu_case(
         "unsigned-bitwise-not-preserves-unsigned-type",
         "int main() {\n    unsigned int x = 0;\n    return ~x > 1;\n}\n",
+        1,
+    );
+}
+
+#[test]
+fn qemu_long_programs_return_expected_values() {
+    run_qemu_case(
+        "long-local-initializer",
+        "int main() {\n    long x = 42;\n    return x;\n}\n",
+        42,
+    );
+    run_qemu_case(
+        "long-int-local-initializer",
+        "int main() {\n    long int x = 42;\n    return x;\n}\n",
+        42,
+    );
+    run_qemu_case(
+        "long-parameter-and-return",
+        "long id(long x) {\n    return x;\n}\n\nint main() {\n    return id(7);\n}\n",
+        7,
+    );
+    run_qemu_case(
+        "long-comparison-uses-signed-operands",
+        "int main() {\n    long x = 0 - 1;\n    return x < 1;\n}\n",
+        1,
+    );
+    run_qemu_case(
+        "long-shift-right-uses-arithmetic-shift",
+        "int main() {\n    long x = 0 - 8;\n    return (x >> 1) < 0;\n}\n",
+        1,
+    );
+    run_qemu_case(
+        "unsigned-long-local-initializer",
+        "int main() {\n    unsigned long x = 42;\n    return x;\n}\n",
+        42,
+    );
+    run_qemu_case(
+        "unsigned-long-int-local-initializer",
+        "int main() {\n    unsigned long int x = 42;\n    return x;\n}\n",
+        42,
+    );
+    run_qemu_case(
+        "unsigned-long-parameter-and-return",
+        "unsigned long id(unsigned long x) {\n    return x;\n}\n\nint main() {\n    return id(7);\n}\n",
+        7,
+    );
+    run_qemu_case(
+        "unsigned-long-comparison-uses-unsigned-operands",
+        "int main() {\n    unsigned long x = 0 - 1;\n    return x > 1;\n}\n",
+        1,
+    );
+    run_qemu_case(
+        "unsigned-long-shift-right-uses-logical-shift",
+        "int main() {\n    unsigned long x = 0 - 8;\n    return (x >> 1) < x;\n}\n",
+        1,
+    );
+    run_qemu_case(
+        "unsigned-int-plus-long-promotes-to-unsigned-long",
+        "int main() {\n    unsigned int x = 0 - 1;\n    long y = 0;\n    return x + y > 1;\n}\n",
+        1,
+    );
+}
+
+#[test]
+fn qemu_signed_type_spelling_programs_return_expected_values() {
+    run_qemu_case(
+        "signed-is-int",
+        "int main() {\n    signed x = 42;\n    return x;\n}\n",
+        42,
+    );
+    run_qemu_case(
+        "signed-int-is-int",
+        "int main() {\n    signed int x = 42;\n    return x;\n}\n",
+        42,
+    );
+    run_qemu_case(
+        "signed-long-is-long",
+        "int main() {\n    signed long x = 0 - 1;\n    return x < 0;\n}\n",
+        1,
+    );
+    run_qemu_case(
+        "signed-long-int-is-long",
+        "int main() {\n    signed long int x = 0 - 1;\n    return x < 0;\n}\n",
+        1,
+    );
+}
+
+#[test]
+fn qemu_char_family_programs_return_expected_values() {
+    run_qemu_case(
+        "unsigned-char-zero-extends-local-load",
+        "int main() {\n    unsigned char c = 255;\n    return c == 255;\n}\n",
+        1,
+    );
+    run_qemu_case(
+        "signed-char-sign-extends-local-load",
+        "int main() {\n    signed char c = 255;\n    return c < 0;\n}\n",
+        1,
+    );
+    run_qemu_case(
+        "unsigned-char-parameter-zero-extends",
+        "int is_255(unsigned char c) {\n    return c == 255;\n}\n\nint main() {\n    return is_255(255);\n}\n",
+        1,
+    );
+    run_qemu_case(
+        "signed-char-parameter-sign-extends",
+        "int is_negative(signed char c) {\n    return c < 0;\n}\n\nint main() {\n    return is_negative(255);\n}\n",
+        1,
+    );
+    run_qemu_case(
+        "unsigned-char-array-dereference-zero-extends",
+        "int main() {\n    unsigned char bytes[1] = {255};\n    unsigned char *p = bytes;\n    return *p == 255;\n}\n",
+        1,
+    );
+    run_qemu_case(
+        "signed-char-array-dereference-sign-extends",
+        "int main() {\n    signed char bytes[1] = {255};\n    signed char *p = bytes;\n    return *p < 0;\n}\n",
+        1,
+    );
+    run_qemu_case(
+        "char-family-arithmetic-promotes-to-int",
+        "int main() {\n    unsigned char a = 255;\n    signed char b = 1;\n    return a + b == 256;\n}\n",
+        1,
+    );
+    run_qemu_case(
+        "signed-char-shift-promotes-to-int",
+        "int main() {\n    signed char c = 255;\n    return (c >> 1) < 0;\n}\n",
         1,
     );
 }
