@@ -1758,6 +1758,59 @@ fn accepts_initializer_using_declared_name_itself() {
 }
 
 #[test]
+fn accepts_local_array_declaration_without_value_use() {
+    let program = main_program(vec![
+        Statement::VarDecl {
+            ty: Type::Array {
+                element: Box::new(Type::Char),
+                len: 3,
+            },
+            name_span: span(),
+            name: "buf".to_string(),
+            init: None,
+        },
+        Statement::VarDecl {
+            ty: Type::Int,
+            name_span: span(),
+            name: "x".to_string(),
+            init: Some(Expr::IntLiteral {
+                value: 1,
+                span: span(),
+            }),
+        },
+        Statement::Return(Expr::Variable {
+            name: "x".to_string(),
+            span: span(),
+        }),
+    ]);
+
+    check(&program).expect("semantic check should succeed");
+}
+
+#[test]
+fn rejects_array_expression_value_use() {
+    let program = main_program(vec![
+        Statement::VarDecl {
+            ty: Type::Array {
+                element: Box::new(Type::Char),
+                len: 3,
+            },
+            name_span: span(),
+            name: "buf".to_string(),
+            init: None,
+        },
+        Statement::Return(Expr::Variable {
+            name: "buf".to_string(),
+            span: span(),
+        }),
+    ]);
+
+    let err = check(&program).expect_err("semantic check should fail");
+
+    assert_eq!(err.message, "array expression is not supported yet");
+}
+
+#[test]
 fn rejects_duplicate_local_declaration() {
     let program = main_program(vec![
         Statement::VarDecl {

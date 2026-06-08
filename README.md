@@ -6,7 +6,7 @@
 
 `rivet` is a C compiler written in Rust that targets RV32IM assembly. It is working toward a C23 implementation and currently implements a small C23 subset.
 
-It currently supports a small C subset with `int`, `char`, `unsigned int`, and basic pointer types, local variables, functions, calls, block scope, common control flow, assignment expressions, compound assignments, prefix/postfix increment and decrement, dereference expressions, and most integer operators with C-like precedence. It emits RV32IM assembly and reports lexer, parser, and semantic errors with source locations.
+It currently supports a small C subset with `int`, `char`, `unsigned int`, basic pointer types, fixed-size local array declarations, local variables, functions, calls, block scope, common control flow, assignment expressions, compound assignments, prefix/postfix increment and decrement, dereference expressions, and most integer operators with C-like precedence. It emits RV32IM assembly and reports lexer, parser, and semantic errors with source locations.
 
 The current language subset supports programs shaped like:
 
@@ -217,13 +217,13 @@ Expressions and operators:
 - [x] compound assignments: `+= -= *= /= %= &= |= ^= <<= >>=`
 - [x] prefix and postfix `++` / `--`
 - [x] pointer dereference as an rvalue: `*p`
+- [x] pointer dereference as an lvalue: `*p = value`
 - [ ] conditional operator `?:`
 - [ ] comma operator
 - [ ] casts
 - [ ] `sizeof`
 - [ ] `_Alignof` / `alignof`
 - [ ] address-of: `&`
-- [ ] dereference as an lvalue: `*p = value`
 - [ ] array-to-pointer and function-to-pointer decay
 
 Types and semantic analysis:
@@ -266,13 +266,12 @@ Objects, aggregate types, and declarators:
 
 - [x] pointer parameters and local declarations
 - [x] pointer arithmetic scaled by pointee size
-- [ ] arrays
+- [x] fixed-size local array declarations and stack allocation
 - [ ] array indexing
-- [ ] full pointer lvalue support
+- [ ] array initializer lists
 - [ ] full C declarator grammar
 - [ ] structs and unions
 - [ ] member access: `.` and `->`
-- [ ] initializer lists
 - [ ] compound literals
 
 Toolchain and library compatibility:

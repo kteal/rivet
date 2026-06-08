@@ -20,6 +20,8 @@ pub enum TokenKind {
     RParen,
     LBrace,
     RBrace,
+    LBracket,
+    RBracket,
     Semicolon,
     Plus,
     PlusEqual,
@@ -103,6 +105,8 @@ impl<'a> Lexer<'a> {
                 ')' => self.advance_and_push(TokenKind::RParen),
                 '{' => self.advance_and_push(TokenKind::LBrace),
                 '}' => self.advance_and_push(TokenKind::RBrace),
+                '[' => self.advance_and_push(TokenKind::LBracket),
+                ']' => self.advance_and_push(TokenKind::RBracket),
                 ';' => self.advance_and_push(TokenKind::Semicolon),
                 '0'..='9' => {
                     let token = self.lex_int_literal()?;

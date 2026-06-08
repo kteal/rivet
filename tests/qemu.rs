@@ -331,6 +331,16 @@ fn qemu_local_variable_programs_return_expected_values() {
         "int main() {\n    int x = 2;\n    int y = 3;\n    int z = x + y;\n    x = z * 2;\n    y = x - 1;\n    z = y % 4;\n    return z;\n}\n",
         1,
     );
+    run_qemu_case(
+        "char-array-local-reserves-stack-space",
+        "int main() {\n    char buf[3];\n    int x = 7;\n    return x;\n}\n",
+        7,
+    );
+    run_qemu_case(
+        "int-array-local-reserves-stack-space",
+        "int main() {\n    int nums[10];\n    int x = 9;\n    return x;\n}\n",
+        9,
+    );
 }
 
 #[test]

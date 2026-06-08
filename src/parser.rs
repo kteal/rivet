@@ -50,16 +50,9 @@ struct Declarator {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum DeclaratorKind {
-    Name {
-        name: String,
-        name_span: Span,
-    },
+    Name { name: String, name_span: Span },
     Pointer(Box<Declarator>),
-    #[allow(dead_code)]
-    Array {
-        inner: Box<Declarator>,
-        len: usize,
-    },
+    Array { inner: Box<Declarator>, len: usize },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -117,6 +110,22 @@ impl Parser {
 
             token => Err(ParseError {
                 message: format!("expected identifier token, got '{:?}'", token.kind),
+                span: token.span,
+            }),
+        }
+    }
+
+    fn expect_int_literal(&mut self) -> Result<(i32, Span), ParseError> {
+        let token = self.advance();
+
+        match token {
+            Token {
+                kind: TokenKind::IntLiteral(value),
+                span,
+            } => Ok((value, span)),
+
+            token => Err(ParseError {
+                message: format!("expected integer literal token, got '{:?}'", token.kind),
                 span: token.span,
             }),
         }
@@ -208,6 +217,30 @@ impl Parser {
     fn parse_direct_declarator(&mut self) -> Result<Declarator, ParseError> {
         let (name, name_span) = self.expect_ident()?;
 
+        // Array declaration
+        if self.peek_kind() == &TokenKind::LBracket {
+            self.advance();
+            let (len, len_span) = self.expect_int_literal()?;
+
+            // Don't allow array length <1
+            if len < 1 {
+                return Err(ParseError {
+                    message: format!("array size must be greater than 0, got '{len}'"),
+                    span: len_span,
+                });
+            }
+
+            self.expect(&TokenKind::RBracket)?;
+            return Ok(Declarator {
+                kind: DeclaratorKind::Array {
+                    inner: Box::new(Declarator {
+                        kind: DeclaratorKind::Name { name, name_span },
+                    }),
+                    len: usize::try_from(len).expect("i32 cannot be converted to usize"),
+                },
+            });
+        }
+
         Ok(Declarator {
             kind: DeclaratorKind::Name { name, name_span },
         })
@@ -238,7 +271,21 @@ impl Parser {
             DeclaratorKind::Pointer(inner) => {
                 Self::lower_declarator(&Type::Pointer(Box::new(base_type.clone())), inner)
             }
-            DeclaratorKind::Array { .. } => todo!("arrays later"),
+            DeclaratorKind::Array { inner, len } => {
+                let LoweredDeclarator {
+                    ty,
+                    name,
+                    name_span,
+                } = Self::lower_declarator(base_type, inner)?;
+                Ok(LoweredDeclarator {
+                    ty: Type::Array {
+                        element: Box::new(ty),
+                        len: *len,
+                    },
+                    name,
+                    name_span,
+                })
+            }
         }
     }
 

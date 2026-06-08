@@ -48,8 +48,8 @@ impl FrameLayout {
     }
 
     fn add_slot(&mut self, id: LocalId, ty: &Type, local_bytes: &mut i32) {
-        let slot_size = ty.size();
-        let slot_align = ty.align();
+        let slot_size = i32::try_from(ty.size()).expect("type size exceeds i32");
+        let slot_align = i32::try_from(ty.align()).expect("type alignment exceeds i32");
 
         *local_bytes = Self::align_to(*local_bytes, slot_align);
         *local_bytes += slot_size;
@@ -219,6 +219,7 @@ impl Codegen {
         match ty {
             Type::Int | Type::UnsignedInt | Type::Pointer(_) => (),
             Type::Char => self.emit_line(format_args!("andi a0, a0, 255")),
+            Type::Array { .. } => unreachable!("array values are not supported in codegen yet"),
         }
     }
 
@@ -231,6 +232,7 @@ impl Codegen {
                 self.emit_narrow_to_type(&Type::Char);
                 self.emit_line(format_args!("sb a0, {}(s0)", local.offset));
             }
+            Type::Array { .. } => unreachable!("array values are not supported in codegen yet"),
         }
     }
 
@@ -243,6 +245,7 @@ impl Codegen {
                 self.emit_line(format_args!("andi a{reg}, a{reg}, 255"));
                 self.emit_line(format_args!("sb a{reg}, {}(s0)", local.offset));
             }
+            Type::Array { .. } => unreachable!("array values are not supported in codegen yet"),
         }
     }
 
@@ -269,6 +272,7 @@ impl Codegen {
             Type::Int | Type::UnsignedInt | Type::Pointer(_) => {
                 self.emit_line(format_args!("lw a0, 0(a0)"));
             }
+            Type::Array { .. } => unreachable!("array values are not supported in codegen yet"),
         }
     }
 
@@ -281,6 +285,7 @@ impl Codegen {
             Type::Int | Type::UnsignedInt | Type::Pointer(_) => {
                 self.emit_line(format_args!("sw a0, 0(t0)"));
             }
+            Type::Array { .. } => unreachable!("array values are not supported in codegen yet"),
         }
     }
 
@@ -329,6 +334,7 @@ impl Codegen {
                 Type::Pointer(_) => {
                     unreachable!("pointer arithmetic should be handled before emit_binary_op")
                 }
+                Type::Array { .. } => unreachable!("array values are not supported in codegen yet"),
             },
             BinaryOp::Remainder => match ty {
                 Type::Int | Type::Char => self.emit_line(format_args!("rem a0, t0, a0")),
@@ -336,6 +342,7 @@ impl Codegen {
                 Type::Pointer(_) => {
                     unreachable!("pointer arithmetic should be handled before emit_binary_op")
                 }
+                Type::Array { .. } => unreachable!("array values are not supported in codegen yet"),
             },
             BinaryOp::Equal => {
                 self.emit_line(format_args!("xor a0, t0, a0"));
@@ -351,6 +358,7 @@ impl Codegen {
                 Type::Pointer(_) => {
                     unreachable!("pointer arithmetic should be handled before emit_binary_op")
                 }
+                Type::Array { .. } => unreachable!("array values are not supported in codegen yet"),
             },
             BinaryOp::LessEqual => match ty {
                 Type::Int | Type::Char => {
@@ -364,6 +372,7 @@ impl Codegen {
                 Type::Pointer(_) => {
                     unreachable!("pointer arithmetic should be handled before emit_binary_op")
                 }
+                Type::Array { .. } => unreachable!("array values are not supported in codegen yet"),
             },
             BinaryOp::Greater => match ty {
                 Type::Int | Type::Char => self.emit_line(format_args!("slt a0, a0, t0")),
@@ -371,6 +380,7 @@ impl Codegen {
                 Type::Pointer(_) => {
                     unreachable!("pointer arithmetic should be handled before emit_binary_op")
                 }
+                Type::Array { .. } => unreachable!("array values are not supported in codegen yet"),
             },
             BinaryOp::GreaterEqual => match ty {
                 Type::Int | Type::Char => {
@@ -384,6 +394,7 @@ impl Codegen {
                 Type::Pointer(_) => {
                     unreachable!("pointer arithmetic should be handled before emit_binary_op")
                 }
+                Type::Array { .. } => unreachable!("array values are not supported in codegen yet"),
             },
             BinaryOp::BitAnd => self.emit_line(format_args!("and a0, a0, t0")),
             BinaryOp::BitXor => self.emit_line(format_args!("xor a0, a0, t0")),
@@ -395,6 +406,7 @@ impl Codegen {
                 Type::Pointer(_) => {
                     unreachable!("pointer arithmetic should be handled before emit_binary_op")
                 }
+                Type::Array { .. } => unreachable!("array values are not supported in codegen yet"),
             },
             BinaryOp::LogicalAnd | BinaryOp::LogicalOr => unreachable!(),
         }
@@ -407,7 +419,7 @@ impl Codegen {
         left_type: &Type,
         right_type: &Type,
     ) {
-        let scale = pointee_ty.size();
+        let scale = i32::try_from(pointee_ty.size()).expect("type size exceeds i32");
 
         match (op, left_type, right_type) {
             (BinaryOp::Add, Type::Pointer(_), integer) if integer.is_integer() => {
@@ -495,7 +507,8 @@ impl Codegen {
 
         let mut accumulator = delta;
         if let Type::Pointer(inner) = &expr.ty {
-            accumulator *= inner.size();
+            let size = i32::try_from(inner.size()).expect("type size exceeds i32");
+            accumulator *= size;
         }
 
         self.emit_line(format_args!("addi a0, a0, {accumulator}"));

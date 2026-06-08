@@ -399,3 +399,57 @@ fn parses_pointer_local_declarations() {
     };
     assert_eq!(*sums_ty, Type::Pointer(Box::new(Type::UnsignedInt)));
 }
+
+#[test]
+fn parses_array_local_declarations() {
+    let program = parse_source("int main() { char buf[3]; int nums[10]; return 0; }");
+
+    let body = &program.functions[0].body;
+
+    let Statement::VarDecl { ty: buf_ty, .. } = &body[0] else {
+        panic!("expected first local declaration");
+    };
+    assert_eq!(
+        *buf_ty,
+        Type::Array {
+            element: Box::new(Type::Char),
+            len: 3,
+        }
+    );
+
+    let Statement::VarDecl { ty: nums_ty, .. } = &body[1] else {
+        panic!("expected second local declaration");
+    };
+    assert_eq!(
+        *nums_ty,
+        Type::Array {
+            element: Box::new(Type::Int),
+            len: 10,
+        }
+    );
+}
+
+#[test]
+fn parses_array_of_pointers_declaration() {
+    let program = parse_source("int main() { char *bufs[4]; return 0; }");
+
+    let Statement::VarDecl { ty, name, .. } = &program.functions[0].body[0] else {
+        panic!("expected local declaration");
+    };
+
+    assert_eq!(name, "bufs");
+    assert_eq!(
+        *ty,
+        Type::Array {
+            element: Box::new(Type::Pointer(Box::new(Type::Char))),
+            len: 4,
+        }
+    );
+}
+
+#[test]
+fn rejects_zero_length_array_declaration() {
+    let err = parse_source_err("int main() { char buf[0]; return 0; }");
+
+    assert_eq!(err.message, "array size must be greater than 0, got '0'");
+}

@@ -1175,6 +1175,49 @@ fn generates_local_variable_without_initializer() {
 }
 
 #[test]
+fn array_local_reserves_full_frame_slot_and_aligns_next_local() {
+    let program = Program {
+        functions: vec![Function {
+            return_type: Type::Int,
+            name_span: span(),
+            name: "main".to_string(),
+            params: vec![],
+            body: vec![
+                Statement::VarDecl {
+                    ty: Type::Array {
+                        element: Box::new(Type::Char),
+                        len: 3,
+                    },
+                    name_span: span(),
+                    name: "buf".to_string(),
+                    init: None,
+                },
+                Statement::VarDecl {
+                    ty: Type::Int,
+                    name_span: span(),
+                    name: "x".to_string(),
+                    init: Some(Expr::IntLiteral {
+                        value: 7,
+                        span: span(),
+                    }),
+                },
+                Statement::Return(Expr::Variable {
+                    name: "x".to_string(),
+                    span: span(),
+                }),
+            ],
+        }],
+        eof_span: span(),
+    };
+
+    let asm = generate_raw_with_codegen(&program);
+
+    assert!(asm.contains("main:\n    addi sp, sp, -16\n"));
+    assert!(asm.contains("    li a0, 7\n    sw a0, -16(s0)\n"));
+    assert!(asm.contains("    addi a0, s0, -16\n    lw a0, 0(a0)\n"));
+}
+
+#[test]
 fn narrows_char_local_initializer() {
     let program = Program {
         functions: vec![Function {

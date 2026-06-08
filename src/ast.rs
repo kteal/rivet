@@ -170,6 +170,7 @@ pub enum Type {
     Char,
     UnsignedInt,
     Pointer(Box<Self>),
+    Array { element: Box<Self>, len: usize },
 }
 
 impl Type {
@@ -184,16 +185,20 @@ impl Type {
     }
 
     #[must_use]
-    pub const fn size(&self) -> i32 {
+    pub fn size(&self) -> usize {
         match self {
             Self::Char => 1,
             Self::Int | Self::UnsignedInt | Self::Pointer(_) => 4,
+            Self::Array { element, len } => element.size() * len,
         }
     }
 
     #[must_use]
-    pub const fn align(&self) -> i32 {
-        self.size()
+    pub fn align(&self) -> usize {
+        match self {
+            Self::Char | Self::Int | Self::UnsignedInt | Self::Pointer(_) => self.size(),
+            Self::Array { element, .. } => element.align(),
+        }
     }
 
     #[must_use]
@@ -206,7 +211,7 @@ impl Type {
         match self {
             Self::Char | Self::Int => Some(Self::Int),
             Self::UnsignedInt => Some(Self::UnsignedInt),
-            Self::Pointer(_) => None,
+            Self::Pointer(_) | Self::Array { .. } => None,
         }
     }
 

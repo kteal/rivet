@@ -433,6 +433,13 @@ impl Checker {
             Expr::Variable { name, span } => {
                 let symbol = self.resolve_local(name, *span)?;
 
+                if matches!(symbol.ty, Type::Array { .. }) {
+                    return Err(SemanticError {
+                        message: "array expression is not supported yet".to_string(),
+                        span: *span,
+                    });
+                }
+
                 Ok(TypedExpr {
                     kind: TypedExprKind::Variable {
                         id: symbol.id,
