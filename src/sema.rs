@@ -1,6 +1,9 @@
 use std::collections::HashMap;
 
-use crate::ast::{BinaryOp, Expr, Function, Initializer, Param, Program, Statement, Type, UnaryOp};
+use crate::ast::{
+    BinaryOp, Expr, Function, Initializer, IntLiteralSuffix, Param, Program, Statement, Type,
+    UnaryOp,
+};
 use crate::lexer::Span;
 use crate::typed_ast::{
     LocalId, TypedExpr, TypedExprKind, TypedFunction, TypedInitializer, TypedParam, TypedProgram,
@@ -495,13 +498,74 @@ impl Checker {
     #[allow(clippy::too_many_lines)]
     fn check_expr(&self, expr: &Expr) -> Result<TypedExpr, SemanticError> {
         match expr {
-            Expr::IntLiteral { value, span } => Ok(TypedExpr {
-                kind: TypedExprKind::IntLiteral {
-                    value: *value,
-                    span: *span,
-                },
-                ty: Type::Int,
-            }),
+            Expr::IntLiteral {
+                value,
+                suffix,
+                span,
+            } => {
+                let ty = match suffix {
+                    IntLiteralSuffix::None => {
+                        if value <= &(i32::MAX as u64) {
+                            Type::Int
+                        } else {
+                            return Err(SemanticError {
+                                message: format!(
+                                    "integer literal '{value}' is too large for type '{:?}'",
+                                    Type::Int
+                                ),
+                                span: *span,
+                            });
+                        }
+                    }
+                    IntLiteralSuffix::Unsigned => {
+                        if value <= &u64::from(u32::MAX) {
+                            Type::UnsignedInt
+                        } else {
+                            return Err(SemanticError {
+                                message: format!(
+                                    "integer literal '{value}' is too large for type '{:?}'",
+                                    Type::UnsignedInt
+                                ),
+                                span: *span,
+                            });
+                        }
+                    }
+                    IntLiteralSuffix::Long => {
+                        if value <= &(i32::MAX as u64) {
+                            Type::Long
+                        } else {
+                            return Err(SemanticError {
+                                message: format!(
+                                    "integer literal '{value}' is too large for type '{:?}'",
+                                    Type::Long
+                                ),
+                                span: *span,
+                            });
+                        }
+                    }
+                    IntLiteralSuffix::UnsignedLong => {
+                        if value <= &u64::from(u32::MAX) {
+                            Type::UnsignedLong
+                        } else {
+                            return Err(SemanticError {
+                                message: format!(
+                                    "integer literal '{value}' is too large for type '{:?}'",
+                                    Type::UnsignedLong
+                                ),
+                                span: *span,
+                            });
+                        }
+                    }
+                };
+
+                Ok(TypedExpr {
+                    kind: TypedExprKind::IntLiteral {
+                        value: *value,
+                        span: *span,
+                    },
+                    ty,
+                })
+            }
             Expr::Variable { name, span } => {
                 let symbol = self.resolve_local(name, *span)?;
 

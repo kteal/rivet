@@ -1,4 +1,4 @@
-use rivet::ast::{BinaryOp, Expr, Initializer, Statement, Type, UnaryOp};
+use rivet::ast::{BinaryOp, Expr, Initializer, IntLiteralSuffix, Statement, Type, UnaryOp};
 use rivet::lexer::lex;
 use rivet::parser::parse;
 
@@ -42,6 +42,43 @@ fn parses_basic_main_function() {
         program.functions[0].body[0],
         Statement::Return(Expr::IntLiteral { value: 42, .. })
     ));
+}
+
+#[test]
+fn parses_integer_literal_suffixes() {
+    let body = main_body("int main() { 1U; 2u; 3L; 4l; 5UL; 6ul; 7LU; 8lu; return 0; }");
+
+    let expected = [
+        (1, IntLiteralSuffix::Unsigned),
+        (2, IntLiteralSuffix::Unsigned),
+        (3, IntLiteralSuffix::Long),
+        (4, IntLiteralSuffix::Long),
+        (5, IntLiteralSuffix::UnsignedLong),
+        (6, IntLiteralSuffix::UnsignedLong),
+        (7, IntLiteralSuffix::UnsignedLong),
+        (8, IntLiteralSuffix::UnsignedLong),
+    ];
+
+    for (statement, (expected_value, expected_suffix)) in body.iter().zip(expected) {
+        let Statement::ExprStatement(Expr::IntLiteral { value, suffix, .. }) = statement else {
+            panic!("expected integer literal expression statement");
+        };
+
+        assert_eq!(*value, expected_value);
+        assert_eq!(*suffix, expected_suffix);
+    }
+}
+
+#[test]
+fn parses_large_integer_literal_magnitudes() {
+    let statement = only_statement("int main() { return 4294967295U; }");
+
+    let Statement::Return(Expr::IntLiteral { value, suffix, .. }) = statement else {
+        panic!("expected integer literal return");
+    };
+
+    assert_eq!(value, 4_294_967_295);
+    assert_eq!(suffix, IntLiteralSuffix::Unsigned);
 }
 
 #[test]

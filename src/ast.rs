@@ -70,7 +70,8 @@ pub enum Initializer {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Expr {
     IntLiteral {
-        value: i32,
+        value: u64,
+        suffix: IntLiteralSuffix,
         span: Span,
     },
     Variable {
@@ -177,6 +178,14 @@ pub enum UnaryOp {
     Dereference,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum IntLiteralSuffix {
+    None,
+    Unsigned,
+    Long,
+    UnsignedLong,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Type {
     Int,
@@ -250,6 +259,11 @@ impl Type {
         }
     }
 
+    /// Returns the common type after integer promotions and arithmetic conversions.
+    ///
+    /// # Panics
+    ///
+    /// Panics if either argument is not an integer type.
     #[must_use]
     pub fn usual_arithmetic_type(left: &Self, right: &Self) -> Self {
         let left = left.promoted().expect("left must be integer");

@@ -88,6 +88,12 @@ or with Nix
 nix fmt
 ```
 
+## Linting
+
+```bash
+cargo clippy --lib -p rivet --tests -- -W clippy::all -W clippy::pedantic -W clippy::nursery
+```
+
 ## Generate Assembly
 
 `rivet` reads a `.c` file and prints RV32IM assembly to stdout.
@@ -155,8 +161,10 @@ The script:
 Lexing and preprocessing:
 
 - [x] integer literals
+- [x] integer literal suffixes: `U`, `L`, `UL`
 - [x] character constants
 - [x] comments
+- [ ] hexadecimal integer literals
 - [ ] string literals
 - [ ] preprocessing tokens and macro expansion
 - [ ] `#include`
@@ -223,7 +231,6 @@ Types and semantic analysis:
 - [x] pointer dereference type checking
 - [x] pointer arithmetic with integer offsets
 - [ ] full integer conversion rules
-- [ ] integer literal suffixes: `U`, `L`, `UL`
 - [ ] remaining signedness spelling and combinations
 - [ ] other non-`int` scalar types: `short`, `unsigned short`
 - [ ] fixed-width and standard integer typedef compatibility

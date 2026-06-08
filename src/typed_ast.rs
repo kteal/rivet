@@ -101,7 +101,7 @@ impl TypedExpr {
     }
 
     #[must_use]
-    pub fn eval_int_constant_expr(&self) -> Option<i32> {
+    pub fn eval_int_constant_expr(&self) -> Option<u64> {
         match &self.kind {
             TypedExprKind::IntLiteral { value, .. } => Some(*value),
             TypedExprKind::Binary {
@@ -119,14 +119,14 @@ impl TypedExpr {
                         BinaryOp::BitAnd => Some(l & r),
                         BinaryOp::BitOr => Some(l | r),
                         BinaryOp::BitXor => Some(l ^ r),
-                        BinaryOp::Equal => Some(i32::from(l == r)),
-                        BinaryOp::NotEqual => Some(i32::from(l != r)),
-                        BinaryOp::Greater => Some(i32::from(l > r)),
-                        BinaryOp::GreaterEqual => Some(i32::from(l >= r)),
-                        BinaryOp::Less => Some(i32::from(l < r)),
-                        BinaryOp::LessEqual => Some(i32::from(l <= r)),
-                        BinaryOp::LogicalAnd => Some(i32::from(l != 0 && r != 0)),
-                        BinaryOp::LogicalOr => Some(i32::from(l != 0 || r != 0)),
+                        BinaryOp::Equal => Some(u64::from(l == r)),
+                        BinaryOp::NotEqual => Some(u64::from(l != r)),
+                        BinaryOp::Greater => Some(u64::from(l > r)),
+                        BinaryOp::GreaterEqual => Some(u64::from(l >= r)),
+                        BinaryOp::Less => Some(u64::from(l < r)),
+                        BinaryOp::LessEqual => Some(u64::from(l <= r)),
+                        BinaryOp::LogicalAnd => Some(u64::from(l != 0 && r != 0)),
+                        BinaryOp::LogicalOr => Some(u64::from(l != 0 || r != 0)),
                         BinaryOp::ShiftLeft if (0..32).contains(&r) => Some(l << r),
                         BinaryOp::ShiftRight if (0..32).contains(&r) => Some(l >> r),
                         _ => None,
@@ -143,7 +143,7 @@ impl TypedExpr {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TypedExprKind {
     IntLiteral {
-        value: i32,
+        value: u64,
         span: Span,
     },
     Variable {

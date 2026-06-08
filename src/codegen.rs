@@ -223,7 +223,7 @@ impl Codegen {
                 ();
             }
             Type::Char | Type::UnsignedChar | Type::SignedChar => {
-                self.emit_line(format_args!("andi a0, a0, 255"))
+                self.emit_line(format_args!("andi a0, a0, 255"));
             }
             Type::Array { .. } => unreachable!("array values are not supported in codegen yet"),
         }

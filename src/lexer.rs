@@ -1,5 +1,7 @@
 use std::{iter::Peekable, str::Chars};
 
+use crate::ast::IntLiteralSuffix;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TokenKind {
     KwInt,
@@ -16,7 +18,10 @@ pub enum TokenKind {
     KwFor,
     KwDo,
     Ident(String),
-    IntLiteral(i32),
+    IntLiteral {
+        value: u64,
+        suffix: IntLiteralSuffix,
+    },
     CharLiteral(i32),
     LParen,
     RParen,
@@ -213,19 +218,36 @@ impl<'a> Lexer<'a> {
     fn lex_int_literal(&mut self) -> Result<Token, LexError> {
         let start = self.offset;
         let mut text = String::new();
+        let mut unsigned = false;
+        let mut long = false;
 
         while let Some('0'..='9') = self.peek() {
             text.push(self.advance().expect("peeked character should exist"));
         }
+        while let Some('u' | 'U' | 'l' | 'L') = self.peek() {
+            match self.advance() {
+                Some('u' | 'U') => unsigned = true,
+                Some('l' | 'L') => long = true,
+                _ => unreachable!(),
+            }
+        }
 
         let end = self.offset;
-        let value = text.parse::<i32>().map_err(|_| LexError {
+        let value = text.parse::<u64>().map_err(|_| LexError {
             message: format!("integer literal out of range: {text}"),
             span: Span { start, end },
         })?;
 
         Ok(Token {
-            kind: TokenKind::IntLiteral(value),
+            kind: TokenKind::IntLiteral {
+                value,
+                suffix: match (unsigned, long) {
+                    (false, false) => IntLiteralSuffix::None,
+                    (true, false) => IntLiteralSuffix::Unsigned,
+                    (false, true) => IntLiteralSuffix::Long,
+                    (true, true) => IntLiteralSuffix::UnsignedLong,
+                },
+            },
             span: Span { start, end },
         })
     }
@@ -515,7 +537,10 @@ mod tests {
                 TokenKind::RParen,
                 TokenKind::LBrace,
                 TokenKind::KwReturn,
-                TokenKind::IntLiteral(42),
+                TokenKind::IntLiteral {
+                    value: 42,
+                    suffix: IntLiteralSuffix::None
+                },
                 TokenKind::Semicolon,
                 TokenKind::RBrace,
                 TokenKind::Eof,
@@ -531,9 +556,15 @@ mod tests {
             token_kinds(&tokens),
             vec![
                 TokenKind::KwReturn,
-                TokenKind::IntLiteral(1),
+                TokenKind::IntLiteral {
+                    value: 1,
+                    suffix: IntLiteralSuffix::None
+                },
                 TokenKind::Plus,
-                TokenKind::IntLiteral(2),
+                TokenKind::IntLiteral {
+                    value: 2,
+                    suffix: IntLiteralSuffix::None
+                },
                 TokenKind::Semicolon,
                 TokenKind::Eof,
             ]
@@ -548,15 +579,30 @@ mod tests {
             token_kinds(&tokens),
             vec![
                 TokenKind::KwReturn,
-                TokenKind::IntLiteral(1),
+                TokenKind::IntLiteral {
+                    value: 1,
+                    suffix: IntLiteralSuffix::None
+                },
                 TokenKind::Minus,
-                TokenKind::IntLiteral(2),
+                TokenKind::IntLiteral {
+                    value: 2,
+                    suffix: IntLiteralSuffix::None
+                },
                 TokenKind::Star,
-                TokenKind::IntLiteral(3),
+                TokenKind::IntLiteral {
+                    value: 3,
+                    suffix: IntLiteralSuffix::None
+                },
                 TokenKind::Slash,
-                TokenKind::IntLiteral(4),
+                TokenKind::IntLiteral {
+                    value: 4,
+                    suffix: IntLiteralSuffix::None
+                },
                 TokenKind::Percent,
-                TokenKind::IntLiteral(5),
+                TokenKind::IntLiteral {
+                    value: 5,
+                    suffix: IntLiteralSuffix::None
+                },
                 TokenKind::Semicolon,
                 TokenKind::Eof,
             ]
@@ -573,7 +619,10 @@ mod tests {
                 TokenKind::KwInt,
                 TokenKind::Ident("x".to_string()),
                 TokenKind::Equal,
-                TokenKind::IntLiteral(5),
+                TokenKind::IntLiteral {
+                    value: 5,
+                    suffix: IntLiteralSuffix::None
+                },
                 TokenKind::Semicolon,
                 TokenKind::Eof,
             ]
@@ -621,19 +670,40 @@ mod tests {
             token_kinds(&tokens),
             vec![
                 TokenKind::KwReturn,
-                TokenKind::IntLiteral(1),
+                TokenKind::IntLiteral {
+                    value: 1,
+                    suffix: IntLiteralSuffix::None
+                },
                 TokenKind::EqualEqual,
-                TokenKind::IntLiteral(2),
+                TokenKind::IntLiteral {
+                    value: 2,
+                    suffix: IntLiteralSuffix::None
+                },
                 TokenKind::BangEqual,
-                TokenKind::IntLiteral(3),
+                TokenKind::IntLiteral {
+                    value: 3,
+                    suffix: IntLiteralSuffix::None
+                },
                 TokenKind::Less,
-                TokenKind::IntLiteral(4),
+                TokenKind::IntLiteral {
+                    value: 4,
+                    suffix: IntLiteralSuffix::None
+                },
                 TokenKind::LessEqual,
-                TokenKind::IntLiteral(5),
+                TokenKind::IntLiteral {
+                    value: 5,
+                    suffix: IntLiteralSuffix::None
+                },
                 TokenKind::Greater,
-                TokenKind::IntLiteral(6),
+                TokenKind::IntLiteral {
+                    value: 6,
+                    suffix: IntLiteralSuffix::None
+                },
                 TokenKind::GreaterEqual,
-                TokenKind::IntLiteral(7),
+                TokenKind::IntLiteral {
+                    value: 7,
+                    suffix: IntLiteralSuffix::None
+                },
                 TokenKind::Semicolon,
                 TokenKind::Eof,
             ]
@@ -652,10 +722,16 @@ mod tests {
                 TokenKind::Ident("x".to_string()),
                 TokenKind::Plus,
                 TokenKind::Bang,
-                TokenKind::IntLiteral(0),
+                TokenKind::IntLiteral {
+                    value: 0,
+                    suffix: IntLiteralSuffix::None
+                },
                 TokenKind::Plus,
                 TokenKind::Tilde,
-                TokenKind::IntLiteral(1),
+                TokenKind::IntLiteral {
+                    value: 1,
+                    suffix: IntLiteralSuffix::None
+                },
                 TokenKind::Semicolon,
                 TokenKind::Eof,
             ]
@@ -679,9 +755,15 @@ mod tests {
                 TokenKind::Caret,
                 TokenKind::Ident("d".to_string()),
                 TokenKind::LessLess,
-                TokenKind::IntLiteral(2),
+                TokenKind::IntLiteral {
+                    value: 2,
+                    suffix: IntLiteralSuffix::None
+                },
                 TokenKind::GreaterGreater,
-                TokenKind::IntLiteral(1),
+                TokenKind::IntLiteral {
+                    value: 1,
+                    suffix: IntLiteralSuffix::None
+                },
                 TokenKind::Semicolon,
                 TokenKind::Eof,
             ]
@@ -700,43 +782,73 @@ mod tests {
             vec![
                 TokenKind::Ident("x".to_string()),
                 TokenKind::PlusEqual,
-                TokenKind::IntLiteral(1),
+                TokenKind::IntLiteral {
+                    value: 1,
+                    suffix: IntLiteralSuffix::None
+                },
                 TokenKind::Semicolon,
                 TokenKind::Ident("x".to_string()),
                 TokenKind::MinusEqual,
-                TokenKind::IntLiteral(1),
+                TokenKind::IntLiteral {
+                    value: 1,
+                    suffix: IntLiteralSuffix::None
+                },
                 TokenKind::Semicolon,
                 TokenKind::Ident("x".to_string()),
                 TokenKind::StarEqual,
-                TokenKind::IntLiteral(1),
+                TokenKind::IntLiteral {
+                    value: 1,
+                    suffix: IntLiteralSuffix::None
+                },
                 TokenKind::Semicolon,
                 TokenKind::Ident("x".to_string()),
                 TokenKind::SlashEqual,
-                TokenKind::IntLiteral(1),
+                TokenKind::IntLiteral {
+                    value: 1,
+                    suffix: IntLiteralSuffix::None
+                },
                 TokenKind::Semicolon,
                 TokenKind::Ident("x".to_string()),
                 TokenKind::PercentEqual,
-                TokenKind::IntLiteral(1),
+                TokenKind::IntLiteral {
+                    value: 1,
+                    suffix: IntLiteralSuffix::None
+                },
                 TokenKind::Semicolon,
                 TokenKind::Ident("x".to_string()),
                 TokenKind::AmpersandEqual,
-                TokenKind::IntLiteral(1),
+                TokenKind::IntLiteral {
+                    value: 1,
+                    suffix: IntLiteralSuffix::None
+                },
                 TokenKind::Semicolon,
                 TokenKind::Ident("x".to_string()),
                 TokenKind::PipeEqual,
-                TokenKind::IntLiteral(1),
+                TokenKind::IntLiteral {
+                    value: 1,
+                    suffix: IntLiteralSuffix::None
+                },
                 TokenKind::Semicolon,
                 TokenKind::Ident("x".to_string()),
                 TokenKind::CaretEqual,
-                TokenKind::IntLiteral(1),
+                TokenKind::IntLiteral {
+                    value: 1,
+                    suffix: IntLiteralSuffix::None
+                },
                 TokenKind::Semicolon,
                 TokenKind::Ident("x".to_string()),
                 TokenKind::LessLessEqual,
-                TokenKind::IntLiteral(1),
+                TokenKind::IntLiteral {
+                    value: 1,
+                    suffix: IntLiteralSuffix::None
+                },
                 TokenKind::Semicolon,
                 TokenKind::Ident("x".to_string()),
                 TokenKind::GreaterGreaterEqual,
-                TokenKind::IntLiteral(1),
+                TokenKind::IntLiteral {
+                    value: 1,
+                    suffix: IntLiteralSuffix::None
+                },
                 TokenKind::Semicolon,
                 TokenKind::Eof,
             ]
@@ -826,7 +938,10 @@ mod tests {
                 TokenKind::Equal,
                 TokenKind::Ident("x".to_string()),
                 TokenKind::Minus,
-                TokenKind::IntLiteral(1),
+                TokenKind::IntLiteral {
+                    value: 1,
+                    suffix: IntLiteralSuffix::None
+                },
                 TokenKind::Semicolon,
                 TokenKind::KwWhile,
                 TokenKind::LParen,
@@ -958,9 +1073,15 @@ mod tests {
             token_kinds(&tokens),
             vec![
                 TokenKind::KwReturn,
-                TokenKind::IntLiteral(6),
+                TokenKind::IntLiteral {
+                    value: 6,
+                    suffix: IntLiteralSuffix::None
+                },
                 TokenKind::Slash,
-                TokenKind::IntLiteral(2),
+                TokenKind::IntLiteral {
+                    value: 2,
+                    suffix: IntLiteralSuffix::None
+                },
                 TokenKind::Semicolon,
                 TokenKind::Eof,
             ]
@@ -975,7 +1096,10 @@ mod tests {
             token_kinds(&tokens),
             vec![
                 TokenKind::KwReturn,
-                TokenKind::IntLiteral(1),
+                TokenKind::IntLiteral {
+                    value: 1,
+                    suffix: IntLiteralSuffix::None
+                },
                 TokenKind::Semicolon,
                 TokenKind::Eof,
             ]
@@ -990,7 +1114,10 @@ mod tests {
             token_kinds(&tokens),
             vec![
                 TokenKind::KwReturn,
-                TokenKind::IntLiteral(1),
+                TokenKind::IntLiteral {
+                    value: 1,
+                    suffix: IntLiteralSuffix::None
+                },
                 TokenKind::Semicolon,
                 TokenKind::Eof,
             ]
@@ -1005,7 +1132,10 @@ mod tests {
             token_kinds(&tokens),
             vec![
                 TokenKind::KwReturn,
-                TokenKind::IntLiteral(1),
+                TokenKind::IntLiteral {
+                    value: 1,
+                    suffix: IntLiteralSuffix::None
+                },
                 TokenKind::Semicolon,
                 TokenKind::Eof,
             ]
@@ -1021,9 +1151,15 @@ mod tests {
             token_kinds(&tokens),
             vec![
                 TokenKind::KwReturn,
-                TokenKind::IntLiteral(8),
+                TokenKind::IntLiteral {
+                    value: 8,
+                    suffix: IntLiteralSuffix::None
+                },
                 TokenKind::Slash,
-                TokenKind::IntLiteral(2),
+                TokenKind::IntLiteral {
+                    value: 2,
+                    suffix: IntLiteralSuffix::None
+                },
                 TokenKind::Semicolon,
                 TokenKind::Eof,
             ]
@@ -1038,7 +1174,10 @@ mod tests {
             token_kinds(&tokens),
             vec![
                 TokenKind::KwReturn,
-                TokenKind::IntLiteral(1),
+                TokenKind::IntLiteral {
+                    value: 1,
+                    suffix: IntLiteralSuffix::None
+                },
                 TokenKind::Semicolon,
                 TokenKind::Eof,
             ]
@@ -1054,7 +1193,10 @@ mod tests {
             token_kinds(&tokens),
             vec![
                 TokenKind::KwReturn,
-                TokenKind::IntLiteral(1),
+                TokenKind::IntLiteral {
+                    value: 1,
+                    suffix: IntLiteralSuffix::None
+                },
                 TokenKind::Semicolon,
                 TokenKind::Eof,
             ]
@@ -1069,7 +1211,10 @@ mod tests {
             token_kinds(&tokens),
             vec![
                 TokenKind::KwReturn,
-                TokenKind::IntLiteral(1),
+                TokenKind::IntLiteral {
+                    value: 1,
+                    suffix: IntLiteralSuffix::None
+                },
                 TokenKind::Semicolon,
                 TokenKind::Eof,
             ]
@@ -1107,11 +1252,20 @@ mod tests {
             token_kinds(&tokens),
             vec![
                 TokenKind::KwReturn,
-                TokenKind::IntLiteral(1),
+                TokenKind::IntLiteral {
+                    value: 1,
+                    suffix: IntLiteralSuffix::None
+                },
                 TokenKind::AmpersandAmpersand,
-                TokenKind::IntLiteral(0),
+                TokenKind::IntLiteral {
+                    value: 0,
+                    suffix: IntLiteralSuffix::None
+                },
                 TokenKind::PipePipe,
-                TokenKind::IntLiteral(2),
+                TokenKind::IntLiteral {
+                    value: 2,
+                    suffix: IntLiteralSuffix::None
+                },
                 TokenKind::Semicolon,
                 TokenKind::Eof,
             ]
@@ -1126,11 +1280,20 @@ mod tests {
             token_kinds(&tokens),
             vec![
                 TokenKind::KwReturn,
-                TokenKind::IntLiteral(6),
+                TokenKind::IntLiteral {
+                    value: 6,
+                    suffix: IntLiteralSuffix::None
+                },
                 TokenKind::Ampersand,
-                TokenKind::IntLiteral(3),
+                TokenKind::IntLiteral {
+                    value: 3,
+                    suffix: IntLiteralSuffix::None
+                },
                 TokenKind::Pipe,
-                TokenKind::IntLiteral(1),
+                TokenKind::IntLiteral {
+                    value: 1,
+                    suffix: IntLiteralSuffix::None
+                },
                 TokenKind::Semicolon,
                 TokenKind::Eof,
             ]
