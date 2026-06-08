@@ -43,6 +43,32 @@ pub struct ParseError {
     pub span: Span,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct Declarator {
+    kind: DeclaratorKind,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum DeclaratorKind {
+    Name {
+        name: String,
+        name_span: Span,
+    },
+    Pointer(Box<Declarator>),
+    #[allow(dead_code)]
+    Array {
+        inner: Box<Declarator>,
+        len: usize,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct LoweredDeclarator {
+    ty: Type,
+    name: String,
+    name_span: Span,
+}
+
 struct Parser {
     tokens: Vec<Token>,
     pos: usize,
@@ -77,6 +103,22 @@ impl Parser {
                 message: format!("expected {expected:?}, found {:?}", token.kind),
                 span: token.span,
             })
+        }
+    }
+
+    fn expect_ident(&mut self) -> Result<(String, Span), ParseError> {
+        let token = self.advance();
+
+        match token {
+            Token {
+                kind: TokenKind::Ident(name),
+                span,
+            } => Ok((name, span)),
+
+            token => Err(ParseError {
+                message: format!("expected identifier token, got '{:?}'", token.kind),
+                span: token.span,
+            }),
         }
     }
 
@@ -163,33 +205,51 @@ impl Parser {
         }
     }
 
-    fn parse_declarator(&mut self, base_type: Type) -> Result<(Type, String, Span), ParseError> {
-        let mut ty = base_type;
+    fn parse_direct_declarator(&mut self) -> Result<Declarator, ParseError> {
+        let (name, name_span) = self.expect_ident()?;
 
-        while *self.peek_kind() == TokenKind::Star {
-            self.expect(&TokenKind::Star)?;
-            ty = Type::Pointer(Box::new(ty));
+        Ok(Declarator {
+            kind: DeclaratorKind::Name { name, name_span },
+        })
+    }
+
+    fn parse_declarator(&mut self) -> Result<Declarator, ParseError> {
+        if self.peek_kind() == &TokenKind::Star {
+            self.advance();
+            let inner = self.parse_declarator()?;
+            return Ok(Declarator {
+                kind: DeclaratorKind::Pointer(Box::new(inner)),
+            });
         }
 
-        let (name, span) = match self.advance() {
-            Token {
-                kind: TokenKind::Ident(name),
-                span,
-            } => (name, span),
-            found => {
-                return Err(ParseError {
-                    message: format!("expected identifier for declaration, found {found:?}"),
-                    span: found.span,
-                });
-            }
-        };
+        self.parse_direct_declarator()
+    }
 
-        Ok((ty, name, span))
+    fn lower_declarator(
+        base_type: &Type,
+        declarator: &Declarator,
+    ) -> Result<LoweredDeclarator, ParseError> {
+        match &declarator.kind {
+            DeclaratorKind::Name { name, name_span } => Ok(LoweredDeclarator {
+                ty: base_type.clone(),
+                name: name.clone(),
+                name_span: *name_span,
+            }),
+            DeclaratorKind::Pointer(inner) => {
+                Self::lower_declarator(&Type::Pointer(Box::new(base_type.clone())), inner)
+            }
+            DeclaratorKind::Array { .. } => todo!("arrays later"),
+        }
     }
 
     fn parse_param(&mut self) -> Result<Param, ParseError> {
         let base_ty = self.parse_type()?;
-        let (ty, name, name_span) = self.parse_declarator(base_ty)?;
+        let declarator = self.parse_declarator()?;
+        let LoweredDeclarator {
+            ty,
+            name,
+            name_span,
+        } = Self::lower_declarator(&base_ty, &declarator)?;
 
         Ok(Param {
             ty,
@@ -402,7 +462,13 @@ impl Parser {
 
     fn parse_var_decl(&mut self) -> Result<Statement, ParseError> {
         let base_ty = self.parse_type()?;
-        let (ty, name, name_span) = self.parse_declarator(base_ty)?;
+        let declarator = self.parse_declarator()?;
+        let LoweredDeclarator {
+            ty,
+            name,
+            name_span,
+        } = Self::lower_declarator(&base_ty, &declarator)?;
+
         if *self.peek_kind() == TokenKind::Semicolon {
             self.expect(&TokenKind::Semicolon)?;
             return Ok(Statement::VarDecl {
@@ -599,34 +665,26 @@ impl Parser {
     }
 
     fn parse_function(&mut self) -> Result<Function, ParseError> {
-        let ty = self.parse_type()?;
-
-        let token = self.advance();
-
-        let name = match token.kind {
-            TokenKind::Ident(name) => name,
-            found => {
-                return Err(ParseError {
-                    message: format!("expected function name, found {found:?}"),
-                    span: token.span,
-                });
-            }
-        };
+        let base_ty = self.parse_type()?;
+        let declarator = self.parse_declarator()?;
+        let LoweredDeclarator {
+            ty,
+            name,
+            name_span,
+        } = Self::lower_declarator(&base_ty, &declarator)?;
 
         self.expect(&TokenKind::LParen)?;
-
         let params = self.parse_comma_separated_until_rparen(Self::parse_param)?;
         self.expect(&TokenKind::RParen)?;
 
         self.expect(&TokenKind::LBrace)?;
-
         let mut body = vec![];
         self.parse_through_rbrace(&mut body)?;
 
         Ok(Function {
             return_type: ty,
             name,
-            name_span: token.span,
+            name_span,
             params,
             body,
         })

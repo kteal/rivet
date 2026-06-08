@@ -666,6 +666,11 @@ fn qemu_function_calls_return_expected_values() {
         "int add(int x, int y) {\n    return x + y;\n}\n\nint main() {\n    return add(1 + 2, 3 + 4);\n}\n",
         10,
     );
+    run_qemu_case(
+        "pointer-return-function-call",
+        "int *id(int *p) {\n    return p;\n}\n\nint main() {\n    int *p;\n    id(p);\n    return 7;\n}\n",
+        7,
+    );
 }
 
 #[test]

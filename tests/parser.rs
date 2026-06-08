@@ -58,6 +58,17 @@ fn parses_function_returning_binary_op() {
 }
 
 #[test]
+fn parses_pointer_return_type() {
+    let program = parse_source("int *id(int *p) { return p; }");
+    let function = &program.functions[0];
+
+    assert_eq!(function.return_type, Type::Pointer(Box::new(Type::Int)));
+    assert_eq!(function.name, "id");
+    assert_eq!(function.params[0].ty, Type::Pointer(Box::new(Type::Int)));
+    assert_eq!(function.params[0].name, "p");
+}
+
+#[test]
 fn parses_function_calls() {
     let statement = only_statement("int main() { return helper() + 2; }");
 

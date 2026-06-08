@@ -160,28 +160,6 @@ impl Checker {
         })
     }
 
-    fn is_assignable(target: &Type, value: &Type) -> bool {
-        target == value || (is_integer(target) && is_integer(value))
-    }
-
-    const fn promoted_type(ty: &Type) -> Type {
-        match ty {
-            Type::Int | Type::Char => Type::Int,
-            Type::UnsignedInt => Type::UnsignedInt,
-            Type::Pointer(_) => {
-                panic!("semantic checker should not be trying to promote a pointer")
-            }
-        }
-    }
-
-    fn usual_arithmetic_type(left: &Type, right: &Type) -> Type {
-        if *left == Type::UnsignedInt || *right == Type::UnsignedInt {
-            Type::UnsignedInt
-        } else {
-            Type::Int
-        }
-    }
-
     fn check_binary_op_types(
         op: BinaryOp,
         op_span: &Span,
@@ -189,7 +167,7 @@ impl Checker {
         right_type: &Type,
     ) -> Result<BinaryTypeInfo, SemanticError> {
         if let Type::Pointer(inner) = left_type
-            && is_integer(right_type)
+            && right_type.is_integer()
         {
             if op == BinaryOp::Add || op == BinaryOp::Subtract {
                 return Ok(BinaryTypeInfo {
@@ -206,7 +184,7 @@ impl Checker {
         }
 
         if let Type::Pointer(inner) = right_type
-            && is_integer(left_type)
+            && left_type.is_integer()
         {
             if op == BinaryOp::Add {
                 return Ok(BinaryTypeInfo {
@@ -222,7 +200,7 @@ impl Checker {
             });
         }
 
-        if !is_integer(left_type) || !is_integer(right_type) {
+        if !left_type.is_integer() || !right_type.is_integer() {
             return Err(SemanticError {
                 message: format!(
                     "invalid operands to binary operator '{op:?}'\n\
@@ -232,9 +210,11 @@ impl Checker {
                 span: *op_span,
             });
         }
-        let mut operand_ty = Self::usual_arithmetic_type(left_type, right_type);
+        let mut operand_ty = Type::usual_arithmetic_type(left_type, right_type);
         let result_ty = if op == BinaryOp::ShiftLeft || op == BinaryOp::ShiftRight {
-            Self::promoted_type(left_type)
+            left_type
+                .promoted()
+                .expect("semantic checker should only promote integer types")
         } else {
             match op {
                 BinaryOp::Equal
@@ -250,7 +230,9 @@ impl Checker {
             }
         };
         if op == BinaryOp::ShiftLeft || op == BinaryOp::ShiftRight {
-            operand_ty = Self::promoted_type(left_type);
+            operand_ty = left_type
+                .promoted()
+                .expect("semantic checker should only promote integer types");
         }
 
         Ok(BinaryTypeInfo {
@@ -260,7 +242,7 @@ impl Checker {
     }
 
     const fn is_inc_dec_type(ty: &Type) -> bool {
-        is_integer(ty) || matches!(ty, Type::Pointer(_))
+        ty.is_integer() || matches!(ty, Type::Pointer(_))
     }
 
     fn check_lvalue(&self, expr: &Expr, op_span: Span) -> Result<TypedExpr, SemanticError> {
@@ -343,7 +325,7 @@ impl Checker {
         let ty = match op {
             UnaryOp::LogicalNot => Type::Int,
             UnaryOp::BitwiseNot | UnaryOp::Negate => {
-                if !is_integer(&typed_expr.ty) {
+                if !typed_expr.ty.is_integer() {
                     return Err(SemanticError {
                         message: format!(
                             "cannot perform unary operation '{op:?}' on non-integer type '{:?}'",
@@ -352,7 +334,10 @@ impl Checker {
                         span: *op_span,
                     });
                 }
-                Self::promoted_type(&typed_expr.ty)
+                typed_expr
+                    .ty
+                    .promoted()
+                    .expect("semantic checker should only promote integer types")
             }
             UnaryOp::Dereference => match &typed_expr.ty {
                 Type::Pointer(inner) => *inner.clone(),
@@ -414,7 +399,7 @@ impl Checker {
             .collect::<Result<Vec<_>, _>>()?;
 
         for (param, typed_arg) in function_info.params.iter().zip(&typed_args) {
-            if !Self::is_assignable(&param.ty, &typed_arg.ty) {
+            if !param.ty.is_assignable_from(&typed_arg.ty) {
                 return Err(SemanticError {
                     message: format!(
                         "cannot pass value of type '{:?}' to parameter of type '{:?}'",
@@ -494,7 +479,7 @@ impl Checker {
                 let typed_target = self.check_lvalue(target, *op_span)?;
                 let typed_value = self.check_expr(value)?;
 
-                if !Self::is_assignable(&typed_target.ty, &typed_value.ty) {
+                if !typed_target.ty.is_assignable_from(&typed_value.ty) {
                     return Err(SemanticError {
                         message: format!(
                             "cannot assign value of type '{:?}' to variable of type '{:?}'",
@@ -526,7 +511,7 @@ impl Checker {
                 let type_info =
                     Self::check_binary_op_types(*op, op_span, &typed_target.ty, &typed_value.ty)?;
 
-                if !Self::is_assignable(&typed_target.ty, &type_info.result_ty) {
+                if !typed_target.ty.is_assignable_from(&type_info.result_ty) {
                     return Err(SemanticError {
                         message: format!(
                             "cannot assign value of type '{:?}' to variable of type '{:?}'",
@@ -589,7 +574,7 @@ impl Checker {
                     .as_ref()
                     .expect("return statement checked outside function");
 
-                if !Self::is_assignable(return_type, &typed_expr.ty) {
+                if !return_type.is_assignable_from(&typed_expr.ty) {
                     return Err(SemanticError {
                         message: format!(
                             "cannot return value of type '{:?}' from function returning '{return_type:?}'",
@@ -610,7 +595,7 @@ impl Checker {
                 let typed_init = if let Some(init_expr) = init {
                     let typed_init = self.check_expr(init_expr)?;
 
-                    if !Self::is_assignable(ty, &typed_init.ty) {
+                    if !ty.is_assignable_from(&typed_init.ty) {
                         return Err(SemanticError {
                             message: format!(
                                 "cannot assign value of type '{:?}' to variable of type '{ty:?}'",
@@ -832,9 +817,4 @@ pub fn check(program: &Program) -> Result<TypedProgram, SemanticError> {
         functions,
         eof_span: program.eof_span,
     })
-}
-
-#[must_use]
-pub const fn is_integer(ty: &Type) -> bool {
-    matches!(ty, Type::Int | Type::Char | Type::UnsignedInt)
 }

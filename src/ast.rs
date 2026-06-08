@@ -171,3 +171,51 @@ pub enum Type {
     UnsignedInt,
     Pointer(Box<Self>),
 }
+
+impl Type {
+    #[must_use]
+    pub const fn is_integer(&self) -> bool {
+        matches!(self, Self::Int | Self::Char | Self::UnsignedInt)
+    }
+
+    #[must_use]
+    pub const fn is_pointer(&self) -> bool {
+        matches!(self, Self::Pointer(_))
+    }
+
+    #[must_use]
+    pub const fn size(&self) -> i32 {
+        match self {
+            Self::Char => 1,
+            Self::Int | Self::UnsignedInt | Self::Pointer(_) => 4,
+        }
+    }
+
+    #[must_use]
+    pub const fn align(&self) -> i32 {
+        self.size()
+    }
+
+    #[must_use]
+    pub fn is_assignable_from(&self, value: &Self) -> bool {
+        self == value || (self.is_integer() && value.is_integer())
+    }
+
+    #[must_use]
+    pub const fn promoted(&self) -> Option<Self> {
+        match self {
+            Self::Char | Self::Int => Some(Self::Int),
+            Self::UnsignedInt => Some(Self::UnsignedInt),
+            Self::Pointer(_) => None,
+        }
+    }
+
+    #[must_use]
+    pub fn usual_arithmetic_type(left: &Self, right: &Self) -> Self {
+        if *left == Self::UnsignedInt || *right == Self::UnsignedInt {
+            Self::UnsignedInt
+        } else {
+            Self::Int
+        }
+    }
+}

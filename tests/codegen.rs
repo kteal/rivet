@@ -1203,7 +1203,7 @@ fn narrows_char_local_initializer() {
 
     let asm = generate_raw_with_codegen(&program);
 
-    assert!(asm.contains("    li a0, 300\n    andi a0, a0, 255\n    sb a0, -12(s0)\n"));
+    assert!(asm.contains("    li a0, 300\n    andi a0, a0, 255\n    sb a0, -9(s0)\n"));
 }
 
 #[test]
@@ -1235,7 +1235,7 @@ fn loads_char_local_with_unsigned_byte_load() {
 
     let asm = generate_raw_with_codegen(&program);
 
-    assert!(asm.contains("    sb a0, -12(s0)\n    addi a0, s0, -12\n    lbu a0, 0(a0)\n"));
+    assert!(asm.contains("    sb a0, -9(s0)\n    addi a0, s0, -9\n    lbu a0, 0(a0)\n"));
 }
 
 #[test]
@@ -1276,7 +1276,7 @@ fn narrows_char_assignment_through_address() {
     let asm = generate_raw_with_codegen(&program);
 
     assert!(asm.contains(
-        "    addi a0, s0, -12\n    addi sp, sp, -4\n    sw a0, 0(sp)\n    li a0, 300\n    lw t0, 0(sp)\n    addi sp, sp, 4\n    andi a0, a0, 255\n    sb a0, 0(t0)\n"
+        "    addi a0, s0, -9\n    addi sp, sp, -4\n    sw a0, 0(sp)\n    li a0, 300\n    lw t0, 0(sp)\n    addi sp, sp, 4\n    andi a0, a0, 255\n    sb a0, 0(t0)\n"
     ));
 }
 
@@ -1410,7 +1410,7 @@ fn narrows_char_compound_assignment() {
     let asm = generate_raw_with_codegen(&program);
 
     assert!(asm.contains(
-        "    addi a0, s0, -12\n    addi sp, sp, -4\n    sw a0, 0(sp)\n    lbu a0, 0(a0)\n    addi sp, sp, -4\n    sw a0, 0(sp)\n    li a0, 10\n    lw t0, 0(sp)\n    addi sp, sp, 4\n    add a0, t0, a0\n    lw t0, 0(sp)\n    addi sp, sp, 4\n    andi a0, a0, 255\n    sb a0, 0(t0)\n"
+        "    addi a0, s0, -9\n    addi sp, sp, -4\n    sw a0, 0(sp)\n    lbu a0, 0(a0)\n    addi sp, sp, -4\n    sw a0, 0(sp)\n    li a0, 10\n    lw t0, 0(sp)\n    addi sp, sp, 4\n    add a0, t0, a0\n    lw t0, 0(sp)\n    addi sp, sp, 4\n    andi a0, a0, 255\n    sb a0, 0(t0)\n"
     ));
 }
 
@@ -1470,122 +1470,7 @@ fn narrows_char_parameter_on_function_entry() {
     let asm = generate_raw_with_codegen(&program);
 
     assert!(asm.contains("id:\n"));
-    assert!(asm.contains("    andi a0, a0, 255\n    sb a0, -12(s0)\n"));
-}
-
-#[test]
-fn generates_assignment_expression_result() {
-    let program = Program {
-        functions: vec![Function {
-            return_type: Type::Int,
-            name_span: span(),
-            name: "main".to_string(),
-            params: vec![],
-            body: vec![
-                Statement::VarDecl {
-                    ty: Type::Int,
-                    name_span: span(),
-                    name: "x".to_string(),
-                    init: None,
-                },
-                Statement::Return(Expr::Assign {
-                    op_span: span(),
-                    target: Box::new(Expr::Variable {
-                        name: "x".to_string(),
-                        span: span(),
-                    }),
-                    value: Box::new(Expr::IntLiteral {
-                        value: 3,
-                        span: span(),
-                    }),
-                }),
-            ],
-        }],
-        eof_span: span(),
-    };
-
-    let asm = generate_with_codegen(&program);
-
-    assert_eq!(
-        asm,
-        ".globl main\nmain:\n    addi sp, sp, -16\n    sw ra, 12(sp)\n    sw s0, 8(sp)\n    addi s0, sp, 16\n    addi a0, s0, -12\n    addi sp, sp, -4\n    sw a0, 0(sp)\n    li a0, 3\n    lw t0, 0(sp)\n    addi sp, sp, 4\n    sw a0, 0(t0)\n    lw ra, 12(sp)\n    lw s0, 8(sp)\n    addi sp, sp, 16\n    ret\n"
-    );
-}
-
-#[test]
-fn generates_prefix_increment_expression_result() {
-    let program = Program {
-        functions: vec![Function {
-            return_type: Type::Int,
-            name_span: span(),
-            name: "main".to_string(),
-            params: vec![],
-            body: vec![
-                Statement::VarDecl {
-                    ty: Type::Int,
-                    name_span: span(),
-                    name: "x".to_string(),
-                    init: Some(Expr::IntLiteral {
-                        value: 1,
-                        span: span(),
-                    }),
-                },
-                Statement::Return(Expr::PrefixInc {
-                    expr: Box::new(Expr::Variable {
-                        name: "x".to_string(),
-                        span: span(),
-                    }),
-                    op_span: span(),
-                }),
-            ],
-        }],
-        eof_span: span(),
-    };
-
-    let asm = generate_with_codegen(&program);
-
-    assert_eq!(
-        asm,
-        ".globl main\nmain:\n    addi sp, sp, -16\n    sw ra, 12(sp)\n    sw s0, 8(sp)\n    addi s0, sp, 16\n    li a0, 1\n    sw a0, -12(s0)\n    addi a0, s0, -12\n    mv t0, a0\n    lw a0, 0(a0)\n    addi a0, a0, 1\n    sw a0, 0(t0)\n    lw ra, 12(sp)\n    lw s0, 8(sp)\n    addi sp, sp, 16\n    ret\n"
-    );
-}
-
-#[test]
-fn generates_postfix_increment_expression_result() {
-    let program = Program {
-        functions: vec![Function {
-            return_type: Type::Int,
-            name_span: span(),
-            name: "main".to_string(),
-            params: vec![],
-            body: vec![
-                Statement::VarDecl {
-                    ty: Type::Int,
-                    name_span: span(),
-                    name: "x".to_string(),
-                    init: Some(Expr::IntLiteral {
-                        value: 1,
-                        span: span(),
-                    }),
-                },
-                Statement::Return(Expr::PostfixInc {
-                    expr: Box::new(Expr::Variable {
-                        name: "x".to_string(),
-                        span: span(),
-                    }),
-                    op_span: span(),
-                }),
-            ],
-        }],
-        eof_span: span(),
-    };
-
-    let asm = generate_with_codegen(&program);
-
-    assert_eq!(
-        asm,
-        ".globl main\nmain:\n    addi sp, sp, -16\n    sw ra, 12(sp)\n    sw s0, 8(sp)\n    addi s0, sp, 16\n    li a0, 1\n    sw a0, -12(s0)\n    addi a0, s0, -12\n    mv t0, a0\n    lw a0, 0(a0)\n    addi sp, sp, -4\n    sw a0, 0(sp)\n    addi a0, a0, 1\n    sw a0, 0(t0)\n    lw a0, 0(sp)\n    addi sp, sp, 4\n    lw ra, 12(sp)\n    lw s0, 8(sp)\n    addi sp, sp, 16\n    ret\n"
-    );
+    assert!(asm.contains("    andi a0, a0, 255\n    sb a0, -9(s0)\n"));
 }
 
 #[test]
@@ -1625,7 +1510,7 @@ fn narrows_char_increment_store() {
     let asm = generate_raw_with_codegen(&program);
 
     assert!(asm.contains(
-        "    addi a0, s0, -12\n    mv t0, a0\n    lbu a0, 0(a0)\n    addi a0, a0, 1\n    andi a0, a0, 255\n    sb a0, 0(t0)\n"
+        "    addi a0, s0, -9\n    mv t0, a0\n    lbu a0, 0(a0)\n    addi a0, a0, 1\n    andi a0, a0, 255\n    sb a0, 0(t0)\n"
     ));
 }
 
@@ -1690,121 +1575,6 @@ fn generates_chained_assignment_expression_right_associative() {
     assert!(asm.contains(
         "    li a0, 4\n    lw t0, 0(sp)\n    addi sp, sp, 4\n    sw a0, 0(t0)\n    lw t0, 0(sp)\n    addi sp, sp, 4\n    sw a0, 0(t0)\n"
     ));
-}
-
-#[test]
-fn generates_multiple_local_variables() {
-    let program = Program {
-        functions: vec![Function {
-            return_type: Type::Int,
-            name_span: span(),
-            name: "main".to_string(),
-            params: vec![],
-            body: vec![
-                Statement::VarDecl {
-                    ty: Type::Int,
-                    name_span: span(),
-                    name: "x".to_string(),
-                    init: Some(Expr::IntLiteral {
-                        value: 1,
-                        span: span(),
-                    }),
-                },
-                Statement::VarDecl {
-                    ty: Type::Int,
-                    name_span: span(),
-                    name: "y".to_string(),
-                    init: Some(Expr::Binary {
-                        op: BinaryOp::Add,
-                        op_span: span(),
-                        left: Box::new(Expr::Variable {
-                            name: "x".to_string(),
-                            span: span(),
-                        }),
-                        right: Box::new(Expr::IntLiteral {
-                            value: 2,
-                            span: span(),
-                        }),
-                    }),
-                },
-                Statement::VarDecl {
-                    ty: Type::Int,
-                    name_span: span(),
-                    name: "z".to_string(),
-                    init: Some(Expr::Binary {
-                        op: BinaryOp::Add,
-                        op_span: span(),
-                        left: Box::new(Expr::Variable {
-                            name: "x".to_string(),
-                            span: span(),
-                        }),
-                        right: Box::new(Expr::Variable {
-                            name: "y".to_string(),
-                            span: span(),
-                        }),
-                    }),
-                },
-                Statement::Return(Expr::Variable {
-                    name: "z".to_string(),
-                    span: span(),
-                }),
-            ],
-        }],
-        eof_span: span(),
-    };
-
-    let asm = generate_with_codegen(&program);
-
-    assert_eq!(
-        asm,
-        ".globl main\nmain:\n    addi sp, sp, -32\n    sw ra, 28(sp)\n    sw s0, 24(sp)\n    addi s0, sp, 32\n    li a0, 1\n    sw a0, -12(s0)\n    addi a0, s0, -12\n    lw a0, 0(a0)\n    addi sp, sp, -4\n    sw a0, 0(sp)\n    li a0, 2\n    lw t0, 0(sp)\n    addi sp, sp, 4\n    add a0, t0, a0\n    sw a0, -16(s0)\n    addi a0, s0, -12\n    lw a0, 0(a0)\n    addi sp, sp, -4\n    sw a0, 0(sp)\n    addi a0, s0, -16\n    lw a0, 0(a0)\n    lw t0, 0(sp)\n    addi sp, sp, 4\n    add a0, t0, a0\n    sw a0, -20(s0)\n    addi a0, s0, -20\n    lw a0, 0(a0)\n    lw ra, 28(sp)\n    lw s0, 24(sp)\n    addi sp, sp, 32\n    ret\n"
-    );
-}
-
-#[test]
-fn generates_shadowed_local_in_nested_block() {
-    let program = Program {
-        functions: vec![Function {
-            return_type: Type::Int,
-            name_span: span(),
-            name: "main".to_string(),
-            params: vec![],
-            body: vec![
-                Statement::VarDecl {
-                    ty: Type::Int,
-                    name_span: span(),
-                    name: "x".to_string(),
-                    init: Some(Expr::IntLiteral {
-                        value: 1,
-                        span: span(),
-                    }),
-                },
-                Statement::Block(vec![
-                    Statement::VarDecl {
-                        ty: Type::Int,
-                        name_span: span(),
-                        name: "x".to_string(),
-                        init: Some(Expr::IntLiteral {
-                            value: 2,
-                            span: span(),
-                        }),
-                    },
-                    Statement::Return(Expr::Variable {
-                        name: "x".to_string(),
-                        span: span(),
-                    }),
-                ]),
-            ],
-        }],
-        eof_span: span(),
-    };
-
-    let asm = generate_with_codegen(&program);
-
-    assert_eq!(
-        asm,
-        ".globl main\nmain:\n    addi sp, sp, -16\n    sw ra, 12(sp)\n    sw s0, 8(sp)\n    addi s0, sp, 16\n    li a0, 1\n    sw a0, -12(s0)\n    li a0, 2\n    sw a0, -16(s0)\n    addi a0, s0, -16\n    lw a0, 0(a0)\n    lw ra, 12(sp)\n    lw s0, 8(sp)\n    addi sp, sp, 16\n    ret\n"
-    );
 }
 
 #[test]

@@ -1,5 +1,4 @@
 use crate::ast::{BinaryOp, Type, UnaryOp};
-use crate::sema::is_integer;
 use crate::typed_ast::{
     LocalId, TypedExpr, TypedExprKind, TypedFunction, TypedProgram, TypedStatement,
 };
@@ -17,73 +16,106 @@ struct LoopLabels {
     break_label: String,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct FrameSlot {
+    offset: i32,
+    size: i32,
+    align: i32,
+    ty: Type,
+}
+
 #[derive(Debug, Default, Clone)]
 struct FrameLayout {
     size: i32,
+    locals: HashMap<LocalId, FrameSlot>,
 }
 
 impl FrameLayout {
-    fn count_locals_in_statement(statement: &TypedStatement) -> i32 {
+    fn for_function(function: &TypedFunction) -> Self {
+        let mut layout = Self::default();
+        let mut local_bytes = 0;
+
+        for param in &function.params {
+            layout.add_slot(param.id, &param.ty, &mut local_bytes);
+        }
+
+        layout.add_statement_slots(&function.body, &mut local_bytes);
+
+        // Round up to nearest 16 for stack alignment
+        let raw_size = local_bytes + 8;
+        layout.size = (raw_size + 15) / 16 * 16;
+        layout
+    }
+
+    fn add_slot(&mut self, id: LocalId, ty: &Type, local_bytes: &mut i32) {
+        let slot_size = ty.size();
+        let slot_align = ty.align();
+
+        *local_bytes = Self::align_to(*local_bytes, slot_align);
+        *local_bytes += slot_size;
+
+        let offset = -8 - *local_bytes;
+
+        self.locals.insert(
+            id,
+            FrameSlot {
+                offset,
+                size: slot_size,
+                align: slot_align,
+                ty: ty.clone(),
+            },
+        );
+    }
+
+    fn add_statement_slots(&mut self, statements: &[TypedStatement], local_bytes: &mut i32) {
+        for statement in statements {
+            self.add_statement_slot(statement, local_bytes);
+        }
+    }
+
+    fn add_statement_slot(&mut self, statement: &TypedStatement, local_bytes: &mut i32) {
         match statement {
-            TypedStatement::VarDecl { .. } => 1,
-            TypedStatement::Block(body) => Self::count_locals_in_statements(body),
+            TypedStatement::VarDecl { id, ty, .. } => self.add_slot(*id, ty, local_bytes),
+            TypedStatement::Block(body) => {
+                self.add_statement_slots(body, local_bytes);
+            }
             TypedStatement::If {
                 then_branch,
                 else_branch,
                 ..
             } => {
-                let mut sum = Self::count_locals_in_statement(then_branch);
-                if let Some(else_statement) = else_branch {
-                    sum += Self::count_locals_in_statement(else_statement);
+                self.add_statement_slot(then_branch, local_bytes);
+                if let Some(else_branch) = else_branch {
+                    self.add_statement_slot(else_branch, local_bytes);
                 }
-                sum
             }
             TypedStatement::While { body, .. } | TypedStatement::DoWhile { body, .. } => {
-                Self::count_locals_in_statement(body)
+                self.add_statement_slot(body, local_bytes);
             }
             TypedStatement::For { init, body, .. } => {
-                let mut sum = Self::count_locals_in_statement(body);
-                if let Some(init_statement) = init {
-                    sum += Self::count_locals_in_statement(init_statement);
+                if let Some(init) = init {
+                    self.add_statement_slot(init, local_bytes);
                 }
-                // C does not allow VarDecl in post
-                sum
+                self.add_statement_slot(body, local_bytes);
             }
-            _ => 0,
+            _ => (),
         }
     }
 
-    fn count_locals_in_statements(statements: &[TypedStatement]) -> i32 {
-        let mut sum = 0;
-        for statement in statements {
-            sum += Self::count_locals_in_statement(statement);
-        }
-        sum
+    const fn align_to(value: i32, align: i32) -> i32 {
+        (value + align - 1) / align * align
     }
 
-    fn for_function(function: &TypedFunction) -> Self {
-        let num_locals = Self::count_locals_in_statements(&function.body);
-        let mut size = (num_locals * 4) + 8;
-        // Add space for parameters
-        size += 4 * i32::try_from(function.params.len()).expect("too many arguments");
-        // Round up to nearest 16 for stack alignment
-        size = (size + 15) / 16 * 16;
-
-        Self { size }
+    fn local(&self, id: LocalId) -> &FrameSlot {
+        self.locals
+            .get(&id)
+            .expect("semantic analysis should only emit declared locals")
     }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct LocalInfo {
-    offset: i32,
-    ty: Type,
 }
 
 struct Codegen {
     out: String,
     frame: FrameLayout,
-    scopes: Vec<HashMap<LocalId, LocalInfo>>,
-    next_local_offset: i32,
     label_counter: usize,
     return_label: Option<String>,
     loop_stack: Vec<LoopLabels>,
@@ -97,8 +129,6 @@ impl Codegen {
         Self {
             out: String::new(),
             frame: FrameLayout::default(),
-            scopes: vec![HashMap::new()],
-            next_local_offset: -12,
             label_counter: 0,
             return_label: None,
             loop_stack: vec![],
@@ -109,8 +139,6 @@ impl Codegen {
 
     fn reset_for_function(&mut self, function: &TypedFunction) {
         self.frame = FrameLayout::for_function(function);
-        self.scopes = vec![HashMap::new()];
-        self.next_local_offset = -12;
         self.return_label = Some(format!("{}_end", function.name));
     }
 
@@ -143,38 +171,8 @@ impl Codegen {
             .map(|labels| labels.continue_label.clone())
     }
 
-    fn enter_scope(&mut self) {
-        self.scopes.push(HashMap::new());
-    }
-
-    fn exit_scope(&mut self) {
-        self.scopes.pop();
-    }
-
-    fn current_scope_mut(&mut self) -> &mut HashMap<LocalId, LocalInfo> {
-        self.scopes
-            .last_mut()
-            .expect("codegen should have an active scope")
-    }
-
-    fn resolve_local(&self, id: LocalId) -> Option<LocalInfo> {
-        self.scopes
-            .iter()
-            .rev()
-            .find_map(|scope| scope.get(&id).cloned())
-    }
-
-    fn declare_local(&mut self, ty: &Type, id: LocalId) -> i32 {
-        let offset = self.next_local_offset;
-        self.current_scope_mut().insert(
-            id,
-            LocalInfo {
-                offset,
-                ty: ty.clone(),
-            },
-        );
-        self.next_local_offset -= 4;
-        offset
+    fn resolve_local(&self, id: LocalId) -> &FrameSlot {
+        self.frame.local(id)
     }
 
     fn emit(&mut self, args: fmt::Arguments) {
@@ -217,13 +215,6 @@ impl Codegen {
         }
     }
 
-    const fn size_of_type(ty: &Type) -> i32 {
-        match ty {
-            Type::Char => 1,
-            Type::Int | Type::UnsignedInt | Type::Pointer(_) => 4,
-        }
-    }
-
     fn emit_narrow_to_type(&mut self, ty: &Type) {
         match ty {
             Type::Int | Type::UnsignedInt | Type::Pointer(_) => (),
@@ -231,7 +222,7 @@ impl Codegen {
         }
     }
 
-    fn emit_store_local(&mut self, local: &LocalInfo) {
+    fn emit_store_local(&mut self, local: &FrameSlot) {
         match local.ty {
             Type::Int | Type::UnsignedInt | Type::Pointer(_) => {
                 self.emit_line(format_args!("sw a0, {}(s0)", local.offset));
@@ -243,7 +234,7 @@ impl Codegen {
         }
     }
 
-    fn emit_store_param(&mut self, reg: usize, local: &LocalInfo) {
+    fn emit_store_param(&mut self, reg: usize, local: &FrameSlot) {
         match local.ty {
             Type::Int | Type::UnsignedInt | Type::Pointer(_) => {
                 self.emit_line(format_args!("sw a{reg}, {}(s0)", local.offset));
@@ -257,12 +248,9 @@ impl Codegen {
 
     fn emit_addr(&mut self, expr: &TypedExpr) {
         match &expr.kind {
-            TypedExprKind::Variable { id, name, .. } => {
-                let local = self
-                    .resolve_local(*id)
-                    .unwrap_or_else(|| panic!("usage of undefined variable '{name}'"));
-
-                self.emit_line(format_args!("addi a0, s0, {}", local.offset));
+            TypedExprKind::Variable { id, .. } => {
+                let slot = self.resolve_local(*id).clone();
+                self.emit_line(format_args!("addi a0, s0, {}", slot.offset));
             }
             TypedExprKind::Unary {
                 op: UnaryOp::Dereference,
@@ -419,18 +407,18 @@ impl Codegen {
         left_type: &Type,
         right_type: &Type,
     ) {
-        let scale = Self::size_of_type(pointee_ty);
+        let scale = pointee_ty.size();
 
         match (op, left_type, right_type) {
-            (BinaryOp::Add, Type::Pointer(_), integer) if is_integer(integer) => {
+            (BinaryOp::Add, Type::Pointer(_), integer) if integer.is_integer() => {
                 self.scale_reg(scale, "a0");
                 self.emit_line(format_args!("add a0, t0, a0"));
             }
-            (BinaryOp::Add, integer, Type::Pointer(_)) if is_integer(integer) => {
+            (BinaryOp::Add, integer, Type::Pointer(_)) if integer.is_integer() => {
                 self.scale_reg(scale, "t0");
                 self.emit_line(format_args!("add a0, t0, a0"));
             }
-            (BinaryOp::Subtract, Type::Pointer(_), integer) if is_integer(integer) => {
+            (BinaryOp::Subtract, Type::Pointer(_), integer) if integer.is_integer() => {
                 self.scale_reg(scale, "a0");
                 self.emit_line(format_args!("sub a0, t0, a0"));
             }
@@ -507,7 +495,7 @@ impl Codegen {
 
         let mut accumulator = delta;
         if let Type::Pointer(inner) = &expr.ty {
-            accumulator *= Self::size_of_type(inner);
+            accumulator *= inner.size();
         }
 
         self.emit_line(format_args!("addi a0, a0, {accumulator}"));
@@ -542,7 +530,7 @@ impl Codegen {
                     UnaryOp::Negate => self.emit_line(format_args!("neg a0, a0")),
                     UnaryOp::LogicalNot => self.emit_line(format_args!("seqz a0, a0")),
                     UnaryOp::BitwiseNot => self.emit_line(format_args!("not a0, a0")),
-                    UnaryOp::Dereference => match Self::size_of_type(&expr.ty) {
+                    UnaryOp::Dereference => match expr.ty.size() {
                         1 => self.emit_line(format_args!("lbu a0, 0(a0)")),
                         4 => self.emit_line(format_args!("lw a0, 0(a0)")),
                         _ => panic!("codegen does not support arbitrary data sizes"),
@@ -658,7 +646,6 @@ impl Codegen {
         let break_label = self.new_label("for_break");
 
         self.push_loop_labels(&continue_label, &break_label);
-        self.enter_scope();
 
         // Init
         if let Some(init_statement) = init {
@@ -683,7 +670,6 @@ impl Codegen {
         // Break
         self.emit_label(&break_label);
 
-        self.exit_scope();
         self.pop_loop_labels();
     }
 
@@ -702,19 +688,17 @@ impl Codegen {
                     .expect("codegen should have an active return label");
                 self.emit_line(format_args!("j {return_label}"));
             }
-            TypedStatement::VarDecl { id, ty, init, .. } => {
-                let offset = self.declare_local(ty, *id);
+            TypedStatement::VarDecl { id, init, .. } => {
                 if let Some(init_expr) = init {
                     self.emit_expr(init_expr);
-                    let local = LocalInfo {
-                        offset,
-                        ty: ty.clone(),
-                    };
-                    self.emit_store_local(&local);
+                    let slot = self.resolve_local(*id).clone();
+                    self.emit_store_local(&slot);
                 }
             }
             TypedStatement::Block(body) => {
-                self.emit_block(body);
+                for statement in body {
+                    self.emit_statement(statement);
+                }
             }
             TypedStatement::If {
                 cond,
@@ -744,14 +728,6 @@ impl Codegen {
         }
     }
 
-    fn emit_block(&mut self, body: &[TypedStatement]) {
-        self.enter_scope();
-        for statement in body {
-            self.emit_statement(statement);
-        }
-        self.exit_scope();
-    }
-
     fn emit_prologue(&mut self, name: &str) {
         let frame_size = self.frame.size;
         self.emit(format_args!(".globl {name}\n"));
@@ -779,14 +755,9 @@ impl Codegen {
         self.reset_for_function(function);
         self.emit_prologue(&function.name);
 
-        // Store the argument registers a0-a7 onto the stack, declaring as local vars
         for (i, param) in function.params.iter().enumerate() {
-            let offset = self.declare_local(&param.ty, param.id);
-            let local = LocalInfo {
-                offset,
-                ty: param.ty.clone(),
-            };
-            self.emit_store_param(i, &local);
+            let slot = self.resolve_local(param.id).clone();
+            self.emit_store_param(i, &slot);
         }
 
         self.current_function_return_type = Some(function.return_type.clone());
