@@ -1073,6 +1073,173 @@ fn typed_pointer_dereference_has_pointee_type() {
 }
 
 #[test]
+fn accepts_assignment_through_pointer_dereference() {
+    let program = Program {
+        functions: vec![
+            Function {
+                return_type: Type::Int,
+                name_span: span(),
+                name: "store".to_string(),
+                params: vec![param_with_span(
+                    Type::Pointer(Box::new(Type::Int)),
+                    "p",
+                    span(),
+                )],
+                body: vec![Statement::Return(Expr::Assign {
+                    target: Box::new(Expr::Unary {
+                        op: UnaryOp::Dereference,
+                        op_span: span(),
+                        expr: Box::new(Expr::Variable {
+                            name: "p".to_string(),
+                            span: span(),
+                        }),
+                    }),
+                    op_span: span(),
+                    value: Box::new(Expr::IntLiteral {
+                        value: 3,
+                        span: span(),
+                    }),
+                })],
+            },
+            function(
+                "main",
+                vec![Statement::Return(Expr::IntLiteral {
+                    value: 0,
+                    span: span(),
+                })],
+            ),
+        ],
+        eof_span: span(),
+    };
+
+    let typed_program = check(&program).expect("semantic check should succeed");
+
+    let TypedStatement::Return(expr) = &typed_program.functions[0].body[0] else {
+        panic!("expected return statement");
+    };
+    let TypedExprKind::Assign { target, .. } = &expr.kind else {
+        panic!("expected assignment expression");
+    };
+
+    assert_eq!(expr.ty, Type::Int);
+    assert_eq!(target.ty, Type::Int);
+    assert!(matches!(
+        target.kind,
+        TypedExprKind::Unary {
+            op: UnaryOp::Dereference,
+            ..
+        }
+    ));
+}
+
+#[test]
+fn accepts_compound_assignment_through_pointer_dereference() {
+    let program = Program {
+        functions: vec![
+            Function {
+                return_type: Type::Int,
+                name_span: span(),
+                name: "add_to_pointed_value".to_string(),
+                params: vec![param_with_span(
+                    Type::Pointer(Box::new(Type::Int)),
+                    "p",
+                    span(),
+                )],
+                body: vec![Statement::Return(Expr::CompoundAssign {
+                    target: Box::new(Expr::Unary {
+                        op: UnaryOp::Dereference,
+                        op_span: span(),
+                        expr: Box::new(Expr::Variable {
+                            name: "p".to_string(),
+                            span: span(),
+                        }),
+                    }),
+                    op: BinaryOp::Add,
+                    op_span: span(),
+                    value: Box::new(Expr::IntLiteral {
+                        value: 3,
+                        span: span(),
+                    }),
+                })],
+            },
+            function(
+                "main",
+                vec![Statement::Return(Expr::IntLiteral {
+                    value: 0,
+                    span: span(),
+                })],
+            ),
+        ],
+        eof_span: span(),
+    };
+
+    let typed_program = check(&program).expect("semantic check should succeed");
+
+    let TypedStatement::Return(expr) = &typed_program.functions[0].body[0] else {
+        panic!("expected return statement");
+    };
+    let TypedExprKind::CompoundAssign {
+        target, operand_ty, ..
+    } = &expr.kind
+    else {
+        panic!("expected compound assignment expression");
+    };
+
+    assert_eq!(expr.ty, Type::Int);
+    assert_eq!(target.ty, Type::Int);
+    assert_eq!(*operand_ty, Type::Int);
+}
+
+#[test]
+fn accepts_increment_through_pointer_dereference() {
+    let program = Program {
+        functions: vec![
+            Function {
+                return_type: Type::Int,
+                name_span: span(),
+                name: "increment_pointed_value".to_string(),
+                params: vec![param_with_span(
+                    Type::Pointer(Box::new(Type::Int)),
+                    "p",
+                    span(),
+                )],
+                body: vec![Statement::Return(Expr::PostfixInc {
+                    expr: Box::new(Expr::Unary {
+                        op: UnaryOp::Dereference,
+                        op_span: span(),
+                        expr: Box::new(Expr::Variable {
+                            name: "p".to_string(),
+                            span: span(),
+                        }),
+                    }),
+                    op_span: span(),
+                })],
+            },
+            function(
+                "main",
+                vec![Statement::Return(Expr::IntLiteral {
+                    value: 0,
+                    span: span(),
+                })],
+            ),
+        ],
+        eof_span: span(),
+    };
+
+    let typed_program = check(&program).expect("semantic check should succeed");
+
+    let TypedStatement::Return(expr) = &typed_program.functions[0].body[0] else {
+        panic!("expected return statement");
+    };
+    let TypedExprKind::PostfixInc { expr: target, .. } = &expr.kind else {
+        panic!("expected postfix increment expression");
+    };
+
+    assert_eq!(expr.ty, Type::Int);
+    assert_eq!(target.ty, Type::Int);
+}
+
+#[test]
 fn typed_pointer_arithmetic_has_pointer_operand_and_result_type() {
     let pointer_to_int = Type::Pointer(Box::new(Type::Int));
     let program = Program {
@@ -1163,6 +1330,42 @@ fn rejects_dereference_of_non_pointer_expression() {
 
     let err = check(&program).expect_err("semantic check should fail");
 
+    assert_eq!(err.message, "cannot dereference non-pointer type 'Int'");
+}
+
+#[test]
+fn rejects_assignment_through_non_pointer_dereference() {
+    let op_span = span_from(10, 11);
+    let program = main_program(vec![
+        Statement::VarDecl {
+            ty: Type::Int,
+            name_span: span(),
+            name: "x".to_string(),
+            init: Some(Expr::IntLiteral {
+                value: 1,
+                span: span(),
+            }),
+        },
+        Statement::Return(Expr::Assign {
+            target: Box::new(Expr::Unary {
+                op: UnaryOp::Dereference,
+                op_span,
+                expr: Box::new(Expr::Variable {
+                    name: "x".to_string(),
+                    span: span(),
+                }),
+            }),
+            op_span: span(),
+            value: Box::new(Expr::IntLiteral {
+                value: 3,
+                span: span(),
+            }),
+        }),
+    ]);
+
+    let err = check(&program).expect_err("semantic check should fail");
+
+    assert_eq!(err.span, op_span);
     assert_eq!(err.message, "cannot dereference non-pointer type 'Int'");
 }
 
@@ -1400,7 +1603,7 @@ fn rejects_assignment_to_non_lvalue_expression() {
     let err = check(&program).expect_err("semantic check should fail");
 
     assert_eq!(err.span, op_span);
-    assert_eq!(err.message, "cannot assign to non-variable expression");
+    assert_eq!(err.message, "cannot assign to non-lvalue expression");
 }
 
 #[test]
@@ -1430,7 +1633,7 @@ fn rejects_compound_assignment_to_non_lvalue_expression() {
     let err = check(&program).expect_err("semantic check should fail");
 
     assert_eq!(err.span, op_span);
-    assert_eq!(err.message, "cannot assign to non-variable expression");
+    assert_eq!(err.message, "cannot assign to non-lvalue expression");
 }
 
 #[test]
@@ -1500,7 +1703,7 @@ fn rejects_increment_of_non_lvalue_expression() {
     let err = check(&program).expect_err("semantic check should fail");
 
     assert_eq!(err.span, op_span);
-    assert_eq!(err.message, "cannot assign to non-variable expression");
+    assert_eq!(err.message, "cannot assign to non-lvalue expression");
 }
 
 #[test]

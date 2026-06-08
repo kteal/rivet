@@ -1,6 +1,8 @@
 use crate::ast::{BinaryOp, Type, UnaryOp};
 use crate::sema::is_integer;
-use crate::typed_ast::{TypedExpr, TypedExprKind, TypedFunction, TypedProgram, TypedStatement};
+use crate::typed_ast::{
+    LocalId, TypedExpr, TypedExprKind, TypedFunction, TypedProgram, TypedStatement,
+};
 use std::collections::HashMap;
 use std::fmt::{self, Write};
 
@@ -26,9 +28,9 @@ impl FrameLayout {
             TypedStatement::VarDecl { .. } => 1,
             TypedStatement::Block(body) => Self::count_locals_in_statements(body),
             TypedStatement::If {
-                cond: _,
                 then_branch,
                 else_branch,
+                ..
             } => {
                 let mut sum = Self::count_locals_in_statement(then_branch);
                 if let Some(else_statement) = else_branch {
@@ -36,15 +38,10 @@ impl FrameLayout {
                 }
                 sum
             }
-            TypedStatement::While { cond: _, body } | TypedStatement::DoWhile { body, cond: _ } => {
+            TypedStatement::While { body, .. } | TypedStatement::DoWhile { body, .. } => {
                 Self::count_locals_in_statement(body)
             }
-            TypedStatement::For {
-                init,
-                cond: _,
-                post: _,
-                body,
-            } => {
+            TypedStatement::For { init, body, .. } => {
                 let mut sum = Self::count_locals_in_statement(body);
                 if let Some(init_statement) = init {
                     sum += Self::count_locals_in_statement(init_statement);
@@ -85,7 +82,7 @@ struct LocalInfo {
 struct Codegen {
     out: String,
     frame: FrameLayout,
-    scopes: Vec<HashMap<String, LocalInfo>>,
+    scopes: Vec<HashMap<LocalId, LocalInfo>>,
     next_local_offset: i32,
     label_counter: usize,
     return_label: Option<String>,
@@ -154,30 +151,23 @@ impl Codegen {
         self.scopes.pop();
     }
 
-    fn current_scope_mut(&mut self) -> &mut HashMap<String, LocalInfo> {
+    fn current_scope_mut(&mut self) -> &mut HashMap<LocalId, LocalInfo> {
         self.scopes
             .last_mut()
             .expect("codegen should have an active scope")
     }
 
-    fn resolve_lvalue_local(&self, expr: &TypedExpr) -> LocalInfo {
-        match &expr.kind {
-            TypedExprKind::Variable { name, .. } => self.resolve_local(name).unwrap(),
-            _ => panic!("semantic analysis should reject non-variable lvalue"),
-        }
-    }
-
-    fn resolve_local(&self, name: &str) -> Option<LocalInfo> {
+    fn resolve_local(&self, id: LocalId) -> Option<LocalInfo> {
         self.scopes
             .iter()
             .rev()
-            .find_map(|scope| scope.get(name).cloned())
+            .find_map(|scope| scope.get(&id).cloned())
     }
 
-    fn declare_local(&mut self, ty: &Type, name: &str) -> i32 {
+    fn declare_local(&mut self, ty: &Type, id: LocalId) -> i32 {
         let offset = self.next_local_offset;
         self.current_scope_mut().insert(
-            name.to_string(),
+            id,
             LocalInfo {
                 offset,
                 ty: ty.clone(),
@@ -241,15 +231,6 @@ impl Codegen {
         }
     }
 
-    fn emit_load_local(&mut self, local: &LocalInfo) {
-        match local.ty {
-            Type::Int | Type::UnsignedInt | Type::Pointer(_) => {
-                self.emit_line(format_args!("lw a0, {}(s0)", local.offset));
-            }
-            Type::Char => self.emit_line(format_args!("lbu a0, {}(s0)", local.offset)),
-        }
-    }
-
     fn emit_store_local(&mut self, local: &LocalInfo) {
         match local.ty {
             Type::Int | Type::UnsignedInt | Type::Pointer(_) => {
@@ -270,6 +251,47 @@ impl Codegen {
             Type::Char => {
                 self.emit_line(format_args!("andi a{reg}, a{reg}, 255"));
                 self.emit_line(format_args!("sb a{reg}, {}(s0)", local.offset));
+            }
+        }
+    }
+
+    fn emit_addr(&mut self, expr: &TypedExpr) {
+        match &expr.kind {
+            TypedExprKind::Variable { id, name, .. } => {
+                let local = self
+                    .resolve_local(*id)
+                    .unwrap_or_else(|| panic!("usage of undefined variable '{name}'"));
+
+                self.emit_line(format_args!("addi a0, s0, {}", local.offset));
+            }
+            TypedExprKind::Unary {
+                op: UnaryOp::Dereference,
+                expr,
+                ..
+            } => {
+                self.emit_expr(expr);
+            }
+            _ => panic!("semantic analysis should reject non-lvalue expression"),
+        }
+    }
+
+    fn emit_load_from_addr(&mut self, ty: &Type) {
+        match ty {
+            Type::Char => self.emit_line(format_args!("lbu a0, 0(a0)")),
+            Type::Int | Type::UnsignedInt | Type::Pointer(_) => {
+                self.emit_line(format_args!("lw a0, 0(a0)"));
+            }
+        }
+    }
+
+    fn emit_store_to_addr(&mut self, ty: &Type) {
+        match ty {
+            Type::Char => {
+                self.emit_narrow_to_type(ty);
+                self.emit_line(format_args!("sb a0, 0(t0)"));
+            }
+            Type::Int | Type::UnsignedInt | Type::Pointer(_) => {
+                self.emit_line(format_args!("sw a0, 0(t0)"));
             }
         }
     }
@@ -452,28 +474,32 @@ impl Codegen {
 
     fn emit_compound_assign(
         &mut self,
-        local: &LocalInfo,
+        target: &TypedExpr,
         op: BinaryOp,
         operand_ty: &Type,
         value: &TypedExpr,
     ) {
-        self.emit_load_local(local);
+        self.emit_addr(target);
         self.push_a0();
+        self.emit_load_from_addr(&target.ty);
+        self.push_a0();
+
         self.emit_expr(value);
         self.pop_t0();
 
         if let Type::Pointer(pointee_ty) = operand_ty {
-            self.emit_pointer_binary_op(op, pointee_ty, &local.ty, &value.ty);
+            self.emit_pointer_binary_op(op, pointee_ty, &target.ty, &value.ty);
         } else {
             self.emit_binary_op(op, operand_ty);
         }
-        self.emit_store_local(local);
+        self.pop_t0();
+        self.emit_store_to_addr(&target.ty);
     }
 
     fn emit_inc_dec(&mut self, expr: &TypedExpr, delta: i32, postfix: bool) {
-        let local = self.resolve_lvalue_local(expr);
-
-        self.emit_load_local(&local);
+        self.emit_addr(expr);
+        self.emit_line(format_args!("mv t0, a0"));
+        self.emit_load_from_addr(&expr.ty);
 
         if postfix {
             self.push_a0();
@@ -485,7 +511,7 @@ impl Codegen {
         }
 
         self.emit_line(format_args!("addi a0, a0, {accumulator}"));
-        self.emit_store_local(&local);
+        self.emit_store_to_addr(&expr.ty);
 
         if postfix {
             self.pop_a0();
@@ -499,21 +525,17 @@ impl Codegen {
             }
             TypedExprKind::Binary {
                 op,
-                op_span: _,
                 operand_ty,
                 left,
                 right,
+                ..
             } => self.emit_binary(*op, operand_ty, left, right),
-            TypedExprKind::Variable { name, .. } => {
-                let local = self
-                    .resolve_local(name)
-                    .expect("usage of undefined variable");
-                self.emit_load_local(&local);
+            TypedExprKind::Variable { .. } => {
+                self.emit_addr(expr);
+                self.emit_load_from_addr(&expr.ty);
             }
             TypedExprKind::Unary {
-                op,
-                op_span: _,
-                expr: operand,
+                op, expr: operand, ..
             } => {
                 self.emit_expr(operand);
                 match op {
@@ -527,11 +549,7 @@ impl Codegen {
                     },
                 }
             }
-            TypedExprKind::Call {
-                name,
-                name_span: _,
-                args,
-            } => {
+            TypedExprKind::Call { name, args, .. } => {
                 for arg in args {
                     self.emit_expr(arg);
                     // Push a0 onto the stack
@@ -545,30 +563,28 @@ impl Codegen {
                 }
                 self.emit_line(format_args!("call {name}"));
             }
-            TypedExprKind::Assign {
-                target,
-                op_span: _,
-                value,
-            } => {
+            TypedExprKind::Assign { target, value, .. } => {
+                self.emit_addr(target);
+                self.push_a0();
+
                 self.emit_expr(value);
 
-                let local = self.resolve_lvalue_local(target);
-                self.emit_store_local(&local);
+                self.pop_t0();
+                self.emit_store_to_addr(&target.ty);
             }
             TypedExprKind::CompoundAssign {
                 target,
                 op,
-                op_span: _,
                 operand_ty,
                 value,
+                ..
             } => {
-                let local = self.resolve_lvalue_local(target);
-                self.emit_compound_assign(&local, *op, operand_ty, value);
+                self.emit_compound_assign(target, *op, operand_ty, value);
             }
-            TypedExprKind::PrefixInc { expr, op_span: _ } => self.emit_inc_dec(expr, 1, false),
-            TypedExprKind::PrefixDec { expr, op_span: _ } => self.emit_inc_dec(expr, -1, false),
-            TypedExprKind::PostfixInc { expr, op_span: _ } => self.emit_inc_dec(expr, 1, true),
-            TypedExprKind::PostfixDec { expr, op_span: _ } => self.emit_inc_dec(expr, -1, true),
+            TypedExprKind::PrefixInc { expr, .. } => self.emit_inc_dec(expr, 1, false),
+            TypedExprKind::PrefixDec { expr, .. } => self.emit_inc_dec(expr, -1, false),
+            TypedExprKind::PostfixInc { expr, .. } => self.emit_inc_dec(expr, 1, true),
+            TypedExprKind::PostfixDec { expr, .. } => self.emit_inc_dec(expr, -1, true),
         }
     }
 
@@ -686,13 +702,8 @@ impl Codegen {
                     .expect("codegen should have an active return label");
                 self.emit_line(format_args!("j {return_label}"));
             }
-            TypedStatement::VarDecl {
-                ty,
-                name,
-                name_span: _,
-                init,
-            } => {
-                let offset = self.declare_local(ty, name);
+            TypedStatement::VarDecl { id, ty, init, .. } => {
+                let offset = self.declare_local(ty, *id);
                 if let Some(init_expr) = init {
                     self.emit_expr(init_expr);
                     let local = LocalInfo {
@@ -770,7 +781,7 @@ impl Codegen {
 
         // Store the argument registers a0-a7 onto the stack, declaring as local vars
         for (i, param) in function.params.iter().enumerate() {
-            let offset = self.declare_local(&param.ty, &param.name);
+            let offset = self.declare_local(&param.ty, param.id);
             let local = LocalInfo {
                 offset,
                 ty: param.ty.clone(),

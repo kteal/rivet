@@ -449,6 +449,11 @@ fn qemu_char_narrowing_programs_return_expected_values() {
         44,
     );
     run_qemu_case(
+        "char-assignment-expression-result-narrows",
+        "int main() {\n    char c;\n    int x = c = 300;\n    return x == 44;\n}\n",
+        1,
+    );
+    run_qemu_case(
         "char-return-narrows",
         "char main() {\n    return 300;\n}\n",
         44,

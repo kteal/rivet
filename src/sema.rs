@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use crate::ast::{BinaryOp, Expr, Function, Param, Program, Statement, Type, UnaryOp};
 use crate::lexer::Span;
 use crate::typed_ast::{
-    TypedExpr, TypedExprKind, TypedFunction, TypedParam, TypedProgram, TypedStatement,
+    LocalId, TypedExpr, TypedExprKind, TypedFunction, TypedParam, TypedProgram, TypedStatement,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -23,11 +23,18 @@ struct BinaryTypeInfo {
     result_ty: Type,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct LocalSymbol {
+    id: LocalId,
+    ty: Type,
+}
+
 struct Checker {
-    scopes: Vec<HashMap<String, Type>>,
+    scopes: Vec<HashMap<String, LocalSymbol>>,
     functions: HashMap<String, FunctionInfo>,
     loop_depth: usize,
     current_function_return_type: Option<Type>,
+    next_local_id: usize,
 }
 
 impl Checker {
@@ -37,7 +44,14 @@ impl Checker {
             functions: HashMap::new(),
             loop_depth: 0,
             current_function_return_type: None,
+            next_local_id: 0,
         }
+    }
+
+    const fn new_local_id(&mut self) -> LocalId {
+        let id = LocalId(self.next_local_id);
+        self.next_local_id += 1;
+        id
     }
 
     const fn enter_loop(&mut self) {
@@ -61,34 +75,43 @@ impl Checker {
         self.scopes.pop();
     }
 
-    fn current_scope(&self) -> &HashMap<String, Type> {
+    fn current_scope(&self) -> &HashMap<String, LocalSymbol> {
         self.scopes
             .last()
             .expect("semantic checker should have an active scope")
     }
 
-    fn current_scope_mut(&mut self) -> &mut HashMap<String, Type> {
+    fn current_scope_mut(&mut self) -> &mut HashMap<String, LocalSymbol> {
         self.scopes
             .last_mut()
             .expect("semantic checker should have an active scope")
     }
 
-    fn declare_local(&mut self, ty: &Type, name: &str, span: Span) -> Result<(), SemanticError> {
+    fn declare_local(
+        &mut self,
+        ty: &Type,
+        name: &str,
+        span: Span,
+    ) -> Result<LocalSymbol, SemanticError> {
         if self.current_scope().contains_key(name) {
             return Err(SemanticError {
                 message: format!("duplicate local variable '{name}'"),
                 span,
             });
         }
+        let symbol = LocalSymbol {
+            id: self.new_local_id(),
+            ty: ty.clone(),
+        };
         self.current_scope_mut()
-            .insert(name.to_string(), ty.clone());
-        Ok(())
+            .insert(name.to_string(), symbol.clone());
+        Ok(symbol)
     }
 
-    fn resolve_local(&self, name: &str, span: Span) -> Result<Type, SemanticError> {
+    fn resolve_local(&self, name: &str, span: Span) -> Result<LocalSymbol, SemanticError> {
         for scope in self.scopes.iter().rev() {
-            if let Some(ty) = scope.get(name) {
-                return Ok(ty.clone());
+            if let Some(local) = scope.get(name) {
+                return Ok(local.clone());
             }
         }
         Err(SemanticError {
@@ -243,18 +266,45 @@ impl Checker {
     fn check_lvalue(&self, expr: &Expr, op_span: Span) -> Result<TypedExpr, SemanticError> {
         match expr {
             Expr::Variable { name, span } => {
-                let ty = self.resolve_local(name, *span)?;
+                let symbol = self.resolve_local(name, *span)?;
 
                 Ok(TypedExpr {
                     kind: TypedExprKind::Variable {
+                        id: symbol.id,
                         name: name.clone(),
                         span: *span,
                     },
-                    ty,
+                    ty: symbol.ty,
+                })
+            }
+            Expr::Unary {
+                op: UnaryOp::Dereference,
+                op_span,
+                expr,
+            } => {
+                let typed_ptr = self.check_expr(expr)?;
+
+                let Type::Pointer(inner) = &typed_ptr.ty.clone() else {
+                    return Err(SemanticError {
+                        message: format!(
+                            "cannot dereference non-pointer type '{:?}'",
+                            typed_ptr.ty
+                        ),
+                        span: *op_span,
+                    });
+                };
+
+                Ok(TypedExpr {
+                    kind: TypedExprKind::Unary {
+                        op: UnaryOp::Dereference,
+                        op_span: *op_span,
+                        expr: Box::new(typed_ptr),
+                    },
+                    ty: *inner.clone(),
                 })
             }
             _ => Err(SemanticError {
-                message: "cannot assign to non-variable expression".to_string(),
+                message: "cannot assign to non-lvalue expression".to_string(),
                 span: op_span,
             }),
         }
@@ -396,14 +446,15 @@ impl Checker {
                 ty: Type::Int,
             }),
             Expr::Variable { name, span } => {
-                let ty = self.resolve_local(name, *span)?;
+                let symbol = self.resolve_local(name, *span)?;
 
                 Ok(TypedExpr {
                     kind: TypedExprKind::Variable {
+                        id: symbol.id,
                         name: name.clone(),
                         span: *span,
                     },
-                    ty,
+                    ty: symbol.ty,
                 })
             }
             Expr::Unary { op, op_span, expr } => self.check_unary_expr(*op, op_span, expr),
@@ -555,7 +606,7 @@ impl Checker {
                 name_span,
                 init,
             } => {
-                self.declare_local(ty, name, *name_span)?;
+                let symbol = self.declare_local(ty, name, *name_span)?;
                 let typed_init = if let Some(init_expr) = init {
                     let typed_init = self.check_expr(init_expr)?;
 
@@ -575,7 +626,8 @@ impl Checker {
                 };
 
                 Ok(TypedStatement::VarDecl {
-                    ty: ty.clone(),
+                    id: symbol.id,
+                    ty: symbol.ty,
                     name: name.clone(),
                     name_span: *name_span,
                     init: typed_init,
@@ -716,10 +768,11 @@ impl Checker {
         let res = (|| -> Result<TypedFunction, SemanticError> {
             let mut typed_params = vec![];
             for param in &function.params {
-                self.declare_local(&param.ty, &param.name, param.name_span)?;
+                let symbol = self.declare_local(&param.ty, &param.name, param.name_span)?;
 
                 typed_params.push(TypedParam {
-                    ty: param.ty.clone(),
+                    id: symbol.id,
+                    ty: symbol.ty,
                     name: param.name.clone(),
                     name_span: param.name_span,
                 });

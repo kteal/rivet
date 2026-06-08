@@ -18,6 +18,7 @@ pub struct TypedFunction {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TypedParam {
+    pub id: LocalId,
     pub ty: Type,
     pub name: String,
     pub name_span: Span,
@@ -26,6 +27,7 @@ pub struct TypedParam {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TypedStatement {
     VarDecl {
+        id: LocalId,
         ty: Type,
         name: String,
         name_span: Span,
@@ -93,6 +95,7 @@ pub enum TypedExprKind {
         span: Span,
     },
     Variable {
+        id: LocalId,
         name: String,
         span: Span,
     },
@@ -142,3 +145,6 @@ pub enum TypedExprKind {
         op_span: Span,
     },
 }
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct LocalId(pub usize);

@@ -154,7 +154,8 @@ fn resets_local_offsets_between_functions() {
     let asm = generate_raw_with_codegen(&program);
 
     assert_eq!(asm.matches("sw a0, -12(s0)").count(), 2);
-    assert_eq!(asm.matches("lw a0, -12(s0)").count(), 2);
+    assert_eq!(asm.matches("addi a0, s0, -12").count(), 2);
+    assert_eq!(asm.matches("lw a0, 0(a0)").count(), 2);
 }
 
 #[test]
@@ -320,7 +321,7 @@ fn stores_single_parameter_in_function_frame() {
     let asm = generate_raw_with_codegen(&program);
 
     assert!(asm.contains(
-        "id:\n    addi sp, sp, -16\n    sw ra, 12(sp)\n    sw s0, 8(sp)\n    addi s0, sp, 16\n    sw a0, -12(s0)\n    lw a0, -12(s0)\n"
+        "id:\n    addi sp, sp, -16\n    sw ra, 12(sp)\n    sw s0, 8(sp)\n    addi s0, sp, 16\n    sw a0, -12(s0)\n    addi a0, s0, -12\n    lw a0, 0(a0)\n"
     ));
 }
 
@@ -335,8 +336,8 @@ fn stores_multiple_parameters_in_function_frame() {
 
     assert!(asm.contains("    sw a0, -12(s0)\n"));
     assert!(asm.contains("    sw a1, -16(s0)\n"));
-    assert!(asm.contains("    lw a0, -12(s0)\n"));
-    assert!(asm.contains("    lw a0, -16(s0)\n"));
+    assert!(asm.contains("    addi a0, s0, -12\n    lw a0, 0(a0)\n"));
+    assert!(asm.contains("    addi a0, s0, -16\n    lw a0, 0(a0)\n"));
 }
 
 #[test]
@@ -1126,7 +1127,7 @@ fn generates_single_local_variable() {
 
     assert_eq!(
         asm,
-        ".globl main\nmain:\n    addi sp, sp, -16\n    sw ra, 12(sp)\n    sw s0, 8(sp)\n    addi s0, sp, 16\n    li a0, 5\n    sw a0, -12(s0)\n    lw a0, -12(s0)\n    lw ra, 12(sp)\n    lw s0, 8(sp)\n    addi sp, sp, 16\n    ret\n"
+        ".globl main\nmain:\n    addi sp, sp, -16\n    sw ra, 12(sp)\n    sw s0, 8(sp)\n    addi s0, sp, 16\n    li a0, 5\n    sw a0, -12(s0)\n    addi a0, s0, -12\n    lw a0, 0(a0)\n    lw ra, 12(sp)\n    lw s0, 8(sp)\n    addi sp, sp, 16\n    ret\n"
     );
 }
 
@@ -1169,7 +1170,7 @@ fn generates_local_variable_without_initializer() {
 
     assert_eq!(
         asm,
-        ".globl main\nmain:\n    addi sp, sp, -16\n    sw ra, 12(sp)\n    sw s0, 8(sp)\n    addi s0, sp, 16\n    li a0, 3\n    sw a0, -12(s0)\n    lw a0, -12(s0)\n    lw ra, 12(sp)\n    lw s0, 8(sp)\n    addi sp, sp, 16\n    ret\n"
+        ".globl main\nmain:\n    addi sp, sp, -16\n    sw ra, 12(sp)\n    sw s0, 8(sp)\n    addi s0, sp, 16\n    addi a0, s0, -12\n    addi sp, sp, -4\n    sw a0, 0(sp)\n    li a0, 3\n    lw t0, 0(sp)\n    addi sp, sp, 4\n    sw a0, 0(t0)\n    addi a0, s0, -12\n    lw a0, 0(a0)\n    lw ra, 12(sp)\n    lw s0, 8(sp)\n    addi sp, sp, 16\n    ret\n"
     );
 }
 
@@ -1234,11 +1235,11 @@ fn loads_char_local_with_unsigned_byte_load() {
 
     let asm = generate_raw_with_codegen(&program);
 
-    assert!(asm.contains("    sb a0, -12(s0)\n    lbu a0, -12(s0)\n"));
+    assert!(asm.contains("    sb a0, -12(s0)\n    addi a0, s0, -12\n    lbu a0, 0(a0)\n"));
 }
 
 #[test]
-fn narrows_char_assignment() {
+fn narrows_char_assignment_through_address() {
     let program = Program {
         functions: vec![Function {
             return_type: Type::Int,
@@ -1274,7 +1275,9 @@ fn narrows_char_assignment() {
 
     let asm = generate_raw_with_codegen(&program);
 
-    assert!(asm.contains("    li a0, 300\n    andi a0, a0, 255\n    sb a0, -12(s0)\n"));
+    assert!(asm.contains(
+        "    addi a0, s0, -12\n    addi sp, sp, -4\n    sw a0, 0(sp)\n    li a0, 300\n    lw t0, 0(sp)\n    addi sp, sp, 4\n    andi a0, a0, 255\n    sb a0, 0(t0)\n"
+    ));
 }
 
 #[test]
@@ -1319,7 +1322,7 @@ fn generates_compound_assignment() {
     let asm = generate_raw_with_codegen(&program);
 
     assert!(asm.contains(
-        "    lw a0, -12(s0)\n    addi sp, sp, -4\n    sw a0, 0(sp)\n    li a0, 4\n    lw t0, 0(sp)\n    addi sp, sp, 4\n    add a0, t0, a0\n    sw a0, -12(s0)\n"
+        "    addi a0, s0, -12\n    addi sp, sp, -4\n    sw a0, 0(sp)\n    lw a0, 0(a0)\n    addi sp, sp, -4\n    sw a0, 0(sp)\n    li a0, 4\n    lw t0, 0(sp)\n    addi sp, sp, 4\n    add a0, t0, a0\n    lw t0, 0(sp)\n    addi sp, sp, 4\n    sw a0, 0(t0)\n"
     ));
 }
 
@@ -1361,7 +1364,7 @@ fn generates_compound_assignment_expression_result() {
     let asm = generate_raw_with_codegen(&program);
 
     assert!(asm.contains(
-        "    lw a0, -12(s0)\n    addi sp, sp, -4\n    sw a0, 0(sp)\n    li a0, 4\n    lw t0, 0(sp)\n    addi sp, sp, 4\n    add a0, t0, a0\n    sw a0, -12(s0)\n    j main_end\n"
+        "    addi a0, s0, -12\n    addi sp, sp, -4\n    sw a0, 0(sp)\n    lw a0, 0(a0)\n    addi sp, sp, -4\n    sw a0, 0(sp)\n    li a0, 4\n    lw t0, 0(sp)\n    addi sp, sp, 4\n    add a0, t0, a0\n    lw t0, 0(sp)\n    addi sp, sp, 4\n    sw a0, 0(t0)\n    j main_end\n"
     ));
 }
 
@@ -1407,7 +1410,7 @@ fn narrows_char_compound_assignment() {
     let asm = generate_raw_with_codegen(&program);
 
     assert!(asm.contains(
-        "    lbu a0, -12(s0)\n    addi sp, sp, -4\n    sw a0, 0(sp)\n    li a0, 10\n    lw t0, 0(sp)\n    addi sp, sp, 4\n    add a0, t0, a0\n    andi a0, a0, 255\n    sb a0, -12(s0)\n"
+        "    addi a0, s0, -12\n    addi sp, sp, -4\n    sw a0, 0(sp)\n    lbu a0, 0(a0)\n    addi sp, sp, -4\n    sw a0, 0(sp)\n    li a0, 10\n    lw t0, 0(sp)\n    addi sp, sp, 4\n    add a0, t0, a0\n    lw t0, 0(sp)\n    addi sp, sp, 4\n    andi a0, a0, 255\n    sb a0, 0(t0)\n"
     ));
 }
 
@@ -1505,7 +1508,7 @@ fn generates_assignment_expression_result() {
 
     assert_eq!(
         asm,
-        ".globl main\nmain:\n    addi sp, sp, -16\n    sw ra, 12(sp)\n    sw s0, 8(sp)\n    addi s0, sp, 16\n    li a0, 3\n    sw a0, -12(s0)\n    lw ra, 12(sp)\n    lw s0, 8(sp)\n    addi sp, sp, 16\n    ret\n"
+        ".globl main\nmain:\n    addi sp, sp, -16\n    sw ra, 12(sp)\n    sw s0, 8(sp)\n    addi s0, sp, 16\n    addi a0, s0, -12\n    addi sp, sp, -4\n    sw a0, 0(sp)\n    li a0, 3\n    lw t0, 0(sp)\n    addi sp, sp, 4\n    sw a0, 0(t0)\n    lw ra, 12(sp)\n    lw s0, 8(sp)\n    addi sp, sp, 16\n    ret\n"
     );
 }
 
@@ -1543,7 +1546,7 @@ fn generates_prefix_increment_expression_result() {
 
     assert_eq!(
         asm,
-        ".globl main\nmain:\n    addi sp, sp, -16\n    sw ra, 12(sp)\n    sw s0, 8(sp)\n    addi s0, sp, 16\n    li a0, 1\n    sw a0, -12(s0)\n    lw a0, -12(s0)\n    addi a0, a0, 1\n    sw a0, -12(s0)\n    lw ra, 12(sp)\n    lw s0, 8(sp)\n    addi sp, sp, 16\n    ret\n"
+        ".globl main\nmain:\n    addi sp, sp, -16\n    sw ra, 12(sp)\n    sw s0, 8(sp)\n    addi s0, sp, 16\n    li a0, 1\n    sw a0, -12(s0)\n    addi a0, s0, -12\n    mv t0, a0\n    lw a0, 0(a0)\n    addi a0, a0, 1\n    sw a0, 0(t0)\n    lw ra, 12(sp)\n    lw s0, 8(sp)\n    addi sp, sp, 16\n    ret\n"
     );
 }
 
@@ -1581,7 +1584,7 @@ fn generates_postfix_increment_expression_result() {
 
     assert_eq!(
         asm,
-        ".globl main\nmain:\n    addi sp, sp, -16\n    sw ra, 12(sp)\n    sw s0, 8(sp)\n    addi s0, sp, 16\n    li a0, 1\n    sw a0, -12(s0)\n    lw a0, -12(s0)\n    addi sp, sp, -4\n    sw a0, 0(sp)\n    addi a0, a0, 1\n    sw a0, -12(s0)\n    lw a0, 0(sp)\n    addi sp, sp, 4\n    lw ra, 12(sp)\n    lw s0, 8(sp)\n    addi sp, sp, 16\n    ret\n"
+        ".globl main\nmain:\n    addi sp, sp, -16\n    sw ra, 12(sp)\n    sw s0, 8(sp)\n    addi s0, sp, 16\n    li a0, 1\n    sw a0, -12(s0)\n    addi a0, s0, -12\n    mv t0, a0\n    lw a0, 0(a0)\n    addi sp, sp, -4\n    sw a0, 0(sp)\n    addi a0, a0, 1\n    sw a0, 0(t0)\n    lw a0, 0(sp)\n    addi sp, sp, 4\n    lw ra, 12(sp)\n    lw s0, 8(sp)\n    addi sp, sp, 16\n    ret\n"
     );
 }
 
@@ -1622,7 +1625,7 @@ fn narrows_char_increment_store() {
     let asm = generate_raw_with_codegen(&program);
 
     assert!(asm.contains(
-        "    lbu a0, -12(s0)\n    addi a0, a0, 1\n    andi a0, a0, 255\n    sb a0, -12(s0)\n"
+        "    addi a0, s0, -12\n    mv t0, a0\n    lbu a0, 0(a0)\n    addi a0, a0, 1\n    andi a0, a0, 255\n    sb a0, 0(t0)\n"
     ));
 }
 
@@ -1684,7 +1687,9 @@ fn generates_chained_assignment_expression_right_associative() {
 
     let asm = generate_raw_with_codegen(&program);
 
-    assert!(asm.contains("    li a0, 4\n    sw a0, -16(s0)\n    sw a0, -12(s0)\n"));
+    assert!(asm.contains(
+        "    li a0, 4\n    lw t0, 0(sp)\n    addi sp, sp, 4\n    sw a0, 0(t0)\n    lw t0, 0(sp)\n    addi sp, sp, 4\n    sw a0, 0(t0)\n"
+    ));
 }
 
 #[test]
@@ -1752,7 +1757,7 @@ fn generates_multiple_local_variables() {
 
     assert_eq!(
         asm,
-        ".globl main\nmain:\n    addi sp, sp, -32\n    sw ra, 28(sp)\n    sw s0, 24(sp)\n    addi s0, sp, 32\n    li a0, 1\n    sw a0, -12(s0)\n    lw a0, -12(s0)\n    addi sp, sp, -4\n    sw a0, 0(sp)\n    li a0, 2\n    lw t0, 0(sp)\n    addi sp, sp, 4\n    add a0, t0, a0\n    sw a0, -16(s0)\n    lw a0, -12(s0)\n    addi sp, sp, -4\n    sw a0, 0(sp)\n    lw a0, -16(s0)\n    lw t0, 0(sp)\n    addi sp, sp, 4\n    add a0, t0, a0\n    sw a0, -20(s0)\n    lw a0, -20(s0)\n    lw ra, 28(sp)\n    lw s0, 24(sp)\n    addi sp, sp, 32\n    ret\n"
+        ".globl main\nmain:\n    addi sp, sp, -32\n    sw ra, 28(sp)\n    sw s0, 24(sp)\n    addi s0, sp, 32\n    li a0, 1\n    sw a0, -12(s0)\n    addi a0, s0, -12\n    lw a0, 0(a0)\n    addi sp, sp, -4\n    sw a0, 0(sp)\n    li a0, 2\n    lw t0, 0(sp)\n    addi sp, sp, 4\n    add a0, t0, a0\n    sw a0, -16(s0)\n    addi a0, s0, -12\n    lw a0, 0(a0)\n    addi sp, sp, -4\n    sw a0, 0(sp)\n    addi a0, s0, -16\n    lw a0, 0(a0)\n    lw t0, 0(sp)\n    addi sp, sp, 4\n    add a0, t0, a0\n    sw a0, -20(s0)\n    addi a0, s0, -20\n    lw a0, 0(a0)\n    lw ra, 28(sp)\n    lw s0, 24(sp)\n    addi sp, sp, 32\n    ret\n"
     );
 }
 
@@ -1798,7 +1803,7 @@ fn generates_shadowed_local_in_nested_block() {
 
     assert_eq!(
         asm,
-        ".globl main\nmain:\n    addi sp, sp, -16\n    sw ra, 12(sp)\n    sw s0, 8(sp)\n    addi s0, sp, 16\n    li a0, 1\n    sw a0, -12(s0)\n    li a0, 2\n    sw a0, -16(s0)\n    lw a0, -16(s0)\n    lw ra, 12(sp)\n    lw s0, 8(sp)\n    addi sp, sp, 16\n    ret\n"
+        ".globl main\nmain:\n    addi sp, sp, -16\n    sw ra, 12(sp)\n    sw s0, 8(sp)\n    addi s0, sp, 16\n    li a0, 1\n    sw a0, -12(s0)\n    li a0, 2\n    sw a0, -16(s0)\n    addi a0, s0, -16\n    lw a0, 0(a0)\n    lw ra, 12(sp)\n    lw s0, 8(sp)\n    addi sp, sp, 16\n    ret\n"
     );
 }
 
@@ -2524,7 +2529,7 @@ fn for_init_scope_can_shadow_outer_local_without_replacing_it() {
 
     assert!(
         asm.contains("    li a0, 5\n    sw a0, -12(s0)")
-            && asm.contains("    lw a0, -12(s0)\n    j main_end"),
+            && asm.contains("    addi a0, s0, -12\n    lw a0, 0(a0)\n    j main_end"),
         "return after the for loop should load the outer local"
     );
 }
@@ -2646,7 +2651,7 @@ fn loads_char_pointer_dereference_with_byte_load() {
     let asm = generate_raw_with_codegen(&program);
 
     assert!(asm.contains("    sw a0, -12(s0)\n"));
-    assert!(asm.contains("    lw a0, -12(s0)\n    lbu a0, 0(a0)\n"));
+    assert!(asm.contains("    addi a0, s0, -12\n    lw a0, 0(a0)\n    lbu a0, 0(a0)\n"));
 }
 
 #[test]
@@ -2678,7 +2683,186 @@ fn loads_int_pointer_dereference_with_word_load() {
 
     let asm = generate_raw_with_codegen(&program);
 
-    assert!(asm.contains("    lw a0, -12(s0)\n    lw a0, 0(a0)\n"));
+    assert!(asm.contains("    addi a0, s0, -12\n    lw a0, 0(a0)\n    lw a0, 0(a0)\n"));
+}
+
+#[test]
+fn stores_through_int_pointer_dereference() {
+    let program = Program {
+        functions: vec![
+            Function {
+                return_type: Type::Int,
+                name_span: span(),
+                name: "store".to_string(),
+                params: vec![param_with_span(
+                    Type::Pointer(Box::new(Type::Int)),
+                    "p",
+                    span(),
+                )],
+                body: vec![
+                    Statement::ExprStatement(Expr::Assign {
+                        target: Box::new(Expr::Unary {
+                            op: UnaryOp::Dereference,
+                            op_span: span(),
+                            expr: Box::new(Expr::Variable {
+                                name: "p".to_string(),
+                                span: span(),
+                            }),
+                        }),
+                        op_span: span(),
+                        value: Box::new(Expr::IntLiteral {
+                            value: 3,
+                            span: span(),
+                        }),
+                    }),
+                    Statement::Return(Expr::IntLiteral {
+                        value: 0,
+                        span: span(),
+                    }),
+                ],
+            },
+            empty_main_function(),
+        ],
+        eof_span: span(),
+    };
+
+    let asm = generate_raw_with_codegen(&program);
+
+    assert!(asm.contains(
+        "    addi a0, s0, -12\n    lw a0, 0(a0)\n    addi sp, sp, -4\n    sw a0, 0(sp)\n    li a0, 3\n    lw t0, 0(sp)\n    addi sp, sp, 4\n    sw a0, 0(t0)\n"
+    ));
+}
+
+#[test]
+fn stores_through_char_pointer_dereference_with_byte_store() {
+    let program = Program {
+        functions: vec![
+            Function {
+                return_type: Type::Int,
+                name_span: span(),
+                name: "store_char".to_string(),
+                params: vec![param_with_span(
+                    Type::Pointer(Box::new(Type::Char)),
+                    "p",
+                    span(),
+                )],
+                body: vec![
+                    Statement::ExprStatement(Expr::Assign {
+                        target: Box::new(Expr::Unary {
+                            op: UnaryOp::Dereference,
+                            op_span: span(),
+                            expr: Box::new(Expr::Variable {
+                                name: "p".to_string(),
+                                span: span(),
+                            }),
+                        }),
+                        op_span: span(),
+                        value: Box::new(Expr::IntLiteral {
+                            value: 300,
+                            span: span(),
+                        }),
+                    }),
+                    Statement::Return(Expr::IntLiteral {
+                        value: 0,
+                        span: span(),
+                    }),
+                ],
+            },
+            empty_main_function(),
+        ],
+        eof_span: span(),
+    };
+
+    let asm = generate_raw_with_codegen(&program);
+
+    assert!(asm.contains(
+        "    addi a0, s0, -12\n    lw a0, 0(a0)\n    addi sp, sp, -4\n    sw a0, 0(sp)\n    li a0, 300\n    lw t0, 0(sp)\n    addi sp, sp, 4\n    andi a0, a0, 255\n    sb a0, 0(t0)\n"
+    ));
+}
+
+#[test]
+fn generates_compound_assignment_through_pointer_dereference() {
+    let program = Program {
+        functions: vec![
+            Function {
+                return_type: Type::Int,
+                name_span: span(),
+                name: "add_to_pointed_value".to_string(),
+                params: vec![param_with_span(
+                    Type::Pointer(Box::new(Type::Int)),
+                    "p",
+                    span(),
+                )],
+                body: vec![
+                    Statement::ExprStatement(Expr::CompoundAssign {
+                        target: Box::new(Expr::Unary {
+                            op: UnaryOp::Dereference,
+                            op_span: span(),
+                            expr: Box::new(Expr::Variable {
+                                name: "p".to_string(),
+                                span: span(),
+                            }),
+                        }),
+                        op: BinaryOp::Add,
+                        op_span: span(),
+                        value: Box::new(Expr::IntLiteral {
+                            value: 3,
+                            span: span(),
+                        }),
+                    }),
+                    Statement::Return(Expr::IntLiteral {
+                        value: 0,
+                        span: span(),
+                    }),
+                ],
+            },
+            empty_main_function(),
+        ],
+        eof_span: span(),
+    };
+
+    let asm = generate_raw_with_codegen(&program);
+
+    assert!(asm.contains(
+        "    addi a0, s0, -12\n    lw a0, 0(a0)\n    addi sp, sp, -4\n    sw a0, 0(sp)\n    lw a0, 0(a0)\n    addi sp, sp, -4\n    sw a0, 0(sp)\n    li a0, 3\n    lw t0, 0(sp)\n    addi sp, sp, 4\n    add a0, t0, a0\n    lw t0, 0(sp)\n    addi sp, sp, 4\n    sw a0, 0(t0)\n"
+    ));
+}
+
+#[test]
+fn generates_postfix_increment_through_pointer_dereference() {
+    let program = Program {
+        functions: vec![
+            Function {
+                return_type: Type::Int,
+                name_span: span(),
+                name: "increment_pointed_value".to_string(),
+                params: vec![param_with_span(
+                    Type::Pointer(Box::new(Type::Int)),
+                    "p",
+                    span(),
+                )],
+                body: vec![Statement::Return(Expr::PostfixInc {
+                    expr: Box::new(Expr::Unary {
+                        op: UnaryOp::Dereference,
+                        op_span: span(),
+                        expr: Box::new(Expr::Variable {
+                            name: "p".to_string(),
+                            span: span(),
+                        }),
+                    }),
+                    op_span: span(),
+                })],
+            },
+            empty_main_function(),
+        ],
+        eof_span: span(),
+    };
+
+    let asm = generate_raw_with_codegen(&program);
+
+    assert!(asm.contains(
+        "    addi a0, s0, -12\n    lw a0, 0(a0)\n    mv t0, a0\n    lw a0, 0(a0)\n    addi sp, sp, -4\n    sw a0, 0(sp)\n    addi a0, a0, 1\n    sw a0, 0(t0)\n    lw a0, 0(sp)\n    addi sp, sp, 4\n"
+    ));
 }
 
 #[test]
@@ -2720,7 +2904,7 @@ fn scales_int_pointer_compound_assignment_by_pointee_size() {
     let asm = generate_raw_with_codegen(&program);
 
     assert!(asm.contains(
-        "    lw a0, -12(s0)\n    addi sp, sp, -4\n    sw a0, 0(sp)\n    li a0, 2\n    lw t0, 0(sp)\n    addi sp, sp, 4\n    slli a0, a0, 2\n    add a0, t0, a0\n    sw a0, -12(s0)\n"
+        "    addi a0, s0, -12\n    addi sp, sp, -4\n    sw a0, 0(sp)\n    lw a0, 0(a0)\n    addi sp, sp, -4\n    sw a0, 0(sp)\n    li a0, 2\n    lw t0, 0(sp)\n    addi sp, sp, 4\n    slli a0, a0, 2\n    add a0, t0, a0\n    lw t0, 0(sp)\n    addi sp, sp, 4\n    sw a0, 0(t0)\n"
     ));
 }
 
@@ -2757,7 +2941,9 @@ fn scales_int_pointer_increment_by_pointee_size() {
 
     let asm = generate_raw_with_codegen(&program);
 
-    assert!(asm.contains("    lw a0, -12(s0)\n    addi a0, a0, 4\n    sw a0, -12(s0)\n"));
+    assert!(asm.contains(
+        "    addi a0, s0, -12\n    mv t0, a0\n    lw a0, 0(a0)\n    addi a0, a0, 4\n    sw a0, 0(t0)\n"
+    ));
 }
 
 #[test]
@@ -2793,5 +2979,7 @@ fn leaves_char_pointer_increment_unscaled() {
 
     let asm = generate_raw_with_codegen(&program);
 
-    assert!(asm.contains("    lw a0, -12(s0)\n    addi a0, a0, 1\n    sw a0, -12(s0)\n"));
+    assert!(asm.contains(
+        "    addi a0, s0, -12\n    mv t0, a0\n    lw a0, 0(a0)\n    addi a0, a0, 1\n    sw a0, 0(t0)\n"
+    ));
 }
