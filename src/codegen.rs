@@ -254,7 +254,30 @@ impl Codegen {
             } => {
                 self.emit_expr(expr);
             }
-            _ => panic!("semantic analysis should reject non-lvalue expression"),
+            TypedExprKind::Index { base, index, .. } => {
+                let element = match &base.ty {
+                    Type::Array { element, .. } => {
+                        self.emit_addr(base);
+                        element
+                    }
+                    Type::Pointer(element) => {
+                        self.emit_expr(base);
+                        element
+                    }
+                    _ => panic!("sema guarantees that only arrays or pointers are indexed"),
+                };
+                self.push_a0();
+
+                self.emit_expr(index);
+                self.scale_reg(
+                    i32::try_from(element.size()).expect("type size too large for i32"),
+                    "a0",
+                );
+
+                self.pop_t0();
+                self.emit_line(format_args!("add a0, t0, a0"));
+            }
+            _ => unreachable!("semantic analysis should reject non-lvalue expression"),
         }
     }
 
@@ -460,7 +483,9 @@ impl Codegen {
         self.emit_expr(right);
         self.pop_t0();
 
-        if let Type::Pointer(pointee_ty) = operand_ty {
+        if let Type::Pointer(pointee_ty) = operand_ty
+            && matches!(op, BinaryOp::Add | BinaryOp::Subtract)
+        {
             self.emit_pointer_binary_op(op, pointee_ty, &left.ty, &right.ty);
             return;
         }
@@ -483,7 +508,9 @@ impl Codegen {
         self.emit_expr(value);
         self.pop_t0();
 
-        if let Type::Pointer(pointee_ty) = operand_ty {
+        if let Type::Pointer(pointee_ty) = operand_ty
+            && matches!(op, BinaryOp::Add | BinaryOp::Subtract)
+        {
             self.emit_pointer_binary_op(op, pointee_ty, &target.ty, &value.ty);
         } else {
             self.emit_binary_op(op, operand_ty);
@@ -585,6 +612,10 @@ impl Codegen {
             TypedExprKind::PrefixDec { expr, .. } => self.emit_inc_dec(expr, -1, false),
             TypedExprKind::PostfixInc { expr, .. } => self.emit_inc_dec(expr, 1, true),
             TypedExprKind::PostfixDec { expr, .. } => self.emit_inc_dec(expr, -1, true),
+            TypedExprKind::Index { .. } => {
+                self.emit_addr(expr);
+                self.emit_load_from_addr(&expr.ty);
+            }
         }
     }
 

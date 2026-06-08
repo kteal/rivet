@@ -351,6 +351,17 @@ impl Parser {
 
         loop {
             match self.peek_kind() {
+                TokenKind::LBracket => {
+                    let token = self.expect(&TokenKind::LBracket)?;
+                    let index = self.parse_expr()?;
+                    self.expect(&TokenKind::RBracket)?;
+
+                    expr = Expr::Index {
+                        base: Box::new(expr),
+                        index: Box::new(index),
+                        span: token.span,
+                    }
+                }
                 TokenKind::PlusPlus => {
                     let op = self.advance();
                     expr = Expr::PostfixInc {

@@ -163,7 +163,7 @@ impl Checker {
 
     fn check_binary_op_types(
         op: BinaryOp,
-        op_span: &Span,
+        op_span: Span,
         left_type: &Type,
         right_type: &Type,
     ) -> Result<BinaryTypeInfo, SemanticError> {
@@ -180,7 +180,7 @@ impl Checker {
                 message: format!(
                     "cannot perform binary operation '{op:?}' on types '{left_type:?}' and '{right_type:?}'"
                 ),
-                span: *op_span,
+                span: op_span,
             });
         }
 
@@ -197,8 +197,28 @@ impl Checker {
                 message: format!(
                     "cannot perform binary operation '{op:?}' on types '{left_type:?}' and '{right_type:?}'"
                 ),
-                span: *op_span,
+                span: op_span,
             });
+        }
+
+        if let Type::Pointer(left_inner) = left_type
+            && let Type::Pointer(right_inner) = right_type
+        {
+            if left_inner == right_inner && (op == BinaryOp::Equal || op == BinaryOp::NotEqual) {
+                return Ok(BinaryTypeInfo {
+                    operand_ty: left_type.clone(),
+                    result_ty: Type::Int,
+                });
+            } else {
+                return Err(SemanticError {
+                    message: format!(
+                        "invalid operands to binary operator '{op:?}'\n\
+                         left operand has type '{left_type:?}'\n\
+                         right operand has type '{right_type:?}'"
+                    ),
+                    span: op_span,
+                });
+            }
         }
 
         if !left_type.is_integer() || !right_type.is_integer() {
@@ -208,7 +228,7 @@ impl Checker {
                      left operand has type '{left_type:?}'\n\
                      right operand has type '{right_type:?}'"
                 ),
-                span: *op_span,
+                span: op_span,
             });
         }
         let mut operand_ty = Type::usual_arithmetic_type(left_type, right_type);
@@ -242,6 +262,11 @@ impl Checker {
         })
     }
 
+    fn is_assignable_expr(target_ty: &Type, value: &TypedExpr) -> bool {
+        target_ty.is_assignable_from(&value.ty)
+            || (target_ty.is_pointer() && value.is_null_pointer_constant())
+    }
+
     const fn is_inc_dec_type(ty: &Type) -> bool {
         ty.is_integer() || matches!(ty, Type::Pointer(_))
     }
@@ -250,6 +275,13 @@ impl Checker {
         match expr {
             Expr::Variable { name, span } => {
                 let symbol = self.resolve_local(name, *span)?;
+
+                if matches!(symbol.ty, Type::Array { .. }) {
+                    return Err(SemanticError {
+                        message: "cannot assign to array expression".to_string(),
+                        span: *span,
+                    });
+                }
 
                 Ok(TypedExpr {
                     kind: TypedExprKind::Variable {
@@ -286,6 +318,7 @@ impl Checker {
                     ty: *inner.clone(),
                 })
             }
+            Expr::Index { base, index, span } => self.check_index_expr(base, index, *span),
             _ => Err(SemanticError {
                 message: "cannot assign to non-lvalue expression".to_string(),
                 span: op_span,
@@ -319,7 +352,7 @@ impl Checker {
     fn check_unary_expr(
         &self,
         op: UnaryOp,
-        op_span: &Span,
+        op_span: Span,
         expr: &Expr,
     ) -> Result<TypedExpr, SemanticError> {
         let typed_expr = self.check_expr(expr)?;
@@ -332,7 +365,7 @@ impl Checker {
                             "cannot perform unary operation '{op:?}' on non-integer type '{:?}'",
                             typed_expr.ty
                         ),
-                        span: *op_span,
+                        span: op_span,
                     });
                 }
                 typed_expr
@@ -348,7 +381,7 @@ impl Checker {
                             "cannot dereference non-pointer type '{:?}'",
                             typed_expr.ty
                         ),
-                        span: *op_span,
+                        span: op_span,
                     });
                 }
             },
@@ -356,7 +389,7 @@ impl Checker {
         Ok(TypedExpr {
             kind: TypedExprKind::Unary {
                 op,
-                op_span: *op_span,
+                op_span,
                 expr: Box::new(typed_expr),
             },
             ty,
@@ -400,7 +433,7 @@ impl Checker {
             .collect::<Result<Vec<_>, _>>()?;
 
         for (param, typed_arg) in function_info.params.iter().zip(&typed_args) {
-            if !param.ty.is_assignable_from(&typed_arg.ty) {
+            if !Self::is_assignable_expr(&param.ty, &typed_arg) {
                 return Err(SemanticError {
                     message: format!(
                         "cannot pass value of type '{:?}' to parameter of type '{:?}'",
@@ -418,6 +451,45 @@ impl Checker {
                 name_span: *name_span,
                 args: typed_args,
             },
+        })
+    }
+
+    fn check_index_expr(
+        &self,
+        base: &Expr,
+        index: &Expr,
+        span: Span,
+    ) -> Result<TypedExpr, SemanticError> {
+        let typed_base = self.check_expr(base)?;
+        let typed_index = self.check_expr(index)?;
+
+        if !typed_index.ty.is_integer() {
+            return Err(SemanticError {
+                message: format!(
+                    "array index must be integer type, found '{:?}'",
+                    typed_index.ty
+                ),
+                span,
+            });
+        }
+
+        let element_ty = match &typed_base.ty {
+            Type::Array { element, .. } | Type::Pointer(element) => *element.clone(),
+            ty => {
+                return Err(SemanticError {
+                    message: format!("cannot index expression of type '{ty:?}'"),
+                    span,
+                });
+            }
+        };
+
+        Ok(TypedExpr {
+            kind: TypedExprKind::Index {
+                base: Box::new(typed_base),
+                index: Box::new(typed_index),
+                span,
+            },
+            ty: element_ty,
         })
     }
 
@@ -454,7 +526,7 @@ impl Checker {
                     ty: symbol.ty,
                 })
             }
-            Expr::Unary { op, op_span, expr } => self.check_unary_expr(*op, op_span, expr),
+            Expr::Unary { op, op_span, expr } => self.check_unary_expr(*op, *op_span, expr),
             Expr::Binary {
                 op,
                 op_span,
@@ -464,8 +536,30 @@ impl Checker {
                 let typed_left = self.check_expr(left)?;
                 let typed_right = self.check_expr(right)?;
 
+                if matches!(op, BinaryOp::Equal | BinaryOp::NotEqual)
+                    && ((typed_left.ty.is_pointer() && typed_right.is_null_pointer_constant())
+                        || (typed_right.ty.is_pointer() && typed_left.is_null_pointer_constant()))
+                {
+                    let operand_ty = if typed_left.ty.is_pointer() {
+                        typed_left.ty.clone()
+                    } else {
+                        typed_right.ty.clone()
+                    };
+
+                    return Ok(TypedExpr {
+                        kind: TypedExprKind::Binary {
+                            op: *op,
+                            op_span: *op_span,
+                            operand_ty,
+                            left: Box::new(typed_left),
+                            right: Box::new(typed_right),
+                        },
+                        ty: Type::Int,
+                    });
+                }
+
                 let type_info =
-                    Self::check_binary_op_types(*op, op_span, &typed_left.ty, &typed_right.ty)?;
+                    Self::check_binary_op_types(*op, *op_span, &typed_left.ty, &typed_right.ty)?;
 
                 Ok(TypedExpr {
                     kind: TypedExprKind::Binary {
@@ -491,7 +585,7 @@ impl Checker {
                 let typed_target = self.check_lvalue(target, *op_span)?;
                 let typed_value = self.check_expr(value)?;
 
-                if !typed_target.ty.is_assignable_from(&typed_value.ty) {
+                if !Self::is_assignable_expr(&typed_target.ty, &typed_value) {
                     return Err(SemanticError {
                         message: format!(
                             "cannot assign value of type '{:?}' to variable of type '{:?}'",
@@ -521,7 +615,7 @@ impl Checker {
                 let typed_value = self.check_expr(value)?;
 
                 let type_info =
-                    Self::check_binary_op_types(*op, op_span, &typed_target.ty, &typed_value.ty)?;
+                    Self::check_binary_op_types(*op, *op_span, &typed_target.ty, &typed_value.ty)?;
 
                 if !typed_target.ty.is_assignable_from(&type_info.result_ty) {
                     return Err(SemanticError {
@@ -551,27 +645,25 @@ impl Checker {
                     op_span,
                 })
             }
-
             Expr::PrefixDec { expr, op_span } => {
                 self.check_inc_dec(expr, *op_span, |expr, op_span| TypedExprKind::PrefixDec {
                     expr,
                     op_span,
                 })
             }
-
             Expr::PostfixInc { expr, op_span } => {
                 self.check_inc_dec(expr, *op_span, |expr, op_span| TypedExprKind::PostfixInc {
                     expr,
                     op_span,
                 })
             }
-
             Expr::PostfixDec { expr, op_span } => {
                 self.check_inc_dec(expr, *op_span, |expr, op_span| TypedExprKind::PostfixDec {
                     expr,
                     op_span,
                 })
             }
+            Expr::Index { base, index, span } => self.check_index_expr(base, index, *span),
         }
     }
 
@@ -604,7 +696,7 @@ impl Checker {
 
                 for value in values {
                     let typed_value = self.check_expr(value)?;
-                    if !element_ty.is_assignable_from(&typed_value.ty) {
+                    if !Self::is_assignable_expr(&element_ty, &typed_value) {
                         return Err(SemanticError {
                             message: format!(
                                 "cannot assign value of type '{:?}' to array of type '{element_ty:?}'",
@@ -624,7 +716,7 @@ impl Checker {
             ) => {
                 // Scalars must be initialized with an Expr
                 let typed_init = self.check_expr(init_expr)?;
-                if !target_ty.is_assignable_from(&typed_init.ty) {
+                if !Self::is_assignable_expr(&target_ty, &typed_init) {
                     return Err(SemanticError {
                         message: format!(
                             "cannot assign value of type '{:?}' to variable of type '{target_ty:?}'",
@@ -661,7 +753,7 @@ impl Checker {
                     .as_ref()
                     .expect("return statement checked outside function");
 
-                if !return_type.is_assignable_from(&typed_expr.ty) {
+                if !Self::is_assignable_expr(&return_type, &typed_expr) {
                     return Err(SemanticError {
                         message: format!(
                             "cannot return value of type '{:?}' from function returning '{return_type:?}'",

@@ -731,3 +731,204 @@ fn qemu_expression_and_empty_statements_return_expected_values() {
         5,
     );
 }
+
+#[test]
+fn qemu_array_indexing_programs_return_expected_values() {
+    run_qemu_case(
+        "char-array-index-constant-rvalue",
+        "int main() {\n    char buf[3] = {'a', 'b', 'c'};\n    return buf[0];\n}\n",
+        97,
+    );
+
+    run_qemu_case(
+        "char-array-index-variable-rvalue",
+        "int main() {\n    char buf[3] = {'a', 'b', 'c'};\n    int i = 1;\n    return buf[i];\n}\n",
+        98,
+    );
+
+    run_qemu_case(
+        "int-array-index-constant-rvalue",
+        "int main() {\n    int nums[3] = {10, 20, 30};\n    return nums[2];\n}\n",
+        30,
+    );
+
+    run_qemu_case(
+        "int-array-index-variable-rvalue",
+        "int main() {\n    int nums[3] = {10, 20, 30};\n    int i = 1;\n    return nums[i];\n}\n",
+        20,
+    );
+
+    run_qemu_case(
+        "char-array-index-assignment-lvalue",
+        "int main() {\n    char buf[3] = {'a', 'b', 'c'};\n    buf[1] = 'x';\n    return buf[1];\n}\n",
+        120,
+    );
+
+    run_qemu_case(
+        "int-array-index-assignment-lvalue",
+        "int main() {\n    int nums[3] = {10, 20, 30};\n    nums[1] = 77;\n    return nums[1];\n}\n",
+        77,
+    );
+
+    run_qemu_case(
+        "char-array-index-compound-assignment",
+        "int main() {\n    char buf[3] = {1, 2, 3};\n    buf[1] += 40;\n    return buf[1];\n}\n",
+        42,
+    );
+
+    run_qemu_case(
+        "int-array-index-postfix-increment",
+        "int main() {\n    int nums[3] = {10, 20, 30};\n    int old = nums[1]++;\n    return old + nums[1];\n}\n",
+        41,
+    );
+
+    run_qemu_case(
+        "pointer-index-rvalue",
+        "int main() {\n    char buf[3] = {'a', 'b', 'c'};\n    char *p = buf;\n    return p[2];\n}\n",
+        99,
+    );
+
+    run_qemu_case(
+        "pointer-index-assignment-lvalue",
+        "int main() {\n    int nums[3] = {10, 20, 30};\n    int *p = nums;\n    p[2] = 44;\n    return nums[2];\n}\n",
+        44,
+    );
+
+    run_qemu_case(
+        "array-index-expression",
+        "int main() {\n    int nums[4] = {10, 20, 30, 40};\n    int i = 1;\n    return nums[i + 2];\n}\n",
+        40,
+    );
+
+    run_qemu_case(
+        "array-index-in-loop-sum",
+        "int main() {\n    char buf[3] = {1, 2, 3};\n    int sum = 0;\n    for (int i = 0; i < 3; i = i + 1) {\n        sum += buf[i];\n    }\n    return sum;\n}\n",
+        6,
+    );
+
+    run_qemu_case(
+        "array-index-zero-filled-tail",
+        "int main() {\n    int nums[4] = {7};\n    return nums[0] + nums[1] + nums[2] + nums[3];\n}\n",
+        7,
+    );
+
+    run_qemu_case(
+        "pointer-index-after-pointer-arithmetic",
+        "int main() {\n    char buf[4] = {'a', 'b', 'c', 'd'};\n    char *p = buf + 1;\n    return p[1];\n}\n",
+        99,
+    );
+
+    run_qemu_case(
+        "array-index-prefix-increment",
+        "int main() {\n    int nums[3] = {10, 20, 30};\n    return ++nums[1];\n}\n",
+        21,
+    );
+}
+
+#[test]
+fn qemu_postfix_pointer_dereference_programs_return_expected_values() {
+    run_qemu_case(
+        "postfix-pointer-dereference",
+        "int main() {\n    char buf[3] = {'a', 'b', 'c'};\n    char *p = buf;\n    return *p++;\n}\n",
+        97,
+    );
+
+    run_qemu_case(
+        "postfix-pointer-dereference-side-effect",
+        "int main() {\n    char buf[3] = {'a', 'b', 'c'};\n    char *p = buf;\n    *p++;\n    return *p;\n}\n",
+        98,
+    );
+
+    run_qemu_case(
+        "postfix-pointer-dereference-old-value",
+        "int main() {\n    char buf[3] = {'a', 'b', 'c'};\n    char *p = buf;\n    int a = *p++;\n    int b = *p++;\n    return a + b;\n}\n",
+        195,
+    );
+}
+
+#[test]
+fn qemu_null_pointer_constant_programs_return_expected_values() {
+    run_qemu_case(
+        "pointer-equals-null-right",
+        "int main() {\n    char *p = 0;\n    return p == 0;\n}\n",
+        1,
+    );
+
+    run_qemu_case(
+        "null-equals-pointer-left",
+        "int main() {\n    char *p = 0;\n    return 0 == p;\n}\n",
+        1,
+    );
+
+    run_qemu_case(
+        "pointer-not-equals-null-false",
+        "int main() {\n    char *p = 0;\n    return p != 0;\n}\n",
+        0,
+    );
+
+    run_qemu_case(
+        "non-null-pointer-not-equals-null",
+        "int main() {\n    char buf[1] = {'a'};\n    char *p = buf;\n    return p != 0;\n}\n",
+        1,
+    );
+
+    run_qemu_case(
+        "non-null-pointer-equals-null-false",
+        "int main() {\n    char buf[1] = {'a'};\n    char *p = buf;\n    return p == 0;\n}\n",
+        0,
+    );
+
+    run_qemu_case(
+        "assign-null-to-pointer",
+        "int main() {\n    char buf[1] = {'a'};\n    char *p = buf;\n    p = 0;\n    return p == 0;\n}\n",
+        1,
+    );
+
+    run_qemu_case(
+        "pass-null-to-pointer-parameter",
+        "int is_null(char *p) {\n    return p == 0;\n}\n\nint main() {\n    return is_null(0);\n}\n",
+        1,
+    );
+
+    run_qemu_case(
+        "return-null-from-pointer-function",
+        "char *null_ptr() {\n    return 0;\n}\n\nint main() {\n    return null_ptr() == 0;\n}\n",
+        1,
+    );
+
+    run_qemu_case(
+        "array-of-pointers-null-initializers",
+        "int main() {\n    char *ptrs[2] = {0, 0};\n    return ptrs[0] == 0 && ptrs[1] == 0;\n}\n",
+        1,
+    );
+
+    run_qemu_case(
+        "array-of-pointers-partial-null-initializer",
+        "int main() {\n    char buf[1] = {'a'};\n    char *ptrs[2] = {buf};\n    return ptrs[0] != 0 && ptrs[1] == 0;\n}\n",
+        1,
+    );
+
+    run_qemu_case(
+        "compatible-pointers-compare-equal",
+        "int main() {\n    char buf[1] = {'a'};\n    char *p = buf;\n    char *q = buf;\n    return p == q;\n}\n",
+        1,
+    );
+
+    run_qemu_case(
+        "compatible-pointers-compare-not-equal",
+        "int main() {\n    char buf[2] = {'a', 'b'};\n    char *p = buf;\n    char *q = buf + 1;\n    return p != q;\n}\n",
+        1,
+    );
+
+    run_qemu_case(
+        "zero-valued-constant-expression-initializes-pointer",
+        "int main() {\n    char *p = 0 + 0;\n    return p == 0;\n}\n",
+        1,
+    );
+
+    run_qemu_case(
+        "zero-valued-constant-expression-compares-with-pointer",
+        "int main() {\n    char *p = 0;\n    return p == 0 * 1;\n}\n",
+        1,
+    );
+}

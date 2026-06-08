@@ -6,7 +6,7 @@
 
 `rivet` is a C compiler written in Rust that targets RV32IM assembly. It is working toward C23 by growing a small, tested C subset.
 
-It currently handles integer and character types, basic pointers, fixed-size local arrays, functions, block scope, common control flow, and C-like expression precedence. It emits RV32IM assembly and reports lexer, parser, and semantic errors with source locations.
+It currently handles integer and character types, basic pointers, fixed-size local arrays, array indexing, functions, block scope, common control flow, and C-like expression precedence. It emits RV32IM assembly and reports lexer, parser, and semantic errors with source locations.
 
 The current language subset supports programs shaped like:
 
@@ -195,13 +195,17 @@ Expressions and operators:
 - [x] prefix and postfix `++` / `--`
 - [x] pointer dereference as an rvalue: `*p`
 - [x] pointer dereference as an lvalue: `*p = value`
+- [x] array indexing as rvalue and lvalue: `a[i]`
+- [x] null pointer constants in pointer assignment, calls, returns, and comparisons
+- [x] compatible pointer equality and inequality
 - [ ] conditional operator `?:`
 - [ ] comma operator
 - [ ] casts
 - [ ] `sizeof`
 - [ ] `_Alignof` / `alignof`
 - [ ] address-of: `&`
-- [ ] array-to-pointer and function-to-pointer decay
+- [x] array-to-pointer decay for local array expressions
+- [ ] function-to-pointer decay
 
 Types and semantic analysis:
 
@@ -245,7 +249,7 @@ Objects, aggregate types, and declarators:
 - [x] pointer arithmetic scaled by pointee size
 - [x] fixed-size local array declarations and stack allocation
 - [x] scalar initializer lists with zero-fill for local arrays
-- [ ] array indexing
+- [x] array indexing
 - [ ] full C declarator grammar
 - [ ] structs and unions
 - [ ] member access: `.` and `->`

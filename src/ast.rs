@@ -120,13 +120,20 @@ pub enum Expr {
         expr: Box<Self>,
         op_span: Span,
     },
+    Index {
+        base: Box<Self>,
+        index: Box<Self>,
+        span: Span,
+    },
 }
 
 impl Expr {
     #[must_use]
     pub const fn diagnostic_span(&self) -> Span {
         match self {
-            Self::IntLiteral { span, .. } | Self::Variable { span, .. } => *span,
+            Self::IntLiteral { span, .. }
+            | Self::Variable { span, .. }
+            | Self::Index { span, .. } => *span,
             Self::Unary { op_span, .. }
             | Self::Binary { op_span, .. }
             | Self::Assign { op_span, .. }

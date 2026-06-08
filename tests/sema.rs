@@ -2837,3 +2837,104 @@ fn rejects_do_while_condition_using_undeclared_local() {
 
     assert_eq!(err.message, "undeclared local variable 'x'");
 }
+
+#[test]
+fn rejects_indexing_non_array_non_pointer() {
+    let program = main_program(vec![Statement::Return(Expr::Index {
+        base: Box::new(Expr::IntLiteral {
+            value: 42,
+            span: span(),
+        }),
+        index: Box::new(Expr::IntLiteral {
+            value: 0,
+            span: span(),
+        }),
+        span: span(),
+    })]);
+
+    let err = check(&program).expect_err("semantic check should fail");
+
+    assert_eq!(err.message, "cannot index expression of type 'Int'");
+}
+
+#[test]
+fn rejects_non_integer_array_index() {
+    let program = Program {
+        functions: vec![Function {
+            name: "main".to_string(),
+            name_span: span(),
+            return_type: Type::Int,
+            params: vec![],
+            body: vec![
+                Statement::VarDecl {
+                    name: "buf".to_string(),
+                    name_span: span(),
+                    ty: Type::Array {
+                        element: Box::new(Type::Char),
+                        len: 3,
+                    },
+                    init: None,
+                },
+                Statement::VarDecl {
+                    name: "p".to_string(),
+                    name_span: span(),
+                    ty: Type::Pointer(Box::new(Type::Int)),
+                    init: None,
+                },
+                Statement::Return(Expr::Index {
+                    base: Box::new(Expr::Variable {
+                        name: "buf".to_string(),
+                        span: span(),
+                    }),
+                    index: Box::new(Expr::Variable {
+                        name: "p".to_string(),
+                        span: span(),
+                    }),
+                    span: span(),
+                }),
+            ],
+        }],
+        eof_span: span(),
+    };
+
+    let err = check(&program).expect_err("semantic check should fail");
+
+    assert_eq!(
+        err.message,
+        "array index must be integer type, found 'Pointer(Int)'"
+    );
+}
+
+#[test]
+fn rejects_assigning_to_array_variable() {
+    let program = main_program(vec![
+        Statement::VarDecl {
+            name: "buf".to_string(),
+            ty: Type::Array {
+                element: Box::new(Type::Char),
+                len: 3,
+            },
+            init: None,
+            name_span: span(),
+        },
+        Statement::ExprStatement(Expr::Assign {
+            target: Box::new(Expr::Variable {
+                name: "buf".to_string(),
+                span: span(),
+            }),
+            op_span: span(),
+            value: Box::new(Expr::IntLiteral {
+                value: 0,
+                span: span(),
+            }),
+        }),
+        Statement::Return(Expr::IntLiteral {
+            value: 0,
+            span: span(),
+        }),
+    ]);
+
+    let err = check(&program).expect_err("semantic check should fail");
+
+    assert_eq!(err.message, "cannot assign to array expression");
+}
