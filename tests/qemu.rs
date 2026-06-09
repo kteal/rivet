@@ -17,6 +17,22 @@ fn run_qemu_case(name: &str, source: &str, expected: i32) {
     assert!(status.success(), "qemu runner failed for {name}");
 }
 
+fn run_qemu_file(path: &str, expected: i32) {
+    let status = Command::new("scripts/run-rv32.sh")
+        .arg("--expect")
+        .arg(expected.to_string())
+        .arg(path)
+        .status()
+        .expect("failed to run scripts/run-rv32.sh");
+
+    assert!(status.success(), "qemu runner failed for {path}");
+}
+
+#[test]
+fn qemu_adler32_reduced_harness_returns_success() {
+    run_qemu_file("tests/programs/adler32_harness.c", 0);
+}
+
 #[test]
 fn qemu_return_and_arithmetic_programs_return_expected_values() {
     run_qemu_case("return-42", "int main() {\n    return 42;\n}\n", 42);
@@ -99,6 +115,35 @@ fn qemu_unary_programs_return_expected_values() {
         "unary-combined",
         "int main() {\n    return !0 + !!5 + ~0 + -3;\n}\n",
         254,
+    );
+}
+
+#[test]
+fn qemu_cast_programs_return_expected_values() {
+    run_qemu_case(
+        "cast-to-unsigned-char-narrows",
+        "int main() {\n    return (unsigned char)300;\n}\n",
+        44,
+    );
+    run_qemu_case(
+        "cast-to-signed-char-sign-extends",
+        "int main() {\n    return (signed char)255;\n}\n",
+        255,
+    );
+    run_qemu_case(
+        "cast-controls-comparison-type",
+        "int main() {\n    return (unsigned)-1 > 1;\n}\n",
+        1,
+    );
+    run_qemu_case(
+        "adler-shaped-unsigned-long-cast",
+        "int main() {\n    unsigned long x = 65521UL;\n    return ((unsigned long)x << 1) != 0;\n}\n",
+        1,
+    );
+    run_qemu_case(
+        "const-qualified-cast",
+        "int main() {\n    return (const unsigned char)511;\n}\n",
+        255,
     );
 }
 

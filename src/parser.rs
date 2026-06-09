@@ -88,8 +88,20 @@ impl Parser {
         &self.tokens[self.pos]
     }
 
+    fn peek_nth(&self, n: usize) -> &Token {
+        self.tokens.get(self.pos + n).unwrap_or_else(|| {
+            self.tokens
+                .last()
+                .expect("parser token stream should end with EOF")
+        })
+    }
+
     fn peek_kind(&self) -> &TokenKind {
         &self.peek().kind
+    }
+
+    fn peek_nth_kind(&self, n: usize) -> &TokenKind {
+        &self.peek_nth(n).kind
     }
 
     fn advance(&mut self) -> Token {
@@ -218,6 +230,7 @@ impl Parser {
                 | TokenKind::KwUnsigned
                 | TokenKind::KwLong
                 | TokenKind::KwSigned
+                | TokenKind::KwConst
         )
     }
 
@@ -288,6 +301,9 @@ impl Parser {
                     self.advance();
                     spec.long_count += 1;
                     saw_any = true;
+                }
+                TokenKind::KwConst => {
+                    self.advance();
                 }
                 _ => break,
             }
@@ -507,6 +523,17 @@ impl Parser {
     }
 
     fn parse_unary(&mut self) -> Result<Expr, ParseError> {
+        if self.peek_kind() == &TokenKind::LParen && Self::is_type_decl(self.peek_nth_kind(1)) {
+            let span = self.advance().span;
+            let ty = self.parse_type()?;
+            self.expect(&TokenKind::RParen)?;
+            let expr = self.parse_unary()?;
+            return Ok(Expr::Cast {
+                ty,
+                expr: Box::new(expr),
+                span,
+            });
+        }
         if self.peek_kind() == &TokenKind::PlusPlus {
             let op = self.advance();
             let expr = self.parse_unary()?;

@@ -3349,3 +3349,94 @@ fn rejects_unsuffixed_hex_literals_that_do_not_fit_current_integer_types() {
         "integer literal '4294967296' is too large for type 'Int'"
     );
 }
+
+#[test]
+fn typed_scalar_cast_has_target_type() {
+    let program = main_program(vec![Statement::Return(Expr::Cast {
+        ty: Type::UnsignedLong,
+        span: span(),
+        expr: Box::new(Expr::IntLiteral {
+            value: 1,
+            suffix: IntLiteralSuffix::None,
+            base: IntLiteralBase::Decimal,
+            span: span(),
+        }),
+    })]);
+
+    let typed_program = check(&program).expect("semantic check should succeed");
+    let TypedStatement::Return(expr) = &typed_program.functions[0].body[0] else {
+        panic!("expected typed return statement");
+    };
+
+    assert_eq!(expr.ty, Type::UnsignedLong);
+
+    let TypedExprKind::Cast {
+        target_ty,
+        expr: inner,
+        ..
+    } = &expr.kind
+    else {
+        panic!("expected typed cast expression");
+    };
+
+    assert_eq!(*target_ty, Type::UnsignedLong);
+    assert_eq!(inner.ty, Type::Int);
+}
+
+#[test]
+fn accepts_casts_between_integer_types() {
+    let program = main_program(vec![Statement::Return(Expr::Cast {
+        ty: Type::UnsignedChar,
+        span: span(),
+        expr: Box::new(Expr::Cast {
+            ty: Type::SignedChar,
+            span: span(),
+            expr: Box::new(Expr::IntLiteral {
+                value: 255,
+                suffix: IntLiteralSuffix::None,
+                base: IntLiteralBase::Decimal,
+                span: span(),
+            }),
+        }),
+    })]);
+
+    check(&program).expect("semantic check should succeed");
+}
+
+#[test]
+fn rejects_cast_from_pointer_to_integer() {
+    let program = Program {
+        functions: vec![Function {
+            return_type: Type::Int,
+            name_span: span(),
+            name: "main".to_string(),
+            params: vec![],
+            body: vec![
+                Statement::VarDecl {
+                    ty: Type::Pointer(Box::new(Type::Char)),
+                    name: "p".to_string(),
+                    name_span: span(),
+                    init: Some(Initializer::Expr(Expr::IntLiteral {
+                        value: 0,
+                        suffix: IntLiteralSuffix::None,
+                        base: IntLiteralBase::Decimal,
+                        span: span(),
+                    })),
+                },
+                Statement::Return(Expr::Cast {
+                    ty: Type::Int,
+                    span: span(),
+                    expr: Box::new(Expr::Variable {
+                        name: "p".to_string(),
+                        span: span(),
+                    }),
+                }),
+            ],
+        }],
+        eof_span: span(),
+    };
+
+    let err = check(&program).expect_err("semantic check should fail");
+
+    assert_eq!(err.message, "cannot cast type 'Pointer(Char)' to 'Int'");
+}

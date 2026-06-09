@@ -25,6 +25,8 @@ target
 
 tests/*
 !tests/**/*.rs
+!tests/programs/
+!tests/programs/**/*.c
 
 # Added by cargo
 

@@ -495,6 +495,31 @@ impl Checker {
         })
     }
 
+    fn check_cast_expr(
+        &self,
+        ty: &Type,
+        expr: &Expr,
+        span: Span,
+    ) -> Result<TypedExpr, SemanticError> {
+        let typed_expr = self.check_expr(expr)?;
+
+        if !ty.is_integer() || !typed_expr.ty.is_integer() {
+            return Err(SemanticError {
+                message: format!("cannot cast type '{:?}' to '{ty:?}'", typed_expr.ty),
+                span,
+            });
+        }
+
+        Ok(TypedExpr {
+            ty: ty.clone(),
+            kind: TypedExprKind::Cast {
+                target_ty: ty.clone(),
+                expr: Box::new(typed_expr),
+                span,
+            },
+        })
+    }
+
     #[allow(clippy::too_many_lines)]
     fn check_expr(&self, expr: &Expr) -> Result<TypedExpr, SemanticError> {
         match expr {
@@ -743,6 +768,7 @@ impl Checker {
                 })
             }
             Expr::Index { base, index, span } => self.check_index_expr(base, index, *span),
+            Expr::Cast { ty, expr, span } => self.check_cast_expr(ty, expr, *span),
         }
     }
 

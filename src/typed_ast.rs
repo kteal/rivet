@@ -82,7 +82,8 @@ impl TypedExpr {
         match &self.kind {
             TypedExprKind::IntLiteral { span, .. }
             | TypedExprKind::Variable { span, .. }
-            | TypedExprKind::Index { span, .. } => *span,
+            | TypedExprKind::Index { span, .. }
+            | TypedExprKind::Cast { span, .. } => *span,
             TypedExprKind::Unary { op_span, .. }
             | TypedExprKind::Binary { op_span, .. }
             | TypedExprKind::Assign { op_span, .. }
@@ -199,6 +200,11 @@ pub enum TypedExprKind {
     Index {
         base: Box<TypedExpr>,
         index: Box<TypedExpr>,
+        span: Span,
+    },
+    Cast {
+        target_ty: Type,
+        expr: Box<TypedExpr>,
         span: Span,
     },
 }

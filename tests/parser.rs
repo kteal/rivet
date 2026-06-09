@@ -601,3 +601,92 @@ fn rejects_zero_length_array_declaration() {
 
     assert_eq!(err.message, "array size must be greater than 0, got '0'");
 }
+
+#[test]
+fn parses_const_arg() {
+    let program = parse_source("unsigned long f(const unsigned char *buf) { return buf[0];}");
+
+    let function = &program.functions[0];
+    assert_eq!(function.return_type, Type::UnsignedLong);
+    assert_eq!(function.name, "f");
+    assert_eq!(function.params.len(), 1);
+    assert_eq!(
+        function.params[0].ty,
+        Type::Pointer(Box::new(Type::UnsignedChar))
+    );
+    assert_eq!(function.params[0].name, "buf");
+}
+
+#[test]
+fn parses_const_decl() {
+    let program =
+        parse_source("unsigned long f(unsigned char *buf) { const int x = 4; return x; }");
+
+    let function = &program.functions[0];
+    assert_eq!(function.return_type, Type::UnsignedLong);
+    assert_eq!(function.name, "f");
+    assert_eq!(function.params.len(), 1);
+    assert_eq!(
+        function.params[0].ty,
+        Type::Pointer(Box::new(Type::UnsignedChar))
+    );
+    assert_eq!(function.params[0].name, "buf");
+}
+
+#[test]
+fn parses_scalar_cast_expressions() {
+    let expr = only_return_expr("int main() { return (unsigned)1; }");
+
+    let Expr::Cast { ty, expr, .. } = expr else {
+        panic!("expected cast expression");
+    };
+
+    assert_eq!(ty, Type::UnsignedInt);
+    assert!(matches!(
+        expr.as_ref(),
+        Expr::IntLiteral { value: 1, .. }
+    ));
+}
+
+#[test]
+fn parses_const_qualified_cast_expressions() {
+    let expr = only_return_expr("int main() { return (const unsigned long)1; }");
+
+    let Expr::Cast { ty, expr, .. } = expr else {
+        panic!("expected cast expression");
+    };
+
+    assert_eq!(ty, Type::UnsignedLong);
+    assert!(matches!(
+        expr.as_ref(),
+        Expr::IntLiteral { value: 1, .. }
+    ));
+}
+
+#[test]
+fn cast_has_unary_precedence() {
+    let expr = only_return_expr("int main() { return (unsigned)-1 + 2; }");
+
+    let Expr::Binary {
+        op: BinaryOp::Add,
+        left,
+        right,
+        ..
+    } = expr
+    else {
+        panic!("expected addition expression");
+    };
+
+    assert!(matches!(
+        left.as_ref(),
+        Expr::Cast {
+            ty: Type::UnsignedInt,
+            expr,
+            ..
+        } if matches!(expr.as_ref(), Expr::Unary { op: UnaryOp::Negate, .. })
+    ));
+    assert!(matches!(
+        right.as_ref(),
+        Expr::IntLiteral { value: 2, .. }
+    ));
+}

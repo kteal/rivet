@@ -127,6 +127,11 @@ pub enum Expr {
         index: Box<Self>,
         span: Span,
     },
+    Cast {
+        ty: Type,
+        expr: Box<Self>,
+        span: Span,
+    },
 }
 
 impl Expr {
@@ -135,7 +140,8 @@ impl Expr {
         match self {
             Self::IntLiteral { span, .. }
             | Self::Variable { span, .. }
-            | Self::Index { span, .. } => *span,
+            | Self::Index { span, .. }
+            | Self::Cast { span, .. } => *span,
             Self::Unary { op_span, .. }
             | Self::Binary { op_span, .. }
             | Self::Assign { op_span, .. }

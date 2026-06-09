@@ -105,7 +105,7 @@ cargo run -- path/to/program.c
 Example:
 
 ```bash
-cargo run -- tests/smoke.c
+cargo run -- tests/programs/adler32_harness.c
 ```
 
 Lex, parse, and semantic errors are reported with file, line, and column information:
@@ -183,7 +183,8 @@ Program structure and declarations:
 - [ ] globals
 - [ ] typedef names
 - [ ] storage classes: `extern`, `static`, `auto`, `register`, `thread_local`
-- [ ] qualifiers: `const`, `volatile`, `restrict`, `_Atomic`
+- [x] ignored `const` qualifier parsing
+- [ ] remaining qualifiers: `volatile`, `restrict`, `_Atomic`
 - [ ] full C declarator grammar
 
 Expressions and operators:
@@ -208,7 +209,7 @@ Expressions and operators:
 - [x] compatible pointer equality and inequality
 - [ ] conditional operator `?:`
 - [ ] comma operator
-- [ ] casts
+- [x] scalar casts
 - [ ] `sizeof`
 - [ ] `_Alignof` / `alignof`
 - [ ] address-of: `&`

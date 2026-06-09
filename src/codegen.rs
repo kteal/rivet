@@ -569,6 +569,21 @@ impl Codegen {
         }
     }
 
+    fn emit_cast_to(&mut self, target_ty: &Type) {
+        match target_ty {
+            Type::Char | Type::SignedChar => {
+                // Shifting left 24 bits, then right 24 bits sign-extends low byte
+                self.emit_line(format_args!("slli a0, a0, 24"));
+                self.emit_line(format_args!("srai a0, a0, 24"));
+            }
+            Type::UnsignedChar => {
+                // Zeros out top 3 bytes
+                self.emit_line(format_args!("andi a0, a0, 255"));
+            }
+            _ => (),
+        }
+    }
+
     fn emit_expr(&mut self, expr: &TypedExpr) {
         match &expr.kind {
             TypedExprKind::IntLiteral { value, .. } => {
@@ -638,6 +653,12 @@ impl Codegen {
             TypedExprKind::Index { .. } => {
                 self.emit_addr(expr);
                 self.emit_load_from_addr(&expr.ty);
+            }
+            TypedExprKind::Cast {
+                target_ty, expr, ..
+            } => {
+                self.emit_expr(expr);
+                self.emit_cast_to(target_ty);
             }
         }
     }
