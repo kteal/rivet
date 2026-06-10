@@ -345,6 +345,21 @@ fn qemu_unsigned_int_programs_return_expected_values() {
 }
 
 #[test]
+fn qemu_typedef_programs_return_expected_values() {
+    run_qemu_case(
+        "typedef-scalar-and-pointer-aliases",
+        "typedef unsigned long uLong;\ntypedef unsigned char Bytef;\n\nuLong first(const Bytef *buf) {\n    return buf[0];\n}\n\nint main() {\n    Bytef buf[1] = {'a'};\n    return first(buf);\n}\n",
+        97,
+    );
+
+    run_qemu_case(
+        "typedef-local-declaration",
+        "typedef unsigned int uInt;\n\nint main() {\n    uInt x = 42U;\n    return x;\n}\n",
+        42,
+    );
+}
+
+#[test]
 fn qemu_long_programs_return_expected_values() {
     run_qemu_case(
         "long-local-initializer",

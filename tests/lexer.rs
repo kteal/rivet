@@ -145,6 +145,23 @@ fn lexes_variable_declaration() {
 }
 
 #[test]
+fn lexes_typedef_keyword() {
+    let tokens = lex_with_struct("typedef unsigned long uLong;").expect("lexing should succeed");
+
+    assert_eq!(
+        token_kinds(&tokens),
+        vec![
+            TokenKind::KwTypedef,
+            TokenKind::KwUnsigned,
+            TokenKind::KwLong,
+            TokenKind::Ident("uLong".to_string()),
+            TokenKind::Semicolon,
+            TokenKind::Eof,
+        ]
+    );
+}
+
+#[test]
 fn lexes_commas_in_parameter_and_argument_lists() {
     let tokens = lex_with_struct("int add(int x, int y) { return add(x, y); }")
         .expect("lexing should succeed");

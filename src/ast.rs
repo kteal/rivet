@@ -2,8 +2,21 @@ use crate::lexer::Span;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Program {
-    pub functions: Vec<Function>,
+    pub declarations: Vec<ExternalDecl>,
     pub eof_span: Span,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ExternalDecl {
+    Function(Function),
+    Typedef(Typedef),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Typedef {
+    pub name: String,
+    pub name_span: Span,
+    pub ty: Type,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

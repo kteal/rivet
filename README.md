@@ -181,7 +181,8 @@ Program structure and declarations:
 - [ ] declaration lists mixed with statements
 - [ ] multiple translation-unit-level declarations
 - [ ] globals
-- [ ] typedef names
+- [x] simple top-level typedef aliases
+- [ ] full typedef behavior: comma-separated declarators, arbitrary declaration-specifier ordering, alias-preserving diagnostics, and scope shadowing
 - [ ] storage classes: `extern`, `static`, `auto`, `register`, `thread_local`
 - [x] ignored `const` qualifier parsing
 - [ ] remaining qualifiers: `volatile`, `restrict`, `_Atomic`
@@ -234,7 +235,8 @@ Types and semantic analysis:
 - [ ] full integer conversion rules
 - [ ] remaining signedness spelling and combinations
 - [ ] other non-`int` scalar types: `short`, `unsigned short`
-- [ ] fixed-width and standard integer typedef compatibility
+- [x] project-local typedef compatibility for integer aliases
+- [ ] standard-library and fixed-width typedef compatibility
 - [ ] `bool`, `true`, `false`
 - [ ] enum types and enumerators
 

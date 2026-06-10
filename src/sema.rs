@@ -1,13 +1,13 @@
 use std::collections::HashMap;
 
 use crate::ast::{
-    BinaryOp, Expr, Function, Initializer, IntLiteralBase, IntLiteralSuffix, Param, Program,
-    Statement, Type, UnaryOp,
+    BinaryOp, Expr, ExternalDecl, Function, Initializer, IntLiteralBase, IntLiteralSuffix, Param,
+    Program, Statement, Type, UnaryOp,
 };
 use crate::lexer::Span;
 use crate::typed_ast::{
-    LocalId, TypedExpr, TypedExprKind, TypedFunction, TypedInitializer, TypedParam, TypedProgram,
-    TypedStatement,
+    LocalId, TypedExpr, TypedExprKind, TypedExternalDecl, TypedFunction, TypedInitializer,
+    TypedParam, TypedProgram, TypedStatement,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1087,19 +1087,25 @@ impl Checker {
 pub fn check(program: &Program) -> Result<TypedProgram, SemanticError> {
     let mut checker = Checker::new();
 
-    for function in &program.functions {
-        checker.declare_function(function)?;
+    for decl in &program.declarations {
+        if let ExternalDecl::Function(function) = decl {
+            checker.declare_function(function)?;
+        }
     }
 
     checker.check_main_function(program.eof_span)?;
 
-    let mut functions = vec![];
-    for function in &program.functions {
-        functions.push(checker.check_function(function)?);
+    let mut declarations = vec![];
+    for decl in &program.declarations {
+        if let ExternalDecl::Function(function) = decl {
+            declarations.push(TypedExternalDecl::Function(
+                checker.check_function(function)?,
+            ));
+        }
     }
 
     Ok(TypedProgram {
-        functions,
+        declarations,
         eof_span: program.eof_span,
     })
 }

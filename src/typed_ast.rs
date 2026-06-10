@@ -3,8 +3,14 @@ use crate::lexer::Span;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TypedProgram {
-    pub functions: Vec<TypedFunction>,
+    pub declarations: Vec<TypedExternalDecl>,
     pub eof_span: Span,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TypedExternalDecl {
+    Function(TypedFunction),
+    Typedef,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

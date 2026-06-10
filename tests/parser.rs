@@ -1,5 +1,9 @@
+mod common;
+
+use common::{first_function, functions};
 use rivet::ast::{
-    BinaryOp, Expr, Initializer, IntLiteralBase, IntLiteralSuffix, Statement, Type, UnaryOp,
+    BinaryOp, Expr, ExternalDecl, Initializer, IntLiteralBase, IntLiteralSuffix, Statement, Type,
+    UnaryOp,
 };
 use rivet::lexer::lex;
 use rivet::parser::parse;
@@ -16,7 +20,7 @@ fn parse_source_err(source: &str) -> rivet::parser::ParseError {
 
 fn main_body(source: &str) -> Vec<Statement> {
     let program = parse_source(source);
-    program.functions[0].body.clone()
+    first_function(&program).body.clone()
 }
 
 fn only_statement(source: &str) -> Statement {
@@ -37,11 +41,11 @@ fn only_return_expr(source: &str) -> Expr {
 fn parses_basic_main_function() {
     let program = parse_source("int main() { return 42; }");
 
-    assert_eq!(program.functions.len(), 1);
-    assert_eq!(program.functions[0].return_type, Type::Int);
-    assert_eq!(program.functions[0].name, "main");
+    assert_eq!(functions(&program).len(), 1);
+    assert_eq!(first_function(&program).return_type, Type::Int);
+    assert_eq!(first_function(&program).name, "main");
     assert!(matches!(
-        program.functions[0].body[0],
+        first_function(&program).body[0],
         Statement::Return(Expr::IntLiteral { value: 42, .. })
     ));
 }
@@ -127,7 +131,7 @@ fn parses_function_returning_binary_op() {
 #[test]
 fn parses_pointer_return_type() {
     let program = parse_source("int *id(int *p) { return p; }");
-    let function = &program.functions[0];
+    let function = &first_function(&program);
 
     assert_eq!(function.return_type, Type::Pointer(Box::new(Type::Int)));
     assert_eq!(function.name, "id");
@@ -197,7 +201,7 @@ fn parses_char_literals_as_int_literals() {
 #[test]
 fn parses_function_parameters_and_argument_lists() {
     let program = parse_source("int add(int x, char y) { return add(x, y); }");
-    let function = &program.functions[0];
+    let function = &first_function(&program);
 
     assert_eq!(function.params[0].ty, Type::Int);
     assert_eq!(function.params[0].name, "x");
@@ -420,7 +424,7 @@ fn parses_block_statements() {
 fn parses_pointer_parameter_and_dereference_expression() {
     let program = parse_source("int first(char *buf) { return *buf; }");
 
-    let function = &program.functions[0];
+    let function = &first_function(&program);
     assert_eq!(function.params[0].ty, Type::Pointer(Box::new(Type::Char)));
 
     let Statement::Return(expr) = &function.body[0] else {
@@ -444,7 +448,7 @@ fn parses_pointer_parameter_and_dereference_expression() {
 #[test]
 fn parses_dereference_assignment_expression_statement() {
     let program = parse_source("int write_first(char *p) { *p = 42; return *p; }");
-    let body = &program.functions[0].body;
+    let body = &first_function(&program).body;
 
     let Statement::ExprStatement(Expr::Assign { target, value, .. }) = &body[0] else {
         panic!("expected dereference assignment expression statement");
@@ -465,7 +469,7 @@ fn parses_pointer_local_declarations() {
     let program =
         parse_source("int main() { char *buf; int **cursor; unsigned int *sums; return 0; }");
 
-    let body = &program.functions[0].body;
+    let body = &first_function(&program).body;
 
     let Statement::VarDecl { ty: buf_ty, .. } = &body[0] else {
         panic!("expected first local declaration");
@@ -492,7 +496,7 @@ fn parses_signed_type_specifiers() {
         "int main() { signed a; signed int b; signed long c; signed long int d; return 0; }",
     );
 
-    let body = &program.functions[0].body;
+    let body = &first_function(&program).body;
 
     let Statement::VarDecl { ty: a_ty, .. } = &body[0] else {
         panic!("expected first local declaration");
@@ -519,7 +523,7 @@ fn parses_signed_type_specifiers() {
 fn parses_array_local_declarations() {
     let program = parse_source("int main() { char buf[3]; int nums[10]; return 0; }");
 
-    let body = &program.functions[0].body;
+    let body = &first_function(&program).body;
 
     let Statement::VarDecl { ty: buf_ty, .. } = &body[0] else {
         panic!("expected first local declaration");
@@ -548,7 +552,7 @@ fn parses_array_local_declarations() {
 fn parses_array_initializer_list() {
     let program = parse_source("int main() { char buf[3] = {1, 2, 3}; return 0; }");
 
-    let Statement::VarDecl { init, .. } = &program.functions[0].body[0] else {
+    let Statement::VarDecl { init, .. } = &first_function(&program).body[0] else {
         panic!("expected local declaration");
     };
 
@@ -566,7 +570,7 @@ fn parses_array_initializer_list() {
 fn parses_empty_array_initializer_list() {
     let program = parse_source("int main() { int nums[2] = {}; return 0; }");
 
-    let Statement::VarDecl { init, .. } = &program.functions[0].body[0] else {
+    let Statement::VarDecl { init, .. } = &first_function(&program).body[0] else {
         panic!("expected local declaration");
     };
 
@@ -581,7 +585,7 @@ fn parses_empty_array_initializer_list() {
 fn parses_array_of_pointers_declaration() {
     let program = parse_source("int main() { char *bufs[4]; return 0; }");
 
-    let Statement::VarDecl { ty, name, .. } = &program.functions[0].body[0] else {
+    let Statement::VarDecl { ty, name, .. } = &first_function(&program).body[0] else {
         panic!("expected local declaration");
     };
 
@@ -606,7 +610,7 @@ fn rejects_zero_length_array_declaration() {
 fn parses_const_arg() {
     let program = parse_source("unsigned long f(const unsigned char *buf) { return buf[0];}");
 
-    let function = &program.functions[0];
+    let function = &first_function(&program);
     assert_eq!(function.return_type, Type::UnsignedLong);
     assert_eq!(function.name, "f");
     assert_eq!(function.params.len(), 1);
@@ -622,7 +626,7 @@ fn parses_const_decl() {
     let program =
         parse_source("unsigned long f(unsigned char *buf) { const int x = 4; return x; }");
 
-    let function = &program.functions[0];
+    let function = &first_function(&program);
     assert_eq!(function.return_type, Type::UnsignedLong);
     assert_eq!(function.name, "f");
     assert_eq!(function.params.len(), 1);
@@ -642,10 +646,7 @@ fn parses_scalar_cast_expressions() {
     };
 
     assert_eq!(ty, Type::UnsignedInt);
-    assert!(matches!(
-        expr.as_ref(),
-        Expr::IntLiteral { value: 1, .. }
-    ));
+    assert!(matches!(expr.as_ref(), Expr::IntLiteral { value: 1, .. }));
 }
 
 #[test]
@@ -657,10 +658,7 @@ fn parses_const_qualified_cast_expressions() {
     };
 
     assert_eq!(ty, Type::UnsignedLong);
-    assert!(matches!(
-        expr.as_ref(),
-        Expr::IntLiteral { value: 1, .. }
-    ));
+    assert!(matches!(expr.as_ref(), Expr::IntLiteral { value: 1, .. }));
 }
 
 #[test]
@@ -685,8 +683,51 @@ fn cast_has_unary_precedence() {
             ..
         } if matches!(expr.as_ref(), Expr::Unary { op: UnaryOp::Negate, .. })
     ));
-    assert!(matches!(
-        right.as_ref(),
-        Expr::IntLiteral { value: 2, .. }
-    ));
+    assert!(matches!(right.as_ref(), Expr::IntLiteral { value: 2, .. }));
+}
+
+#[test]
+fn parses_typedef_declarations() {
+    let program = parse_source(
+        "typedef unsigned long uLong;\ntypedef unsigned char *BytefPtr;\nint main() { return 0; }",
+    );
+
+    assert_eq!(program.declarations.len(), 3);
+
+    let ExternalDecl::Typedef(first) = &program.declarations[0] else {
+        panic!("expected first declaration to be typedef");
+    };
+    assert_eq!(first.name, "uLong");
+    assert_eq!(first.ty, Type::UnsignedLong);
+
+    let ExternalDecl::Typedef(second) = &program.declarations[1] else {
+        panic!("expected second declaration to be typedef");
+    };
+    assert_eq!(second.name, "BytefPtr");
+    assert_eq!(second.ty, Type::Pointer(Box::new(Type::UnsignedChar)));
+
+    let function = first_function(&program);
+    assert_eq!(function.name, "main");
+}
+
+#[test]
+fn parses_typedef_names_as_types() {
+    let program = parse_source(
+        "typedef unsigned long uLong;\ntypedef unsigned char Bytef;\nuLong f(const Bytef *buf) { return buf[0]; }",
+    );
+
+    let function = first_function(&program);
+    assert_eq!(function.return_type, Type::UnsignedLong);
+    assert_eq!(function.name, "f");
+    assert_eq!(
+        function.params[0].ty,
+        Type::Pointer(Box::new(Type::UnsignedChar))
+    );
+}
+
+#[test]
+fn rejects_duplicate_typedef_names() {
+    let err = parse_source_err("typedef unsigned long uLong;\ntypedef unsigned int *uLong;");
+
+    assert_eq!(err.message, "duplicate typedef with name 'uLong'");
 }

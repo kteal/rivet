@@ -1,7 +1,7 @@
 use crate::ast::{BinaryOp, Type, UnaryOp};
 use crate::typed_ast::{
-    LocalId, TypedExpr, TypedExprKind, TypedFunction, TypedInitializer, TypedProgram,
-    TypedStatement,
+    LocalId, TypedExpr, TypedExprKind, TypedExternalDecl, TypedFunction, TypedInitializer,
+    TypedProgram, TypedStatement,
 };
 use std::collections::HashMap;
 use std::fmt::{self, Write};
@@ -894,8 +894,10 @@ impl Codegen {
     }
 
     fn emit_program(&mut self, program: &TypedProgram) -> String {
-        for function in &program.functions {
-            self.emit_function(function);
+        for decl in &program.declarations {
+            if let TypedExternalDecl::Function(function) = decl {
+                self.emit_function(function);
+            }
         }
 
         std::mem::take(&mut self.out)

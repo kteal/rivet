@@ -1,6 +1,8 @@
+use std::collections::HashMap;
+
 use crate::ast::{
-    BinaryOp, Expr, Function, Initializer, IntLiteralBase, IntLiteralSuffix, Param, Program,
-    Statement, Type, UnaryOp,
+    BinaryOp, Expr, ExternalDecl, Function, Initializer, IntLiteralBase, IntLiteralSuffix, Param,
+    Program, Statement, Type, Typedef, UnaryOp,
 };
 use crate::lexer::{Span, Token, TokenKind};
 
@@ -77,11 +79,16 @@ struct TypeSpec {
 struct Parser {
     tokens: Vec<Token>,
     pos: usize,
+    typedefs: HashMap<String, Type>,
 }
 
 impl Parser {
-    const fn new(tokens: Vec<Token>) -> Self {
-        Self { tokens, pos: 0 }
+    fn new(tokens: Vec<Token>) -> Self {
+        Self {
+            tokens,
+            pos: 0,
+            typedefs: HashMap::new(),
+        }
     }
 
     fn peek(&self) -> &Token {
@@ -222,16 +229,17 @@ impl Parser {
         self.parse_expr()
     }
 
-    const fn is_type_decl(token_kind: &TokenKind) -> bool {
-        matches!(
-            token_kind,
+    fn is_type_decl(&self, token_kind: &TokenKind) -> bool {
+        match token_kind {
             TokenKind::KwInt
-                | TokenKind::KwChar
-                | TokenKind::KwUnsigned
-                | TokenKind::KwLong
-                | TokenKind::KwSigned
-                | TokenKind::KwConst
-        )
+            | TokenKind::KwChar
+            | TokenKind::KwUnsigned
+            | TokenKind::KwLong
+            | TokenKind::KwSigned
+            | TokenKind::KwConst => true,
+            TokenKind::Ident(name) => self.typedefs.contains_key(name),
+            _ => false,
+        }
     }
 
     fn lower_type_spec(spec: TypeSpec, span: Span) -> Result<Type, ParseError> {
@@ -304,6 +312,15 @@ impl Parser {
                 }
                 TokenKind::KwConst => {
                     self.advance();
+                }
+                TokenKind::Ident(name) if self.typedefs.contains_key(name) => {
+                    let ty = self
+                        .typedefs
+                        .get(name)
+                        .expect("cannot use undefined typedef")
+                        .clone();
+                    self.advance();
+                    return Ok(ty);
                 }
                 _ => break,
             }
@@ -523,7 +540,7 @@ impl Parser {
     }
 
     fn parse_unary(&mut self) -> Result<Expr, ParseError> {
-        if self.peek_kind() == &TokenKind::LParen && Self::is_type_decl(self.peek_nth_kind(1)) {
+        if self.peek_kind() == &TokenKind::LParen && self.is_type_decl(self.peek_nth_kind(1)) {
             let span = self.advance().span;
             let ty = self.parse_type()?;
             self.expect(&TokenKind::RParen)?;
@@ -759,7 +776,7 @@ impl Parser {
     fn parse_for_statement_init(&mut self) -> Result<Statement, ParseError> {
         match self.peek_kind() {
             // Variable declaration
-            token_kind if Self::is_type_decl(token_kind) => self.parse_var_decl(),
+            token_kind if self.is_type_decl(token_kind) => self.parse_var_decl(),
             // Empty
             TokenKind::Semicolon => {
                 self.expect(&TokenKind::Semicolon)?;
@@ -848,7 +865,7 @@ impl Parser {
             }
             TokenKind::KwFor => self.parse_for_statement(),
             // Variable declaration
-            token_kind if Self::is_type_decl(token_kind) => self.parse_var_decl(),
+            token_kind if self.is_type_decl(token_kind) => self.parse_var_decl(),
             // Block
             TokenKind::LBrace => {
                 self.expect(&TokenKind::LBrace)?;
@@ -897,16 +914,46 @@ impl Parser {
         })
     }
 
-    fn parse_program(&mut self) -> Result<Program, ParseError> {
-        let mut functions = vec![];
+    fn parse_typedef(&mut self) -> Result<Typedef, ParseError> {
+        self.expect(&TokenKind::KwTypedef)?;
+        let base_ty = self.parse_type()?;
+        let declarator = self.parse_declarator()?;
+        let LoweredDeclarator {
+            ty,
+            name,
+            name_span,
+        } = Self::lower_declarator(&base_ty, &declarator)?;
+        self.expect(&TokenKind::Semicolon)?;
+        if self.typedefs.contains_key(&name) {
+            return Err(ParseError {
+                message: format!("duplicate typedef with name '{name}'"),
+                span: name_span,
+            });
+        }
+        self.typedefs.insert(name.clone(), ty.clone());
+        Ok(Typedef {
+            name,
+            name_span,
+            ty,
+        })
+    }
 
-        while self.peek_kind() != &TokenKind::Eof {
-            functions.push(self.parse_function()?);
+    fn parse_program(&mut self) -> Result<Program, ParseError> {
+        let mut declarations = vec![];
+
+        loop {
+            match self.peek_kind() {
+                TokenKind::Eof => break,
+                TokenKind::KwTypedef => {
+                    declarations.push(ExternalDecl::Typedef(self.parse_typedef()?));
+                }
+                _ => declarations.push(ExternalDecl::Function(self.parse_function()?)),
+            }
         }
         let token = self.expect(&TokenKind::Eof)?;
 
         Ok(Program {
-            functions,
+            declarations,
             eof_span: token.span,
         })
     }
@@ -948,6 +995,24 @@ mod tests {
         ($($kind:expr),* $(,)?) => {
             vec![$(token($kind)),*]
         };
+    }
+
+    fn program_with_functions(functions: Vec<Function>) -> Program {
+        Program {
+            declarations: functions.into_iter().map(ExternalDecl::Function).collect(),
+            eof_span: span(),
+        }
+    }
+
+    fn first_function(program: &Program) -> &Function {
+        program
+            .declarations
+            .iter()
+            .find_map(|decl| match decl {
+                ExternalDecl::Function(function) => Some(function),
+                ExternalDecl::Typedef(_) => None,
+            })
+            .expect("expected function declaration")
     }
 
     #[test]
@@ -1301,7 +1366,7 @@ mod tests {
         ];
 
         let program = parse(tokens).expect("parsing should succeed");
-        let params = &program.functions[0].params;
+        let params = &first_function(&program).params;
 
         assert_eq!(params[0].name, "x");
         assert_eq!(params[0].name_span, Span { start: 12, end: 13 });
@@ -1346,41 +1411,38 @@ mod tests {
 
         assert_eq!(
             program,
-            Program {
-                functions: vec![Function {
-                    return_type: Type::Int,
-                    name_span: span(),
-                    name: "main".to_string(),
-                    params: vec![],
-                    body: vec![Statement::Return(Expr::Binary {
-                        op: BinaryOp::Multiply,
+            program_with_functions(vec![Function {
+                return_type: Type::Int,
+                name_span: span(),
+                name: "main".to_string(),
+                params: vec![],
+                body: vec![Statement::Return(Expr::Binary {
+                    op: BinaryOp::Multiply,
+                    op_span: span(),
+                    left: Box::new(Expr::Binary {
+                        op: BinaryOp::Add,
                         op_span: span(),
-                        left: Box::new(Expr::Binary {
-                            op: BinaryOp::Add,
-                            op_span: span(),
-                            left: Box::new(Expr::IntLiteral {
-                                value: 1,
-                                suffix: IntLiteralSuffix::None,
-                                base: IntLiteralBase::Decimal,
-                                span: span()
-                            }),
-                            right: Box::new(Expr::IntLiteral {
-                                value: 2,
-                                suffix: IntLiteralSuffix::None,
-                                base: IntLiteralBase::Decimal,
-                                span: span()
-                            }),
-                        }),
-                        right: Box::new(Expr::IntLiteral {
-                            value: 3,
+                        left: Box::new(Expr::IntLiteral {
+                            value: 1,
                             suffix: IntLiteralSuffix::None,
                             base: IntLiteralBase::Decimal,
                             span: span()
                         }),
-                    })],
-                }],
-                eof_span: span(),
-            }
+                        right: Box::new(Expr::IntLiteral {
+                            value: 2,
+                            suffix: IntLiteralSuffix::None,
+                            base: IntLiteralBase::Decimal,
+                            span: span()
+                        }),
+                    }),
+                    right: Box::new(Expr::IntLiteral {
+                        value: 3,
+                        suffix: IntLiteralSuffix::None,
+                        base: IntLiteralBase::Decimal,
+                        span: span()
+                    }),
+                })],
+            }])
         );
     }
 
@@ -1419,41 +1481,38 @@ mod tests {
 
         assert_eq!(
             program,
-            Program {
-                functions: vec![Function {
-                    return_type: Type::Int,
-                    name_span: span(),
-                    name: "main".to_string(),
-                    params: vec![],
-                    body: vec![Statement::Return(Expr::Binary {
-                        op: BinaryOp::Less,
+            program_with_functions(vec![Function {
+                return_type: Type::Int,
+                name_span: span(),
+                name: "main".to_string(),
+                params: vec![],
+                body: vec![Statement::Return(Expr::Binary {
+                    op: BinaryOp::Less,
+                    op_span: span(),
+                    left: Box::new(Expr::Binary {
+                        op: BinaryOp::Add,
                         op_span: span(),
-                        left: Box::new(Expr::Binary {
-                            op: BinaryOp::Add,
-                            op_span: span(),
-                            left: Box::new(Expr::IntLiteral {
-                                value: 1,
-                                suffix: IntLiteralSuffix::None,
-                                base: IntLiteralBase::Decimal,
-                                span: span()
-                            }),
-                            right: Box::new(Expr::IntLiteral {
-                                value: 2,
-                                suffix: IntLiteralSuffix::None,
-                                base: IntLiteralBase::Decimal,
-                                span: span()
-                            }),
-                        }),
-                        right: Box::new(Expr::IntLiteral {
-                            value: 4,
+                        left: Box::new(Expr::IntLiteral {
+                            value: 1,
                             suffix: IntLiteralSuffix::None,
                             base: IntLiteralBase::Decimal,
                             span: span()
                         }),
-                    })],
-                }],
-                eof_span: span(),
-            }
+                        right: Box::new(Expr::IntLiteral {
+                            value: 2,
+                            suffix: IntLiteralSuffix::None,
+                            base: IntLiteralBase::Decimal,
+                            span: span()
+                        }),
+                    }),
+                    right: Box::new(Expr::IntLiteral {
+                        value: 4,
+                        suffix: IntLiteralSuffix::None,
+                        base: IntLiteralBase::Decimal,
+                        span: span()
+                    }),
+                })],
+            }])
         );
     }
 
@@ -1735,41 +1794,38 @@ mod tests {
 
         assert_eq!(
             program,
-            Program {
-                functions: vec![Function {
-                    return_type: Type::Int,
-                    name_span: span(),
-                    name: "main".to_string(),
-                    params: vec![],
-                    body: vec![Statement::Return(Expr::Binary {
-                        op: BinaryOp::Equal,
+            program_with_functions(vec![Function {
+                return_type: Type::Int,
+                name_span: span(),
+                name: "main".to_string(),
+                params: vec![],
+                body: vec![Statement::Return(Expr::Binary {
+                    op: BinaryOp::Equal,
+                    op_span: span(),
+                    left: Box::new(Expr::Binary {
+                        op: BinaryOp::Add,
                         op_span: span(),
-                        left: Box::new(Expr::Binary {
-                            op: BinaryOp::Add,
-                            op_span: span(),
-                            left: Box::new(Expr::IntLiteral {
-                                value: 1,
-                                suffix: IntLiteralSuffix::None,
-                                base: IntLiteralBase::Decimal,
-                                span: span()
-                            }),
-                            right: Box::new(Expr::IntLiteral {
-                                value: 2,
-                                suffix: IntLiteralSuffix::None,
-                                base: IntLiteralBase::Decimal,
-                                span: span()
-                            }),
-                        }),
-                        right: Box::new(Expr::IntLiteral {
-                            value: 3,
+                        left: Box::new(Expr::IntLiteral {
+                            value: 1,
                             suffix: IntLiteralSuffix::None,
                             base: IntLiteralBase::Decimal,
                             span: span()
                         }),
-                    })],
-                }],
-                eof_span: span(),
-            }
+                        right: Box::new(Expr::IntLiteral {
+                            value: 2,
+                            suffix: IntLiteralSuffix::None,
+                            base: IntLiteralBase::Decimal,
+                            span: span()
+                        }),
+                    }),
+                    right: Box::new(Expr::IntLiteral {
+                        value: 3,
+                        suffix: IntLiteralSuffix::None,
+                        base: IntLiteralBase::Decimal,
+                        span: span()
+                    }),
+                })],
+            }])
         );
     }
 
@@ -1798,29 +1854,26 @@ mod tests {
 
         assert_eq!(
             program,
-            Program {
-                functions: vec![Function {
-                    return_type: Type::Int,
-                    name_span: span(),
-                    name: "main".to_string(),
-                    params: vec![],
-                    body: vec![Statement::Return(Expr::Binary {
-                        op: BinaryOp::GreaterEqual,
-                        op_span: span(),
-                        left: Box::new(Expr::Variable {
-                            name: "x".to_string(),
-                            span: span()
-                        }),
-                        right: Box::new(Expr::IntLiteral {
-                            value: 10,
-                            suffix: IntLiteralSuffix::None,
-                            base: IntLiteralBase::Decimal,
-                            span: span()
-                        }),
-                    })],
-                }],
-                eof_span: span(),
-            }
+            program_with_functions(vec![Function {
+                return_type: Type::Int,
+                name_span: span(),
+                name: "main".to_string(),
+                params: vec![],
+                body: vec![Statement::Return(Expr::Binary {
+                    op: BinaryOp::GreaterEqual,
+                    op_span: span(),
+                    left: Box::new(Expr::Variable {
+                        name: "x".to_string(),
+                        span: span()
+                    }),
+                    right: Box::new(Expr::IntLiteral {
+                        value: 10,
+                        suffix: IntLiteralSuffix::None,
+                        base: IntLiteralBase::Decimal,
+                        span: span()
+                    }),
+                })],
+            }])
         );
     }
 
@@ -1859,41 +1912,38 @@ mod tests {
 
         assert_eq!(
             program,
-            Program {
-                functions: vec![Function {
-                    return_type: Type::Int,
-                    name_span: span(),
-                    name: "main".to_string(),
-                    params: vec![],
-                    body: vec![Statement::Return(Expr::Binary {
+            program_with_functions(vec![Function {
+                return_type: Type::Int,
+                name_span: span(),
+                name: "main".to_string(),
+                params: vec![],
+                body: vec![Statement::Return(Expr::Binary {
+                    op: BinaryOp::Less,
+                    op_span: span(),
+                    left: Box::new(Expr::Binary {
                         op: BinaryOp::Less,
                         op_span: span(),
-                        left: Box::new(Expr::Binary {
-                            op: BinaryOp::Less,
-                            op_span: span(),
-                            left: Box::new(Expr::IntLiteral {
-                                value: 1,
-                                suffix: IntLiteralSuffix::None,
-                                base: IntLiteralBase::Decimal,
-                                span: span()
-                            }),
-                            right: Box::new(Expr::IntLiteral {
-                                value: 2,
-                                suffix: IntLiteralSuffix::None,
-                                base: IntLiteralBase::Decimal,
-                                span: span()
-                            }),
-                        }),
-                        right: Box::new(Expr::IntLiteral {
-                            value: 3,
+                        left: Box::new(Expr::IntLiteral {
+                            value: 1,
                             suffix: IntLiteralSuffix::None,
                             base: IntLiteralBase::Decimal,
                             span: span()
                         }),
-                    })],
-                }],
-                eof_span: span(),
-            }
+                        right: Box::new(Expr::IntLiteral {
+                            value: 2,
+                            suffix: IntLiteralSuffix::None,
+                            base: IntLiteralBase::Decimal,
+                            span: span()
+                        }),
+                    }),
+                    right: Box::new(Expr::IntLiteral {
+                        value: 3,
+                        suffix: IntLiteralSuffix::None,
+                        base: IntLiteralBase::Decimal,
+                        span: span()
+                    }),
+                })],
+            }])
         );
     }
 
@@ -1929,34 +1979,31 @@ mod tests {
 
         assert_eq!(
             program,
-            Program {
-                functions: vec![Function {
-                    return_type: Type::Int,
-                    name_span: span(),
-                    name: "main".to_string(),
-                    params: vec![],
-                    body: vec![
-                        Statement::VarDecl {
-                            ty: Type::Int,
-                            name_span: span(),
-                            name: "x".to_string(),
-                            init: Some(Initializer::Expr(Expr::IntLiteral {
-                                value: 5,
-                                suffix: IntLiteralSuffix::None,
-                                base: IntLiteralBase::Decimal,
-                                span: span()
-                            })),
-                        },
-                        Statement::Return(Expr::IntLiteral {
-                            value: 42,
+            program_with_functions(vec![Function {
+                return_type: Type::Int,
+                name_span: span(),
+                name: "main".to_string(),
+                params: vec![],
+                body: vec![
+                    Statement::VarDecl {
+                        ty: Type::Int,
+                        name_span: span(),
+                        name: "x".to_string(),
+                        init: Some(Initializer::Expr(Expr::IntLiteral {
+                            value: 5,
                             suffix: IntLiteralSuffix::None,
                             base: IntLiteralBase::Decimal,
                             span: span()
-                        }),
-                    ],
-                }],
-                eof_span: span(),
-            }
+                        })),
+                    },
+                    Statement::Return(Expr::IntLiteral {
+                        value: 42,
+                        suffix: IntLiteralSuffix::None,
+                        base: IntLiteralBase::Decimal,
+                        span: span()
+                    }),
+                ],
+            }])
         );
     }
 
@@ -1988,32 +2035,29 @@ mod tests {
 
         assert_eq!(
             program,
-            Program {
-                functions: vec![Function {
-                    return_type: Type::Int,
-                    name_span: span(),
-                    name: "main".to_string(),
-                    params: vec![],
-                    body: vec![
-                        Statement::VarDecl {
-                            ty: Type::Int,
-                            name_span: span(),
-                            name: "x".to_string(),
-                            init: Some(Initializer::Expr(Expr::IntLiteral {
-                                value: 5,
-                                suffix: IntLiteralSuffix::None,
-                                base: IntLiteralBase::Decimal,
-                                span: span()
-                            })),
-                        },
-                        Statement::Return(Expr::Variable {
-                            name: "x".to_string(),
+            program_with_functions(vec![Function {
+                return_type: Type::Int,
+                name_span: span(),
+                name: "main".to_string(),
+                params: vec![],
+                body: vec![
+                    Statement::VarDecl {
+                        ty: Type::Int,
+                        name_span: span(),
+                        name: "x".to_string(),
+                        init: Some(Initializer::Expr(Expr::IntLiteral {
+                            value: 5,
+                            suffix: IntLiteralSuffix::None,
+                            base: IntLiteralBase::Decimal,
                             span: span()
-                        }),
-                    ],
-                }],
-                eof_span: span(),
-            }
+                        })),
+                    },
+                    Statement::Return(Expr::Variable {
+                        name: "x".to_string(),
+                        span: span()
+                    }),
+                ],
+            }])
         );
     }
 

@@ -18,6 +18,7 @@ pub enum TokenKind {
     KwContinue,
     KwFor,
     KwDo,
+    KwTypedef,
     Ident(String),
     IntLiteral {
         value: u64,
@@ -398,6 +399,7 @@ impl<'a> Lexer<'a> {
             "continue" => TokenKind::KwContinue,
             "for" => TokenKind::KwFor,
             "do" => TokenKind::KwDo,
+            "typedef" => TokenKind::KwTypedef,
             _ => TokenKind::Ident(text),
         };
 
