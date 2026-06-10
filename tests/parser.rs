@@ -7,14 +7,17 @@ use rivet::ast::{
 };
 use rivet::lexer::lex;
 use rivet::parser::parse;
+use rivet::preprocess::preprocess;
 
 fn parse_source(source: &str) -> rivet::ast::Program {
     let tokens = lex(source).expect("lexing should succeed");
+    let tokens = preprocess(tokens).expect("preprocessing should succeed");
     parse(tokens).expect("parsing should succeed")
 }
 
 fn parse_source_err(source: &str) -> rivet::parser::ParseError {
     let tokens = lex(source).expect("lexing should succeed");
+    let tokens = preprocess(tokens).expect("preprocessing should succeed");
     parse(tokens).expect_err("parsing should fail")
 }
 

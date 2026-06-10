@@ -42,6 +42,7 @@ fn lexes_basic_program() {
             TokenKind::LParen,
             TokenKind::RParen,
             TokenKind::LBrace,
+            TokenKind::Newline,
             TokenKind::KwReturn,
             TokenKind::IntLiteral {
                 value: 42,
@@ -49,6 +50,7 @@ fn lexes_basic_program() {
                 base: IntLiteralBase::Decimal,
             },
             TokenKind::Semicolon,
+            TokenKind::Newline,
             TokenKind::RBrace,
             TokenKind::Eof,
         ]

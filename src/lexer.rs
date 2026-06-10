@@ -68,6 +68,8 @@ pub enum TokenKind {
     PipePipe,
     Comma,
     Eof,
+    Hash,
+    Newline,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -107,7 +109,7 @@ impl<'a> Lexer<'a> {
     fn lex(&mut self) -> Result<Vec<Token>, LexError> {
         while let Some(ch) = self.chars.peek().copied() {
             match ch {
-                ' ' | '\n' | '\r' | '\t' => {
+                ' ' | '\r' | '\t' => {
                     self.advance();
                 }
                 ',' => self.advance_and_push(TokenKind::Comma),
@@ -195,6 +197,8 @@ impl<'a> Lexer<'a> {
                     TokenKind::Pipe,
                     &[('=', TokenKind::PipeEqual), ('|', TokenKind::PipePipe)],
                 ),
+                '#' => self.advance_and_push(TokenKind::Hash),
+                '\n' => self.advance_and_push(TokenKind::Newline),
                 _ => {
                     let start = self.offset;
                     let ch = self.advance().unwrap();

@@ -360,6 +360,33 @@ fn qemu_typedef_programs_return_expected_values() {
 }
 
 #[test]
+fn qemu_object_like_macro_programs_return_expected_values() {
+    run_qemu_case(
+        "object-like-macro-constant",
+        "#define BASE 42\nint main() {\n    return BASE;\n}\n",
+        42,
+    );
+
+    run_qemu_case(
+        "empty-object-like-macro",
+        "#define ZEXPORT\nint ZEXPORT main() {\n    return 7;\n}\n",
+        7,
+    );
+
+    run_qemu_case(
+        "object-like-macro-null-pointer",
+        "#define Z_NULL 0\nint main() {\n    char *p = Z_NULL;\n    return p == Z_NULL;\n}\n",
+        1,
+    );
+
+    run_qemu_case(
+        "object-like-macro-with-typedefs",
+        "#define BASE 65521U\ntypedef unsigned long uLong;\ntypedef unsigned char Bytef;\n\nuLong first(Bytef *buf) {\n    return buf[0] % BASE;\n}\n\nint main() {\n    Bytef buf[1] = {'a'};\n    return first(buf);\n}\n",
+        97,
+    );
+}
+
+#[test]
 fn qemu_long_programs_return_expected_values() {
     run_qemu_case(
         "long-local-initializer",

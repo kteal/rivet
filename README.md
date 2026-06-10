@@ -165,8 +165,10 @@ Lexing and preprocessing:
 - [x] hexadecimal integer literals
 - [x] character constants
 - [x] comments
+- [x] preprocessing tokens needed for object-like macros
+- [x] object-like `#define` macros, including empty replacements
 - [ ] string literals
-- [ ] preprocessing tokens and macro expansion
+- [ ] function-like macros and full macro expansion semantics
 - [ ] `#include`
 - [ ] conditional compilation
 
