@@ -204,6 +204,7 @@ impl Parser {
         &mut self,
         parse_item: fn(&mut Self) -> Result<T, ParseError>,
         terminator: &TokenKind,
+        allow_trailing_comma: bool,
     ) -> Result<Vec<T>, ParseError> {
         let mut items = vec![];
 
@@ -213,7 +214,7 @@ impl Parser {
             if self.peek_kind() == &TokenKind::Comma {
                 self.expect(&TokenKind::Comma)?;
 
-                if self.peek_kind() == terminator {
+                if self.peek_kind() == terminator && !allow_trailing_comma {
                     return Err(ParseError {
                         message: "trailing comma".to_string(),
                         span: self.peek().span,
@@ -454,6 +455,7 @@ impl Parser {
                     let args = self.parse_comma_separated_until_terminator(
                         Self::parse_call_arg,
                         &TokenKind::RParen,
+                        false,
                     )?;
                     self.expect(&TokenKind::RParen)?;
                     Ok(Expr::Call {
@@ -689,8 +691,11 @@ impl Parser {
 
         if self.peek_kind() == &TokenKind::LBrace {
             self.expect(&TokenKind::LBrace)?;
-            let elements =
-                self.parse_comma_separated_until_terminator(Self::parse_expr, &TokenKind::RBrace)?;
+            let elements = self.parse_comma_separated_until_terminator(
+                Self::parse_expr,
+                &TokenKind::RBrace,
+                true,
+            )?;
             self.expect(&TokenKind::RBrace)?;
             self.expect(&TokenKind::Semicolon)?;
             Ok(Statement::VarDecl {
@@ -897,8 +902,11 @@ impl Parser {
         } = Self::lower_declarator(&base_ty, &declarator)?;
 
         self.expect(&TokenKind::LParen)?;
-        let params =
-            self.parse_comma_separated_until_terminator(Self::parse_param, &TokenKind::RParen)?;
+        let params = self.parse_comma_separated_until_terminator(
+            Self::parse_param,
+            &TokenKind::RParen,
+            false,
+        )?;
         self.expect(&TokenKind::RParen)?;
 
         self.expect(&TokenKind::LBrace)?;

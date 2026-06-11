@@ -39,6 +39,11 @@ fn qemu_adler32_zlib_compat_returns_success() {
 }
 
 #[test]
+fn qemu_adler32_do16_macro_ladder_returns_success() {
+    run_qemu_file("tests/programs/adler32_do16.c", 0);
+}
+
+#[test]
 fn qemu_return_and_arithmetic_programs_return_expected_values() {
     run_qemu_case("return-42", "int main() {\n    return 42;\n}\n", 42);
     run_qemu_case("precedence", "int main() {\n    return 1 + 2 * 3;\n}\n", 7);
@@ -1106,6 +1111,12 @@ fn qemu_array_indexing_programs_return_expected_values() {
         "array-index-zero-filled-tail",
         "int main() {\n    int nums[4] = {7};\n    return nums[0] + nums[1] + nums[2] + nums[3];\n}\n",
         7,
+    );
+
+    run_qemu_case(
+        "array-initializer-allows-trailing-comma",
+        "int main() {\n    unsigned char buf[3] = {1, 2, 3,};\n    return buf[0] + buf[1] + buf[2];\n}\n",
+        6,
     );
 
     run_qemu_case(

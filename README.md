@@ -269,6 +269,7 @@ Objects, aggregate types, and declarators:
 - [x] pointer arithmetic scaled by pointee size
 - [x] fixed-size local array declarations and stack allocation
 - [x] scalar initializer lists with zero-fill for local arrays
+- [x] trailing commas in initializer lists
 - [x] array indexing
 - [ ] full C declarator grammar
 - [ ] structs and unions

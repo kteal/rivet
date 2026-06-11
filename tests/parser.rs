@@ -570,6 +570,24 @@ fn parses_array_initializer_list() {
 }
 
 #[test]
+fn parses_array_initializer_list_with_trailing_comma() {
+    let program = parse_source("int main() { char buf[3] = {1, 2, 3,}; return 0; }");
+
+    let Statement::VarDecl { init, .. } = &first_function(&program).body[0] else {
+        panic!("expected local declaration");
+    };
+
+    let Some(Initializer::List(values)) = init else {
+        panic!("expected initializer list");
+    };
+
+    assert_eq!(values.len(), 3);
+    assert!(matches!(values[0], Expr::IntLiteral { value: 1, .. }));
+    assert!(matches!(values[1], Expr::IntLiteral { value: 2, .. }));
+    assert!(matches!(values[2], Expr::IntLiteral { value: 3, .. }));
+}
+
+#[test]
 fn parses_empty_array_initializer_list() {
     let program = parse_source("int main() { int nums[2] = {}; return 0; }");
 

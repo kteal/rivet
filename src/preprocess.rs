@@ -23,37 +23,33 @@ struct TokenScanner {
 }
 
 impl TokenScanner {
-    fn new(tokens: Vec<Token>) -> Self {
+    const fn new(tokens: Vec<Token>) -> Self {
         Self { tokens, pos: 0 }
     }
 
-    fn is_done(&self) -> bool {
+    const fn is_done(&self) -> bool {
         self.pos == self.tokens.len()
     }
 
     fn peek(&self) -> Option<&Token> {
-        if !self.is_done() {
-            Some(&self.tokens[self.pos])
-        } else {
+        if self.is_done() {
             None
+        } else {
+            Some(&self.tokens[self.pos])
         }
     }
 
     fn peek_kind(&self) -> Option<&TokenKind> {
-        if let Some(token) = self.peek() {
-            Some(&token.kind)
-        } else {
-            None
-        }
+        self.peek().map(|token| &token.kind)
     }
 
     fn advance(&mut self) -> Option<Token> {
-        if !self.is_done() {
+        if self.is_done() {
+            None
+        } else {
             let token = self.tokens[self.pos].clone();
             self.pos += 1;
             Some(token)
-        } else {
-            None
         }
     }
 
@@ -71,7 +67,7 @@ impl TokenScanner {
             })
         } else {
             Err(PreprocessError {
-                message: format!("reached EOF"),
+                message: "reached EOF".to_string(),
                 span: name_span,
             })
         }
@@ -345,7 +341,7 @@ impl Preprocessor {
                 if active_macros.contains(name) {
                     output.push(token);
                 } else {
-                    active_macros.insert(name.to_string());
+                    active_macros.insert(name.clone());
                     let replacement = self.expand_macro_use(&mut scanner, name, token.clone())?;
                     let rescanned = self.expand_tokens(replacement, active_macros)?;
                     active_macros.remove(name);
