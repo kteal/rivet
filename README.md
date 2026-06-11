@@ -165,6 +165,7 @@ Lexing and preprocessing:
 - [x] hexadecimal integer literals
 - [x] character constants
 - [x] comments
+- [x] escaped-newline splicing for continued preprocessing directives
 - [x] preprocessing tokens needed for object-like macros
 - [x] object-like `#define` macros, including empty replacements
 - [x] simple function-like `#define` macros with argument substitution and nested expansion

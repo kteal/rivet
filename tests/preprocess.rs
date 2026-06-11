@@ -1,9 +1,10 @@
 use rivet::ast::{IntLiteralBase, IntLiteralSuffix};
 use rivet::lexer::{TokenKind, lex};
-use rivet::preprocess::preprocess;
+use rivet::preprocess::{preprocess, splice_escaped_newlines};
 
 fn preprocess_kinds(source: &str) -> Vec<TokenKind> {
-    let tokens = lex(source).expect("lexing should succeed");
+    let source = splice_escaped_newlines(source);
+    let tokens = lex(&source).expect("lexing should succeed");
     preprocess(tokens)
         .expect("preprocessing should succeed")
         .into_iter()
@@ -106,6 +107,37 @@ fn expands_function_like_macro_tokens() {
             TokenKind::RBrace,
             TokenKind::Eof,
         ]
+    );
+}
+
+#[test]
+fn splices_escaped_newlines_before_macro_expansion() {
+    assert_eq!(
+        preprocess_kinds("#define VALUE \\\n7\nint main() { return VALUE; }\n"),
+        vec![
+            TokenKind::KwInt,
+            TokenKind::Ident("main".to_string()),
+            TokenKind::LParen,
+            TokenKind::RParen,
+            TokenKind::LBrace,
+            TokenKind::KwReturn,
+            TokenKind::IntLiteral {
+                value: 7,
+                suffix: IntLiteralSuffix::None,
+                base: IntLiteralBase::Decimal,
+            },
+            TokenKind::Semicolon,
+            TokenKind::RBrace,
+            TokenKind::Eof,
+        ]
+    );
+}
+
+#[test]
+fn splices_crlf_escaped_newlines() {
+    assert_eq!(
+        splice_escaped_newlines("#define VALUE \\\r\n7\r\n"),
+        "#define VALUE 7\r\n"
     );
 }
 

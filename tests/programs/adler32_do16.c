@@ -1,8 +1,13 @@
-#define DO1(buf, i) { adler += (buf)[i]; sum2 += adler; }
-#define DO2(buf, i) DO1(buf, i); DO1(buf, i + 1);
-#define DO4(buf, i) DO2(buf, i); DO2(buf, i + 2);
-#define DO8(buf, i) DO4(buf, i); DO4(buf, i + 4);
-#define DO16(buf) DO8(buf, 0); DO8(buf, 8);
+#define DO1(buf, i) \
+    { adler += (buf)[i]; sum2 += adler; }
+#define DO2(buf, i) \
+    DO1(buf, i); DO1(buf, i + 1);
+#define DO4(buf, i) \
+    DO2(buf, i); DO2(buf, i + 2);
+#define DO8(buf, i) \
+    DO4(buf, i); DO4(buf, i + 4);
+#define DO16(buf) \
+    DO8(buf, 0); DO8(buf, 8);
 
 int main() {
     unsigned char buf[16] = {

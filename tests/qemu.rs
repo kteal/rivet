@@ -427,6 +427,12 @@ fn qemu_function_like_macro_programs_return_expected_values() {
         "#define DO1(buf, i) sum += buf[i]\n#define DO2(buf, i) DO1(buf, i); DO1(buf, i + 1)\nint main() {\n    unsigned char buf[2] = {5, 7};\n    unsigned int sum = 0;\n    DO2(buf, 0);\n    return sum;\n}\n",
         12,
     );
+
+    run_qemu_case(
+        "continued-function-like-macro",
+        "#define ADD_TO_SUM(buf, i) \\\n    sum += buf[i]\nint main() {\n    unsigned char buf[1] = {7};\n    unsigned int sum = 0;\n    ADD_TO_SUM(buf, 0);\n    return sum;\n}\n",
+        7,
+    );
 }
 
 #[test]

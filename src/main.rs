@@ -5,7 +5,7 @@ use std::process;
 use rivet::codegen::{CodegenTarget, generate};
 use rivet::lexer::{Span, lex};
 use rivet::parser::parse;
-use rivet::preprocess::preprocess;
+use rivet::preprocess::{preprocess, splice_escaped_newlines};
 use rivet::sema::check;
 
 fn line_col(source: &str, offset: usize) -> (usize, usize) {
@@ -51,6 +51,8 @@ fn main() {
         eprintln!("failed to read {path}: {err}");
         process::exit(1);
     });
+
+    let source = splice_escaped_newlines(&source);
 
     let tokens = lex(&source).unwrap_or_else(|err| {
         print_error(&path, &source, err.span, &err.message);

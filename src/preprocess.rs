@@ -412,3 +412,8 @@ pub fn preprocess(tokens: Vec<Token>) -> Result<Vec<Token>, PreprocessError> {
     let mut preprocessor = Preprocessor::new(tokens);
     preprocessor.preprocess()
 }
+
+#[must_use]
+pub fn splice_escaped_newlines(source: &str) -> String {
+    source.replace("\\\r\n", "").replace("\\\n", "")
+}
