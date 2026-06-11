@@ -167,8 +167,9 @@ Lexing and preprocessing:
 - [x] comments
 - [x] preprocessing tokens needed for object-like macros
 - [x] object-like `#define` macros, including empty replacements
+- [x] simple function-like `#define` macros with argument substitution and nested expansion
 - [ ] string literals
-- [ ] function-like macros and full macro expansion semantics
+- [ ] full macro expansion semantics: hide sets, stringification, token pasting, variadics, and exact whitespace-sensitive function-like macro definition rules
 - [ ] `#include`
 - [ ] conditional compilation
 

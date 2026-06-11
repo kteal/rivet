@@ -34,6 +34,11 @@ fn qemu_adler32_reduced_harness_returns_success() {
 }
 
 #[test]
+fn qemu_adler32_zlib_compat_returns_success() {
+    run_qemu_file("tests/programs/adler32_zlib_compat.c", 0);
+}
+
+#[test]
 fn qemu_return_and_arithmetic_programs_return_expected_values() {
     run_qemu_case("return-42", "int main() {\n    return 42;\n}\n", 42);
     run_qemu_case("precedence", "int main() {\n    return 1 + 2 * 3;\n}\n", 7);
@@ -383,6 +388,39 @@ fn qemu_object_like_macro_programs_return_expected_values() {
         "object-like-macro-with-typedefs",
         "#define BASE 65521U\ntypedef unsigned long uLong;\ntypedef unsigned char Bytef;\n\nuLong first(Bytef *buf) {\n    return buf[0] % BASE;\n}\n\nint main() {\n    Bytef buf[1] = {'a'};\n    return first(buf);\n}\n",
         97,
+    );
+}
+
+#[test]
+fn qemu_function_like_macro_programs_return_expected_values() {
+    run_qemu_case(
+        "function-like-macro-add",
+        "#define ADD(x, y) x + y\nint main() {\n    return ADD(2, 3);\n}\n",
+        5,
+    );
+
+    run_qemu_case(
+        "zero-arg-function-like-macro",
+        "#define VALUE() 7\nint main() {\n    return VALUE();\n}\n",
+        7,
+    );
+
+    run_qemu_case(
+        "nested-object-like-macro",
+        "#define A B\n#define B 11\nint main() {\n    return A;\n}\n",
+        11,
+    );
+
+    run_qemu_case(
+        "nested-function-like-macro",
+        "#define DOUBLE(x) x + x\n#define QUAD(x) DOUBLE(x) + DOUBLE(x)\nint main() {\n    return QUAD(3);\n}\n",
+        12,
+    );
+
+    run_qemu_case(
+        "adler-shaped-do-macros",
+        "#define DO1(buf, i) sum += buf[i]\n#define DO2(buf, i) DO1(buf, i); DO1(buf, i + 1)\nint main() {\n    unsigned char buf[2] = {5, 7};\n    unsigned int sum = 0;\n    DO2(buf, 0);\n    return sum;\n}\n",
+        12,
     );
 }
 
