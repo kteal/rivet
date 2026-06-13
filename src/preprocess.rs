@@ -17,6 +17,14 @@ enum MacroDef {
     },
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct ConditionalFrame {
+    parent_active: bool,
+    current_active: bool,
+    branch_taken: bool,
+    saw_else: bool,
+}
+
 struct TokenScanner {
     tokens: Vec<Token>,
     pos: usize,
@@ -122,6 +130,7 @@ struct Preprocessor {
     tokens: Vec<Token>,
     pos: usize,
     macros: HashMap<String, MacroDef>,
+    conditionals: Vec<ConditionalFrame>,
 }
 
 impl Preprocessor {
@@ -130,6 +139,7 @@ impl Preprocessor {
             tokens,
             pos: 0,
             macros: HashMap::new(),
+            conditionals: vec![],
         }
     }
 
@@ -194,6 +204,12 @@ impl Preprocessor {
         }
     }
 
+    fn is_active(&self) -> bool {
+        self.conditionals
+            .last()
+            .map_or(true, |frame| frame.current_active)
+    }
+
     fn parse_macro_params(&mut self) -> Result<Vec<String>, PreprocessError> {
         self.expect(&TokenKind::LParen)?;
         let mut params = vec![];
@@ -225,6 +241,11 @@ impl Preprocessor {
     }
 
     fn parse_define(&mut self) -> Result<(), PreprocessError> {
+        if !self.is_active() {
+            self.skip_until_newline();
+            return Ok(());
+        }
+
         self.expect(&TokenKind::Hash)?;
         self.expect_ident()?; // "define"
         let (macro_name, _) = self.expect_ident()?;
@@ -248,6 +269,63 @@ impl Preprocessor {
         Ok(())
     }
 
+    fn parse_ifdef(&mut self, inverted: bool) -> Result<(), PreprocessError> {
+        self.expect(&TokenKind::Hash)?;
+        self.expect_ident()?; // "ifdef" or "ifndef"
+        let (macro_name, _) = self.expect_ident()?;
+        self.skip_until_newline();
+
+        let condition_met = self.macros.contains_key(&macro_name) ^ inverted;
+        let parent_active = self.is_active();
+        self.conditionals.push(ConditionalFrame {
+            parent_active,
+            current_active: parent_active && condition_met,
+            branch_taken: condition_met,
+            saw_else: false,
+        });
+        Ok(())
+    }
+
+    fn parse_else(&mut self) -> Result<(), PreprocessError> {
+        self.expect(&TokenKind::Hash)?;
+        let else_token = self.expect(&TokenKind::KwElse)?; // "else"
+        if self.conditionals.is_empty() {
+            return Err(PreprocessError {
+                message: "cannot use #else without opening conditional macro".to_string(),
+                span: else_token.span,
+            });
+        }
+        if let Some(frame) = self.conditionals.last()
+            && frame.saw_else
+        {
+            return Err(PreprocessError {
+                message: "cannot use duplicate #else".to_string(),
+                span: else_token.span,
+            });
+        }
+        if let Some(frame) = self.conditionals.last_mut() {
+            frame.current_active = frame.parent_active && !frame.branch_taken;
+            frame.branch_taken = true;
+            frame.saw_else = true;
+        }
+        self.skip_until_newline();
+        Ok(())
+    }
+
+    fn parse_endif(&mut self) -> Result<(), PreprocessError> {
+        self.expect(&TokenKind::Hash)?;
+        let (_, span) = self.expect_ident()?; // "endif"
+        if self.conditionals.is_empty() {
+            return Err(PreprocessError {
+                message: "cannot use #endif without opening conditional macro".to_string(),
+                span,
+            });
+        }
+        self.conditionals.pop();
+        self.skip_until_newline();
+        Ok(())
+    }
+
     fn collect_until_newline(&mut self) -> Vec<Token> {
         let mut replacement = vec![];
         while !matches!(self.peek_kind(), TokenKind::Newline | TokenKind::Eof) {
@@ -256,6 +334,14 @@ impl Preprocessor {
         // We should only consume a newline, not eof
         self.advance_if(&TokenKind::Newline);
         replacement
+    }
+
+    fn skip_until_newline(&mut self) {
+        while !matches!(self.peek_kind(), TokenKind::Newline | TokenKind::Eof) {
+            self.advance();
+        }
+        // We should only consume a newline, not eof
+        self.advance_if(&TokenKind::Newline);
     }
 
     fn collect_normal_tokens(&mut self) -> Vec<Token> {
@@ -360,43 +446,61 @@ impl Preprocessor {
         while self.peek_kind() != &TokenKind::Eof {
             match self.peek_kind() {
                 // #define
-                TokenKind::Hash => match self.peek_nth(1) {
-                    Token {
-                        kind: TokenKind::Ident(name),
-                        span,
-                    } if name == "define" => self.parse_define()?,
-                    Token {
-                        kind: TokenKind::Ident(name),
-                        span,
-                    } => {
-                        return Err(PreprocessError {
-                            message: format!("unsupported preprocessor directive '{name}'"),
-                            span: *span,
-                        });
+                TokenKind::Hash => {
+                    let token = self.peek_nth(1).clone();
+
+                    match token.kind {
+                        TokenKind::Ident(name) => match name.as_str() {
+                            "define" => self.parse_define()?,
+                            "ifdef" => self.parse_ifdef(false)?,
+                            "ifndef" => self.parse_ifdef(true)?,
+                            "endif" => self.parse_endif()?,
+                            _ => {
+                                if self.is_active() {
+                                    return Err(PreprocessError {
+                                        message: format!(
+                                            "unsupported preprocessor directive '{name}'"
+                                        ),
+                                        span: token.span,
+                                    });
+                                } else {
+                                    self.skip_until_newline();
+                                }
+                            }
+                        },
+                        TokenKind::KwElse => self.parse_else()?,
+                        kind => {
+                            return Err(PreprocessError {
+                                message: format!(
+                                    "expected preprocessor directive after '#', got '{:?}'",
+                                    kind
+                                ),
+                                span: token.span,
+                            });
+                        }
                     }
-                    token => {
-                        return Err(PreprocessError {
-                            message: format!(
-                                "expected preprocessor directive after '#', got '{:?}'",
-                                token.kind
-                            ),
-                            span: token.span,
-                        });
-                    }
-                },
+                }
                 TokenKind::Newline => {
                     self.advance();
                 }
                 // macros used after definition
                 _ => {
                     let chunk = self.collect_normal_tokens();
-                    let expanded = self.expand_tokens(chunk, &mut HashSet::new())?;
-                    output.extend(expanded.iter().cloned());
+                    if self.is_active() {
+                        let expanded = self.expand_tokens(chunk, &mut HashSet::new())?;
+                        output.extend(expanded.iter().cloned());
+                    }
                 }
             }
         }
 
         let eof = self.expect(&TokenKind::Eof)?;
+        if !self.conditionals.is_empty() {
+            return Err(PreprocessError {
+                message: "unterminated conditional directive".to_string(),
+                span: eof.span,
+            });
+        }
         output.push(eof);
         Ok(output)
     }

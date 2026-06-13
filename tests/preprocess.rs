@@ -261,3 +261,162 @@ fn rejects_unsupported_preprocessor_directive() {
 
     assert_eq!(err.message, "unsupported preprocessor directive 'include'");
 }
+
+#[test]
+fn ifdef_keeps_defined_branch() {
+    assert_eq!(
+        preprocess_kinds("#define A\n#ifdef A\nint x;\n#endif\n"),
+        vec![
+            TokenKind::KwInt,
+            TokenKind::Ident("x".to_string()),
+            TokenKind::Semicolon,
+            TokenKind::Eof,
+        ]
+    );
+}
+
+#[test]
+fn ifdef_skips_undefined_branch() {
+    assert_eq!(
+        preprocess_kinds("#ifdef A\nint x;\n#endif\nint y;\n"),
+        vec![
+            TokenKind::KwInt,
+            TokenKind::Ident("y".to_string()),
+            TokenKind::Semicolon,
+            TokenKind::Eof,
+        ]
+    );
+}
+
+#[test]
+fn ifndef_keeps_undefined_branch() {
+    assert_eq!(
+        preprocess_kinds("#ifndef A\nint x;\n#endif\n"),
+        vec![
+            TokenKind::KwInt,
+            TokenKind::Ident("x".to_string()),
+            TokenKind::Semicolon,
+            TokenKind::Eof,
+        ]
+    );
+}
+
+#[test]
+fn ifndef_skips_defined_branch() {
+    assert_eq!(
+        preprocess_kinds("#define A\n#ifndef A\nint x;\n#endif\nint y;\n"),
+        vec![
+            TokenKind::KwInt,
+            TokenKind::Ident("y".to_string()),
+            TokenKind::Semicolon,
+            TokenKind::Eof,
+        ]
+    );
+}
+
+#[test]
+fn else_switches_to_untaken_branch() {
+    assert_eq!(
+        preprocess_kinds("#ifdef A\nint x;\n#else\nint y;\n#endif\n"),
+        vec![
+            TokenKind::KwInt,
+            TokenKind::Ident("y".to_string()),
+            TokenKind::Semicolon,
+            TokenKind::Eof,
+        ]
+    );
+}
+
+#[test]
+fn else_skips_when_first_branch_was_taken() {
+    assert_eq!(
+        preprocess_kinds("#define A\n#ifdef A\nint x;\n#else\nint y;\n#endif\n"),
+        vec![
+            TokenKind::KwInt,
+            TokenKind::Ident("x".to_string()),
+            TokenKind::Semicolon,
+            TokenKind::Eof,
+        ]
+    );
+}
+
+#[test]
+fn nested_conditionals_stay_inactive_under_inactive_parent() {
+    assert_eq!(
+        preprocess_kinds(
+            "#ifdef OUTER\n#ifdef INNER\nint x;\n#else\nint y;\n#endif\n#else\nint z;\n#endif\n"
+        ),
+        vec![
+            TokenKind::KwInt,
+            TokenKind::Ident("z".to_string()),
+            TokenKind::Semicolon,
+            TokenKind::Eof,
+        ]
+    );
+}
+
+#[test]
+fn inactive_define_does_not_define_macro() {
+    assert_eq!(
+        preprocess_kinds("#ifdef MISSING\n#define VALUE 7\n#endif\nint x = VALUE;\n"),
+        vec![
+            TokenKind::KwInt,
+            TokenKind::Ident("x".to_string()),
+            TokenKind::Equal,
+            TokenKind::Ident("VALUE".to_string()),
+            TokenKind::Semicolon,
+            TokenKind::Eof,
+        ]
+    );
+}
+
+#[test]
+fn inactive_unsupported_directive_is_skipped() {
+    assert_eq!(
+        preprocess_kinds("#ifdef MISSING\n#include <foo>\n#endif\nint x;\n"),
+        vec![
+            TokenKind::KwInt,
+            TokenKind::Ident("x".to_string()),
+            TokenKind::Semicolon,
+            TokenKind::Eof,
+        ]
+    );
+}
+
+#[test]
+fn rejects_else_without_open_conditional() {
+    let tokens = lex("#else\nint x;\n").expect("lexing should succeed");
+    let err = preprocess(tokens).expect_err("preprocessing should fail");
+
+    assert_eq!(
+        err.message,
+        "cannot use #else without opening conditional macro"
+    );
+}
+
+#[test]
+fn rejects_endif_without_open_conditional() {
+    let tokens = lex("#endif\nint x;\n").expect("lexing should succeed");
+    let err = preprocess(tokens).expect_err("preprocessing should fail");
+
+    assert_eq!(
+        err.message,
+        "cannot use #endif without opening conditional macro"
+    );
+}
+
+#[test]
+fn rejects_duplicate_else() {
+    let tokens = lex("#ifdef A\n#else\n#else\n#endif\n").expect("lexing should succeed");
+    let err = preprocess(tokens).expect_err("preprocessing should fail");
+
+    assert_eq!(err.message, "cannot use duplicate #else");
+}
+
+#[test]
+fn rejects_unterminated_conditional() {
+    let tokens = lex("#ifdef A\nint x;\n").expect("lexing should succeed");
+    let err = preprocess(tokens).expect_err("preprocessing should fail");
+
+    assert_eq!(err.message, "unterminated conditional directive");
+}

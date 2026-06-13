@@ -169,10 +169,10 @@ Lexing and preprocessing:
 - [x] preprocessing tokens needed for object-like macros
 - [x] object-like `#define` macros, including empty replacements
 - [x] simple function-like `#define` macros with argument substitution and nested expansion
+- [x] conditional compilation with `#ifdef`, `#ifndef`, `#else`, and `#endif`
 - [ ] string literals
 - [ ] full macro expansion semantics: hide sets, stringification, token pasting, variadics, and exact whitespace-sensitive function-like macro definition rules
 - [ ] `#include`
-- [ ] conditional compilation
 
 Program structure and declarations:
 
