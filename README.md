@@ -105,7 +105,7 @@ cargo run -- path/to/program.c
 Example:
 
 ```bash
-cargo run -- tests/programs/adler32_harness.c
+cargo run -- tests/programs/adler/full_harness.c
 ```
 
 Lex, parse, and semantic errors are reported with file, line, and column information:
@@ -170,9 +170,11 @@ Lexing and preprocessing:
 - [x] object-like `#define` macros, including empty replacements
 - [x] simple function-like `#define` macros with argument substitution and nested expansion
 - [x] conditional compilation with `#ifdef`, `#ifndef`, `#else`, and `#endif`
+- [x] local quoted `#include "file.h"` handling
+- [x] string literal preprocessing tokens for quoted include paths
 - [ ] string literals
 - [ ] full macro expansion semantics: hide sets, stringification, token pasting, variadics, and exact whitespace-sensitive function-like macro definition rules
-- [ ] `#include`
+- [ ] full `#include` behavior: system includes, include search paths, and source-map-aware diagnostics
 
 Program structure and declarations:
 
@@ -280,6 +282,7 @@ Objects, aggregate types, and declarators:
 Toolchain and library compatibility:
 
 - [x] diagnostics with source locations
+- [x] full Adler-32 compatibility fixture with reduced local `zutil.h`
 - [ ] standard header strategy
 - [ ] minimal hosted C runtime integration
 - [ ] standard library calls through external symbols

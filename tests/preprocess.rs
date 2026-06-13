@@ -256,10 +256,13 @@ fn rejects_wrong_function_like_macro_arg_count() {
 
 #[test]
 fn rejects_unsupported_preprocessor_directive() {
-    let tokens = lex("#include <foo>\n").expect("lexing should succeed");
+    let tokens = lex("#unsupported <foo>\n").expect("lexing should succeed");
     let err = preprocess(tokens).expect_err("preprocessing should fail");
 
-    assert_eq!(err.message, "unsupported preprocessor directive 'include'");
+    assert_eq!(
+        err.message,
+        "unsupported preprocessor directive 'unsupported'"
+    );
 }
 
 #[test]

@@ -25,6 +25,7 @@ target
 
 tests/*
 !tests/**/*.rs
+!tests/**/*.h
 !tests/programs/
 !tests/programs/**/*.c
 

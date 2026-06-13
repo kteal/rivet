@@ -26,6 +26,7 @@ pub enum TokenKind {
         base: IntLiteralBase,
     },
     CharLiteral(i32),
+    StringLiteral(String),
     LParen,
     RParen,
     LBrace,
@@ -199,6 +200,10 @@ impl<'a> Lexer<'a> {
                 ),
                 '#' => self.advance_and_push(TokenKind::Hash),
                 '\n' => self.advance_and_push(TokenKind::Newline),
+                '"' => {
+                    let token = self.lex_string_literal()?;
+                    self.push_token(token);
+                }
                 _ => {
                     let start = self.offset;
                     let ch = self.advance().unwrap();
@@ -372,6 +377,40 @@ impl<'a> Lexer<'a> {
 
         Ok(Token {
             kind: TokenKind::CharLiteral(value),
+            span: Span {
+                start,
+                end: self.offset,
+            },
+        })
+    }
+
+    fn lex_string_literal(&mut self) -> Result<Token, LexError> {
+        let start = self.offset;
+        self.advance();
+        let mut text = String::new();
+
+        loop {
+            match self.peek() {
+                Some('"') => break,
+                Some(_) => {
+                    let ch = self.advance().expect("peeked character should exist");
+                    text.push(ch);
+                }
+                None => {
+                    return Err(LexError {
+                        message: "unterminated string literal".to_string(),
+                        span: Span {
+                            start,
+                            end: self.offset,
+                        },
+                    });
+                }
+            }
+        }
+        self.advance();
+
+        Ok(Token {
+            kind: TokenKind::StringLiteral(text),
             span: Span {
                 start,
                 end: self.offset,

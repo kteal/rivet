@@ -1,6 +1,46 @@
 use std::collections::{HashMap, HashSet};
+use std::fs;
+use std::path::{Path, PathBuf};
 
-use crate::lexer::{Span, Token, TokenKind};
+use crate::lexer::{Span, Token, TokenKind, lex};
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum ProcessError {
+    Local(PreprocessError),
+    File(PreprocessFileError),
+}
+
+impl From<PreprocessError> for ProcessError {
+    fn from(value: PreprocessError) -> Self {
+        ProcessError::Local(value)
+    }
+}
+
+impl From<PreprocessFileError> for ProcessError {
+    fn from(value: PreprocessFileError) -> Self {
+        ProcessError::File(value)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PreprocessFileError {
+    Io {
+        path: PathBuf,
+        message: String,
+    },
+    Lex {
+        path: PathBuf,
+        source: String,
+        span: Span,
+        message: String,
+    },
+    Preprocess {
+        path: PathBuf,
+        source: String,
+        span: Span,
+        message: String,
+    },
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PreprocessError {
@@ -17,6 +57,7 @@ enum MacroDef {
     },
 }
 
+#[allow(clippy::struct_excessive_bools)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct ConditionalFrame {
     parent_active: bool,
@@ -126,20 +167,18 @@ impl TokenScanner {
     }
 }
 
-struct Preprocessor {
+struct InputScanner {
     tokens: Vec<Token>,
     pos: usize,
-    macros: HashMap<String, MacroDef>,
-    conditionals: Vec<ConditionalFrame>,
+    path: Option<PathBuf>,
 }
 
-impl Preprocessor {
-    fn new(tokens: Vec<Token>) -> Self {
+impl InputScanner {
+    fn new(tokens: Vec<Token>, path: Option<&Path>) -> Self {
         Self {
             tokens,
             pos: 0,
-            macros: HashMap::new(),
-            conditionals: vec![],
+            path: path.map(Path::to_path_buf),
         }
     }
 
@@ -204,126 +243,20 @@ impl Preprocessor {
         }
     }
 
-    fn is_active(&self) -> bool {
-        self.conditionals
-            .last()
-            .map_or(true, |frame| frame.current_active)
-    }
+    fn expect_str_literal(&mut self) -> Result<(String, Span), PreprocessError> {
+        let token = self.advance();
 
-    fn parse_macro_params(&mut self) -> Result<Vec<String>, PreprocessError> {
-        self.expect(&TokenKind::LParen)?;
-        let mut params = vec![];
-
-        if self.peek_kind() == &TokenKind::RParen {
-            self.advance();
-            return Ok(params);
-        }
-
-        loop {
-            let (param, _) = self.expect_ident()?;
-            params.push(param);
-
-            if self.peek_kind() == &TokenKind::Comma {
-                self.advance();
-                if self.peek_kind() == &TokenKind::RParen {
-                    let token = self.peek();
-                    return Err(PreprocessError {
-                        message: "trailing comma".to_string(),
-                        span: token.span,
-                    });
-                }
-                continue;
-            }
-
-            self.expect(&TokenKind::RParen)?;
-            return Ok(params);
-        }
-    }
-
-    fn parse_define(&mut self) -> Result<(), PreprocessError> {
-        if !self.is_active() {
-            self.skip_until_newline();
-            return Ok(());
-        }
-
-        self.expect(&TokenKind::Hash)?;
-        self.expect_ident()?; // "define"
-        let (macro_name, _) = self.expect_ident()?;
-
-        // FunctionLike macro definition
-        if self.peek_kind() == &TokenKind::LParen {
-            let params = self.parse_macro_params()?;
-            let replacement = self.collect_until_newline();
-            self.macros.insert(
-                macro_name,
-                MacroDef::FunctionLike {
-                    params,
-                    replacement,
-                },
-            );
-        } else {
-            let replacement = self.collect_until_newline();
-            self.macros
-                .insert(macro_name, MacroDef::ObjectLike(replacement));
-        }
-        Ok(())
-    }
-
-    fn parse_ifdef(&mut self, inverted: bool) -> Result<(), PreprocessError> {
-        self.expect(&TokenKind::Hash)?;
-        self.expect_ident()?; // "ifdef" or "ifndef"
-        let (macro_name, _) = self.expect_ident()?;
-        self.skip_until_newline();
-
-        let condition_met = self.macros.contains_key(&macro_name) ^ inverted;
-        let parent_active = self.is_active();
-        self.conditionals.push(ConditionalFrame {
-            parent_active,
-            current_active: parent_active && condition_met,
-            branch_taken: condition_met,
-            saw_else: false,
-        });
-        Ok(())
-    }
-
-    fn parse_else(&mut self) -> Result<(), PreprocessError> {
-        self.expect(&TokenKind::Hash)?;
-        let else_token = self.expect(&TokenKind::KwElse)?; // "else"
-        if self.conditionals.is_empty() {
-            return Err(PreprocessError {
-                message: "cannot use #else without opening conditional macro".to_string(),
-                span: else_token.span,
-            });
-        }
-        if let Some(frame) = self.conditionals.last()
-            && frame.saw_else
-        {
-            return Err(PreprocessError {
-                message: "cannot use duplicate #else".to_string(),
-                span: else_token.span,
-            });
-        }
-        if let Some(frame) = self.conditionals.last_mut() {
-            frame.current_active = frame.parent_active && !frame.branch_taken;
-            frame.branch_taken = true;
-            frame.saw_else = true;
-        }
-        self.skip_until_newline();
-        Ok(())
-    }
-
-    fn parse_endif(&mut self) -> Result<(), PreprocessError> {
-        self.expect(&TokenKind::Hash)?;
-        let (_, span) = self.expect_ident()?; // "endif"
-        if self.conditionals.is_empty() {
-            return Err(PreprocessError {
-                message: "cannot use #endif without opening conditional macro".to_string(),
+        match token {
+            Token {
+                kind: TokenKind::StringLiteral(name),
                 span,
-            });
+            } => Ok((name, span)),
+
+            token => Err(PreprocessError {
+                message: format!("expected string literal token, got '{:?}'", token.kind),
+                span: token.span,
+            }),
         }
-        self.conditionals.pop();
-        self.skip_until_newline();
-        Ok(())
     }
 
     fn collect_until_newline(&mut self) -> Vec<Token> {
@@ -353,6 +286,183 @@ impl Preprocessor {
             output.push(self.advance());
         }
         output
+    }
+
+    fn resolve_include_path(
+        &self,
+        file_name: &str,
+        span: Span,
+    ) -> Result<PathBuf, PreprocessError> {
+        if let Some(path) = &self.path {
+            Ok(path
+                .parent()
+                .expect("file not in a directory")
+                .join(file_name))
+        } else {
+            Err(PreprocessError {
+                message: "cannot resolve quoted include without source file path".to_string(),
+                span,
+            })
+        }
+    }
+}
+
+struct Preprocessor {
+    macros: HashMap<String, MacroDef>,
+    conditionals: Vec<ConditionalFrame>,
+}
+
+impl Preprocessor {
+    fn new() -> Self {
+        Self {
+            macros: HashMap::new(),
+            conditionals: vec![],
+        }
+    }
+
+    fn is_active(&self) -> bool {
+        self.conditionals
+            .last()
+            .is_none_or(|frame| frame.current_active)
+    }
+
+    fn parse_macro_params(scanner: &mut InputScanner) -> Result<Vec<String>, PreprocessError> {
+        scanner.expect(&TokenKind::LParen)?;
+        let mut params = vec![];
+
+        if scanner.peek_kind() == &TokenKind::RParen {
+            scanner.advance();
+            return Ok(params);
+        }
+
+        loop {
+            let (param, _) = scanner.expect_ident()?;
+            params.push(param);
+
+            if scanner.peek_kind() == &TokenKind::Comma {
+                scanner.advance();
+                if scanner.peek_kind() == &TokenKind::RParen {
+                    let token = scanner.peek();
+                    return Err(PreprocessError {
+                        message: "trailing comma".to_string(),
+                        span: token.span,
+                    });
+                }
+                continue;
+            }
+
+            scanner.expect(&TokenKind::RParen)?;
+            return Ok(params);
+        }
+    }
+
+    fn parse_define(&mut self, scanner: &mut InputScanner) -> Result<(), PreprocessError> {
+        if !self.is_active() {
+            scanner.skip_until_newline();
+            return Ok(());
+        }
+
+        scanner.expect(&TokenKind::Hash)?;
+        scanner.expect_ident()?; // "define"
+        let (macro_name, _) = scanner.expect_ident()?;
+
+        // FunctionLike macro definition
+        if scanner.peek_kind() == &TokenKind::LParen {
+            let params = Self::parse_macro_params(scanner)?;
+            let replacement = scanner.collect_until_newline();
+            self.macros.insert(
+                macro_name,
+                MacroDef::FunctionLike {
+                    params,
+                    replacement,
+                },
+            );
+        } else {
+            let replacement = scanner.collect_until_newline();
+            self.macros
+                .insert(macro_name, MacroDef::ObjectLike(replacement));
+        }
+        Ok(())
+    }
+
+    fn parse_ifdef(
+        &mut self,
+        scanner: &mut InputScanner,
+        inverted: bool,
+    ) -> Result<(), PreprocessError> {
+        scanner.expect(&TokenKind::Hash)?;
+        scanner.expect_ident()?; // "ifdef" or "ifndef"
+        let (macro_name, _) = scanner.expect_ident()?;
+        scanner.skip_until_newline();
+
+        let condition_met = self.macros.contains_key(&macro_name) ^ inverted;
+        let parent_active = self.is_active();
+        self.conditionals.push(ConditionalFrame {
+            parent_active,
+            current_active: parent_active && condition_met,
+            branch_taken: condition_met,
+            saw_else: false,
+        });
+        Ok(())
+    }
+
+    fn parse_else(&mut self, scanner: &mut InputScanner) -> Result<(), PreprocessError> {
+        scanner.expect(&TokenKind::Hash)?;
+        let else_token = scanner.expect(&TokenKind::KwElse)?; // "else"
+        if self.conditionals.is_empty() {
+            return Err(PreprocessError {
+                message: "cannot use #else without opening conditional macro".to_string(),
+                span: else_token.span,
+            });
+        }
+        if let Some(frame) = self.conditionals.last()
+            && frame.saw_else
+        {
+            return Err(PreprocessError {
+                message: "cannot use duplicate #else".to_string(),
+                span: else_token.span,
+            });
+        }
+        if let Some(frame) = self.conditionals.last_mut() {
+            frame.current_active = frame.parent_active && !frame.branch_taken;
+            frame.branch_taken = true;
+            frame.saw_else = true;
+        }
+        scanner.skip_until_newline();
+        Ok(())
+    }
+
+    fn parse_endif(&mut self, scanner: &mut InputScanner) -> Result<(), PreprocessError> {
+        scanner.expect(&TokenKind::Hash)?;
+        let (_, span) = scanner.expect_ident()?; // "endif"
+        if self.conditionals.is_empty() {
+            return Err(PreprocessError {
+                message: "cannot use #endif without opening conditional macro".to_string(),
+                span,
+            });
+        }
+        self.conditionals.pop();
+        scanner.skip_until_newline();
+        Ok(())
+    }
+
+    fn parse_include(&mut self, scanner: &mut InputScanner) -> Result<Vec<Token>, ProcessError> {
+        if !self.is_active() {
+            scanner.skip_until_newline();
+            return Ok(vec![]);
+        }
+
+        scanner.expect(&TokenKind::Hash)?;
+        scanner.expect_ident()?; // "include"
+        let (file_name, file_name_span) = scanner.expect_str_literal()?;
+        scanner.skip_until_newline();
+
+        let resolved_path = scanner.resolve_include_path(&file_name, file_name_span)?;
+        let mut included_tokens = self.process_file(&resolved_path)?;
+        if included_tokens.last().expect("got no included tokens").kind == TokenKind::Eof {
+            included_tokens.pop();
+        }
+        Ok(included_tokens)
     }
 
     fn expand_function_like(
@@ -441,51 +551,53 @@ impl Preprocessor {
         Ok(output)
     }
 
-    fn preprocess(&mut self) -> Result<Vec<Token>, PreprocessError> {
+    fn process_scanner(&mut self, scanner: &mut InputScanner) -> Result<Vec<Token>, ProcessError> {
         let mut output = vec![];
-        while self.peek_kind() != &TokenKind::Eof {
-            match self.peek_kind() {
-                // #define
+        let conditional_depth = self.conditionals.len();
+        while scanner.peek_kind() != &TokenKind::Eof {
+            match scanner.peek_kind() {
                 TokenKind::Hash => {
-                    let token = self.peek_nth(1).clone();
+                    let token = scanner.peek_nth(1).clone();
 
                     match token.kind {
                         TokenKind::Ident(name) => match name.as_str() {
-                            "define" => self.parse_define()?,
-                            "ifdef" => self.parse_ifdef(false)?,
-                            "ifndef" => self.parse_ifdef(true)?,
-                            "endif" => self.parse_endif()?,
+                            "define" => self.parse_define(scanner)?,
+                            "ifdef" => self.parse_ifdef(scanner, false)?,
+                            "ifndef" => self.parse_ifdef(scanner, true)?,
+                            "endif" => self.parse_endif(scanner)?,
+                            "include" => {
+                                let included = self.parse_include(scanner)?;
+                                output.extend(included);
+                            }
                             _ => {
                                 if self.is_active() {
-                                    return Err(PreprocessError {
+                                    return Err(ProcessError::Local(PreprocessError {
                                         message: format!(
                                             "unsupported preprocessor directive '{name}'"
                                         ),
                                         span: token.span,
-                                    });
-                                } else {
-                                    self.skip_until_newline();
+                                    }));
                                 }
+                                scanner.skip_until_newline();
                             }
                         },
-                        TokenKind::KwElse => self.parse_else()?,
+                        TokenKind::KwElse => self.parse_else(scanner)?,
                         kind => {
-                            return Err(PreprocessError {
+                            return Err(ProcessError::Local(PreprocessError {
                                 message: format!(
-                                    "expected preprocessor directive after '#', got '{:?}'",
-                                    kind
+                                    "expected preprocessor directive after '#', got '{kind:?}'"
                                 ),
                                 span: token.span,
-                            });
+                            }));
                         }
                     }
                 }
                 TokenKind::Newline => {
-                    self.advance();
+                    scanner.advance();
                 }
                 // macros used after definition
                 _ => {
-                    let chunk = self.collect_normal_tokens();
+                    let chunk = scanner.collect_normal_tokens();
                     if self.is_active() {
                         let expanded = self.expand_tokens(chunk, &mut HashSet::new())?;
                         output.extend(expanded.iter().cloned());
@@ -494,15 +606,40 @@ impl Preprocessor {
             }
         }
 
-        let eof = self.expect(&TokenKind::Eof)?;
-        if !self.conditionals.is_empty() {
-            return Err(PreprocessError {
+        let eof = scanner.expect(&TokenKind::Eof)?;
+        if self.conditionals.len() != conditional_depth {
+            return Err(ProcessError::Local(PreprocessError {
                 message: "unterminated conditional directive".to_string(),
                 span: eof.span,
-            });
+            }));
         }
         output.push(eof);
         Ok(output)
+    }
+
+    fn process_file(&mut self, path: &Path) -> Result<Vec<Token>, PreprocessFileError> {
+        let source = fs::read_to_string(path).map_err(|err| PreprocessFileError::Io {
+            path: path.to_path_buf(),
+            message: err.to_string(),
+        })?;
+        let source = splice_escaped_newlines(&source);
+        let tokens = lex(&source).map_err(|err| PreprocessFileError::Lex {
+            path: path.to_path_buf(),
+            source: source.clone(),
+            span: err.span,
+            message: err.message,
+        })?;
+        let mut scanner = InputScanner::new(tokens, Some(path));
+        match self.process_scanner(&mut scanner) {
+            Ok(tokens) => Ok(tokens),
+            Err(ProcessError::Local(err)) => Err(PreprocessFileError::Preprocess {
+                path: path.to_path_buf(),
+                source,
+                span: err.span,
+                message: err.message,
+            }),
+            Err(ProcessError::File(err)) => Err(err),
+        }
     }
 }
 
@@ -513,8 +650,24 @@ impl Preprocessor {
 /// Returns a [`PreprocessError`] when a supported directive is malformed, such as
 /// a `#define` without an identifier macro name.
 pub fn preprocess(tokens: Vec<Token>) -> Result<Vec<Token>, PreprocessError> {
-    let mut preprocessor = Preprocessor::new(tokens);
-    preprocessor.preprocess()
+    let mut preprocessor = Preprocessor::new();
+    let mut scanner = InputScanner::new(tokens, None);
+    match preprocessor.process_scanner(&mut scanner) {
+        Ok(tokens) => Ok(tokens),
+        Err(ProcessError::Local(err)) => Err(err),
+        Err(ProcessError::File(_)) => unreachable!(),
+    }
+}
+
+/// Expands the supported preprocessing directives from a source file.
+///
+/// # Errors
+///
+/// Returns a [`PreprocessFileError`] when the source file cannot be read, when
+/// lexing fails, or when preprocessing fails.
+pub fn preprocess_file(path: &Path) -> Result<Vec<Token>, PreprocessFileError> {
+    let mut preprocessor = Preprocessor::new();
+    preprocessor.process_file(path)
 }
 
 #[must_use]

@@ -1,11 +1,13 @@
 use std::env;
 use std::fs;
+use std::path::Path;
 use std::process;
 
 use rivet::codegen::{CodegenTarget, generate};
-use rivet::lexer::{Span, lex};
+use rivet::lexer::Span;
 use rivet::parser::parse;
-use rivet::preprocess::{preprocess, splice_escaped_newlines};
+use rivet::preprocess::PreprocessFileError;
+use rivet::preprocess::preprocess_file;
 use rivet::sema::check;
 
 fn line_col(source: &str, offset: usize) -> (usize, usize) {
@@ -47,20 +49,32 @@ fn main() {
         process::exit(2);
     }
 
+    // For diagnostic message purposes
     let source = fs::read_to_string(&path).unwrap_or_else(|err| {
         eprintln!("failed to read {path}: {err}");
         process::exit(1);
     });
 
-    let source = splice_escaped_newlines(&source);
-
-    let tokens = lex(&source).unwrap_or_else(|err| {
-        print_error(&path, &source, err.span, &err.message);
-        process::exit(1);
-    });
-
-    let tokens = preprocess(tokens).unwrap_or_else(|err| {
-        print_error(&path, &source, err.span, &err.message);
+    let tokens = preprocess_file(Path::new(&path)).unwrap_or_else(|err| {
+        match err {
+            PreprocessFileError::Io { path, message } => {
+                eprintln!("failed to read path '{}': {message}", path.display());
+            }
+            PreprocessFileError::Lex {
+                path,
+                source,
+                span,
+                message,
+            }
+            | PreprocessFileError::Preprocess {
+                path,
+                source,
+                span,
+                message,
+            } => {
+                print_error(&path.display().to_string(), &source, span, &message);
+            }
+        }
         process::exit(1);
     });
 

@@ -30,17 +30,22 @@ fn run_qemu_file(path: &str, expected: i32) {
 
 #[test]
 fn qemu_adler32_reduced_harness_returns_success() {
-    run_qemu_file("tests/programs/adler32_harness.c", 0);
+    run_qemu_file("tests/programs/adler/harness.c", 0);
 }
 
 #[test]
 fn qemu_adler32_zlib_compat_returns_success() {
-    run_qemu_file("tests/programs/adler32_zlib_compat.c", 0);
+    run_qemu_file("tests/programs/adler/zlib_compat.c", 0);
 }
 
 #[test]
 fn qemu_adler32_do16_macro_ladder_returns_success() {
-    run_qemu_file("tests/programs/adler32_do16.c", 0);
+    run_qemu_file("tests/programs/adler/do16.c", 0);
+}
+
+#[test]
+fn qemu_adler32_full_harness_returns_success() {
+    run_qemu_file("tests/programs/adler/full_harness.c", 0);
 }
 
 #[test]
