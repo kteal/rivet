@@ -1,10 +1,9 @@
 use std::env;
-use std::fs;
 use std::path::Path;
 use std::process;
 
 use rivet::codegen::{CodegenTarget, generate};
-use rivet::lexer::Span;
+
 use rivet::parser::parse;
 use rivet::preprocess::PreprocessFileError;
 use rivet::preprocess::preprocess_file;
@@ -30,11 +29,6 @@ fn line_col(source: &str, offset: usize) -> (usize, usize) {
     (line, col)
 }
 
-fn print_error(path: &str, source: &str, span: Span, message: &str) {
-    let (line, col) = line_col(source, span.start);
-    eprintln!("{path}:{line}:{col}: error: {message}");
-}
-
 fn main() {
     let mut args = env::args();
     let program_name = args.next().unwrap_or_else(|| "rivet".to_string());
@@ -49,13 +43,7 @@ fn main() {
         process::exit(2);
     }
 
-    // For diagnostic message purposes
-    let source = fs::read_to_string(&path).unwrap_or_else(|err| {
-        eprintln!("failed to read {path}: {err}");
-        process::exit(1);
-    });
-
-    let tokens = preprocess_file(Path::new(&path)).unwrap_or_else(|err| {
+    let preprocessed = preprocess_file(Path::new(&path)).unwrap_or_else(|err| {
         match err {
             PreprocessFileError::Io { path, message } => {
                 eprintln!("failed to read path '{}': {message}", path.display());
@@ -72,19 +60,36 @@ fn main() {
                 span,
                 message,
             } => {
-                print_error(&path.display().to_string(), &source, span, &message);
+                let (line, col) = line_col(&source, span.start);
+                eprintln!("{}:{line}:{col}: error: {message}", path.display());
             }
         }
         process::exit(1);
     });
+    let tokens = preprocessed.tokens;
+    let source_map = preprocessed.source_map;
 
     let program = parse(tokens).unwrap_or_else(|err| {
-        print_error(&path, &source, err.span, &err.message);
+        let location = source_map.location(err.span);
+        eprintln!(
+            "{}:{}:{}: error: {}",
+            location.path.display(),
+            location.line,
+            location.column,
+            err.message
+        );
         process::exit(1);
     });
 
     let typed_program = check(&program).unwrap_or_else(|err| {
-        print_error(&path, &source, err.span, &err.message);
+        let location = source_map.location(err.span);
+        eprintln!(
+            "{}:{}:{}: error: {}",
+            location.path.display(),
+            location.line,
+            location.column,
+            err.message
+        );
         process::exit(1);
     });
 

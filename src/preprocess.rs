@@ -2,7 +2,8 @@ use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use crate::lexer::{Span, Token, TokenKind, lex};
+use crate::lexer::{Token, TokenKind, lex};
+use crate::source::{SourceMap, Span};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum ProcessError {
@@ -46,6 +47,12 @@ pub enum PreprocessFileError {
 pub struct PreprocessError {
     pub message: String,
     pub span: Span,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PreprocessedFile {
+    pub tokens: Vec<Token>,
+    pub source_map: SourceMap,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -313,6 +320,7 @@ impl InputScanner {
 struct Preprocessor {
     macros: HashMap<String, MacroDef>,
     conditionals: Vec<ConditionalFrame>,
+    source_map: SourceMap,
 }
 
 impl Preprocessor {
@@ -320,6 +328,7 @@ impl Preprocessor {
         Self {
             macros: HashMap::new(),
             conditionals: vec![],
+            source_map: SourceMap::new(),
         }
     }
 
@@ -626,7 +635,8 @@ impl Preprocessor {
             message: err.to_string(),
         })?;
         let source = splice_escaped_newlines(&source);
-        let tokens = lex(&source).map_err(|err| PreprocessFileError::Lex {
+        let file_id = self.source_map.add_file(path, source.clone());
+        let tokens = lex(&source, file_id).map_err(|err| PreprocessFileError::Lex {
             path: path.to_path_buf(),
             source: source.clone(),
             span: err.span,
@@ -668,9 +678,13 @@ pub fn preprocess(tokens: Vec<Token>) -> Result<Vec<Token>, PreprocessError> {
 ///
 /// Returns a [`PreprocessFileError`] when the source file cannot be read, when
 /// lexing fails, or when preprocessing fails.
-pub fn preprocess_file(path: &Path) -> Result<Vec<Token>, PreprocessFileError> {
+pub fn preprocess_file(path: &Path) -> Result<PreprocessedFile, PreprocessFileError> {
     let mut preprocessor = Preprocessor::new();
-    preprocessor.process_file(path)
+    let tokens = preprocessor.process_file(path)?;
+    Ok(PreprocessedFile {
+        tokens,
+        source_map: preprocessor.source_map,
+    })
 }
 
 #[must_use]

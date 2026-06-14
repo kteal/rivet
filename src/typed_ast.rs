@@ -1,5 +1,5 @@
 use crate::ast::{BinaryOp, Type, UnaryOp};
-use crate::lexer::Span;
+use crate::source::Span;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TypedProgram {

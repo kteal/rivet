@@ -4,7 +4,8 @@ use crate::ast::{
     BinaryOp, Expr, ExternalDecl, Function, Initializer, IntLiteralBase, IntLiteralSuffix, Param,
     Program, Statement, Type, UnaryOp,
 };
-use crate::lexer::Span;
+use crate::source::Span;
+
 use crate::typed_ast::{
     LocalId, TypedExpr, TypedExprKind, TypedExternalDecl, TypedFunction, TypedInitializer,
     TypedParam, TypedProgram, TypedStatement,

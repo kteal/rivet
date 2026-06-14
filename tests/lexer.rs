@@ -1,8 +1,9 @@
 use rivet::ast::{IntLiteralBase, IntLiteralSuffix};
-use rivet::lexer::{LexError, Span, Token, TokenKind, lex};
+use rivet::lexer::{LexError, Token, TokenKind, lex};
+use rivet::source::{DUMMY_FILE_ID, Span};
 
 fn lex_with_struct(source: &str) -> Result<Vec<Token>, LexError> {
-    lex(source)
+    lex(source, DUMMY_FILE_ID)
 }
 
 fn token_kinds(tokens: &[Token]) -> Vec<TokenKind> {
@@ -20,10 +21,26 @@ fn lexes_token_spans() {
     assert_eq!(
         token_spans(&tokens),
         vec![
-            Span { start: 0, end: 3 },
-            Span { start: 4, end: 5 },
-            Span { start: 5, end: 6 },
-            Span { start: 6, end: 6 },
+            Span {
+                file_id: DUMMY_FILE_ID,
+                start: 0,
+                end: 3
+            },
+            Span {
+                file_id: DUMMY_FILE_ID,
+                start: 4,
+                end: 5
+            },
+            Span {
+                file_id: DUMMY_FILE_ID,
+                start: 5,
+                end: 6
+            },
+            Span {
+                file_id: DUMMY_FILE_ID,
+                start: 6,
+                end: 6
+            },
         ]
     );
 }
@@ -565,9 +582,21 @@ fn lexes_char_literal_spans() {
     assert_eq!(
         token_spans(&tokens),
         vec![
-            Span { start: 0, end: 3 },
-            Span { start: 4, end: 8 },
-            Span { start: 8, end: 8 },
+            Span {
+                file_id: DUMMY_FILE_ID,
+                start: 0,
+                end: 3
+            },
+            Span {
+                file_id: DUMMY_FILE_ID,
+                start: 4,
+                end: 8
+            },
+            Span {
+                file_id: DUMMY_FILE_ID,
+                start: 8,
+                end: 8
+            },
         ]
     );
 }
@@ -577,7 +606,14 @@ fn rejects_empty_char_literal() {
     let err = lex_with_struct("''").expect_err("lexing should fail");
 
     assert_eq!(err.message, "empty character constant");
-    assert_eq!(err.span, Span { start: 0, end: 2 });
+    assert_eq!(
+        err.span,
+        Span {
+            file_id: DUMMY_FILE_ID,
+            start: 0,
+            end: 2
+        }
+    );
 }
 
 #[test]
@@ -585,7 +621,14 @@ fn rejects_unterminated_char_literal() {
     let err = lex_with_struct("'A").expect_err("lexing should fail");
 
     assert_eq!(err.message, "unterminated character constant");
-    assert_eq!(err.span, Span { start: 0, end: 2 });
+    assert_eq!(
+        err.span,
+        Span {
+            file_id: DUMMY_FILE_ID,
+            start: 0,
+            end: 2
+        }
+    );
 }
 
 #[test]
@@ -593,7 +636,14 @@ fn rejects_unknown_char_literal_escape() {
     let err = lex_with_struct("'\\q'").expect_err("lexing should fail");
 
     assert_eq!(err.message, "unknown escape sequence '\\q'");
-    assert_eq!(err.span, Span { start: 0, end: 3 });
+    assert_eq!(
+        err.span,
+        Span {
+            file_id: DUMMY_FILE_ID,
+            start: 0,
+            end: 3
+        }
+    );
 }
 
 #[test]
@@ -601,7 +651,14 @@ fn rejects_multi_character_literal() {
     let err = lex_with_struct("'ab'").expect_err("lexing should fail");
 
     assert_eq!(err.message, "multi-character constants are not supported");
-    assert_eq!(err.span, Span { start: 0, end: 4 });
+    assert_eq!(
+        err.span,
+        Span {
+            file_id: DUMMY_FILE_ID,
+            start: 0,
+            end: 4
+        }
+    );
 }
 
 #[test]
@@ -795,6 +852,7 @@ fn rejects_unterminated_block_comment() {
     assert_eq!(
         err.span,
         Span {
+            file_id: DUMMY_FILE_ID,
             start: 7,
             end: source.len()
         }
@@ -806,7 +864,14 @@ fn rejects_unknown_characters() {
     let err = lex_with_struct("int main @").expect_err("lexing should fail");
 
     assert_eq!(err.message, "unexpected character '@'");
-    assert_eq!(err.span, Span { start: 9, end: 10 });
+    assert_eq!(
+        err.span,
+        Span {
+            file_id: DUMMY_FILE_ID,
+            start: 9,
+            end: 10
+        }
+    );
 }
 
 #[test]

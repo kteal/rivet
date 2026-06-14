@@ -6,7 +6,7 @@
 
 `rivet` is a C compiler written in Rust that targets RV32IM assembly. It is working toward C23 by growing a small, tested C subset.
 
-It currently handles common integer and character types, basic pointers, fixed-size local arrays, array indexing, functions, block scope, common control flow, and C-like expression precedence. It emits RV32IM assembly and reports lexer, parser, and semantic errors with source locations.
+It currently handles common integer and character types, basic pointers, fixed-size local arrays, array indexing, functions, block scope, common control flow, and C-like expression precedence. It emits RV32IM assembly and reports lexer, parser, and semantic errors with source-map-backed file, line, and column locations.
 
 The current language subset supports programs shaped like:
 
@@ -172,9 +172,10 @@ Lexing and preprocessing:
 - [x] conditional compilation with `#ifdef`, `#ifndef`, `#else`, and `#endif`
 - [x] local quoted `#include "file.h"` handling
 - [x] string literal preprocessing tokens for quoted include paths
+- [x] file-aware token spans with `SourceMap` / `FileId`
 - [ ] string literals
 - [ ] full macro expansion semantics: hide sets, stringification, token pasting, variadics, and exact whitespace-sensitive function-like macro definition rules
-- [ ] full `#include` behavior: system includes, include search paths, and source-map-aware diagnostics
+- [ ] full `#include` behavior: system includes and include search paths
 
 Program structure and declarations:
 
@@ -281,8 +282,9 @@ Objects, aggregate types, and declarators:
 
 Toolchain and library compatibility:
 
-- [x] diagnostics with source locations
+- [x] diagnostics with source-map-backed file, line, and column locations
 - [x] full Adler-32 compatibility fixture with reduced local `zutil.h`
+- [ ] macro expansion provenance in diagnostics
 - [ ] standard header strategy
 - [ ] minimal hosted C runtime integration
 - [ ] standard library calls through external symbols

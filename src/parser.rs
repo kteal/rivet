@@ -4,7 +4,8 @@ use crate::ast::{
     BinaryOp, Expr, ExternalDecl, Function, Initializer, IntLiteralBase, IntLiteralSuffix, Param,
     Program, Statement, Type, Typedef, UnaryOp,
 };
-use crate::lexer::{Span, Token, TokenKind};
+use crate::lexer::{Token, TokenKind};
+use crate::source::Span;
 
 const MULTIPLICATIVE_OPS: &[(TokenKind, BinaryOp)] = &[
     (TokenKind::Star, BinaryOp::Multiply),
@@ -979,23 +980,37 @@ pub fn parse(tokens: Vec<Token>) -> Result<Program, ParseError> {
 
 #[cfg(test)]
 mod tests {
+    use crate::source::DUMMY_FILE_ID;
+
     use super::*;
 
     fn span() -> Span {
-        Span { start: 0, end: 0 }
+        Span {
+            file_id: DUMMY_FILE_ID,
+            start: 0,
+            end: 0,
+        }
     }
 
     fn token(kind: TokenKind) -> Token {
         Token {
             kind,
-            span: Span { start: 0, end: 0 },
+            span: Span {
+                file_id: DUMMY_FILE_ID,
+                start: 0,
+                end: 0,
+            },
         }
     }
 
     fn token_with_span(kind: TokenKind, start: usize, end: usize) -> Token {
         Token {
             kind,
-            span: Span { start, end },
+            span: Span {
+                file_id: DUMMY_FILE_ID,
+                start,
+                end,
+            },
         }
     }
 
@@ -1043,7 +1058,14 @@ mod tests {
             .parse_statement()
             .expect_err("missing semicolon should fail");
 
-        assert_eq!(err.span, Span { start: 1, end: 1 });
+        assert_eq!(
+            err.span,
+            Span {
+                file_id: DUMMY_FILE_ID,
+                start: 1,
+                end: 1
+            }
+        );
         assert!(err.message.contains("expected Semicolon"));
     }
 
@@ -1060,7 +1082,14 @@ mod tests {
             .parse_statement()
             .expect_err("return without expression should fail");
 
-        assert_eq!(err.span, Span { start: 7, end: 8 });
+        assert_eq!(
+            err.span,
+            Span {
+                file_id: DUMMY_FILE_ID,
+                start: 7,
+                end: 8
+            }
+        );
         assert_eq!(err.message, "expected expression, found RParen");
     }
 
@@ -1089,7 +1118,14 @@ mod tests {
             .parse_statement()
             .expect_err("trailing argument comma should fail");
 
-        assert_eq!(err.span, Span { start: 14, end: 15 });
+        assert_eq!(
+            err.span,
+            Span {
+                file_id: DUMMY_FILE_ID,
+                start: 14,
+                end: 15
+            }
+        );
         assert_eq!(err.message, "trailing comma");
     }
 
@@ -1139,26 +1175,46 @@ mod tests {
             Statement::Return(Expr::Assign {
                 target: Box::new(Expr::Binary {
                     op: BinaryOp::Add,
-                    op_span: Span { start: 10, end: 11 },
+                    op_span: Span {
+                        file_id: DUMMY_FILE_ID,
+                        start: 10,
+                        end: 11
+                    },
                     left: Box::new(Expr::IntLiteral {
                         value: 1,
                         suffix: IntLiteralSuffix::None,
                         base: IntLiteralBase::Decimal,
-                        span: Span { start: 8, end: 9 },
+                        span: Span {
+                            file_id: DUMMY_FILE_ID,
+                            start: 8,
+                            end: 9
+                        },
                     }),
                     right: Box::new(Expr::IntLiteral {
                         value: 2,
                         suffix: IntLiteralSuffix::None,
                         base: IntLiteralBase::Decimal,
-                        span: Span { start: 12, end: 13 },
+                        span: Span {
+                            file_id: DUMMY_FILE_ID,
+                            start: 12,
+                            end: 13
+                        },
                     }),
                 }),
-                op_span: Span { start: 15, end: 16 },
+                op_span: Span {
+                    file_id: DUMMY_FILE_ID,
+                    start: 15,
+                    end: 16
+                },
                 value: Box::new(Expr::IntLiteral {
                     value: 3,
                     suffix: IntLiteralSuffix::None,
                     base: IntLiteralBase::Decimal,
-                    span: Span { start: 17, end: 18 },
+                    span: Span {
+                        file_id: DUMMY_FILE_ID,
+                        start: 17,
+                        end: 18
+                    },
                 }),
             })
         );
@@ -1210,27 +1266,47 @@ mod tests {
             Statement::Return(Expr::CompoundAssign {
                 target: Box::new(Expr::Binary {
                     op: BinaryOp::Add,
-                    op_span: Span { start: 10, end: 11 },
+                    op_span: Span {
+                        file_id: DUMMY_FILE_ID,
+                        start: 10,
+                        end: 11
+                    },
                     left: Box::new(Expr::IntLiteral {
                         value: 1,
                         suffix: IntLiteralSuffix::None,
                         base: IntLiteralBase::Decimal,
-                        span: Span { start: 8, end: 9 },
+                        span: Span {
+                            file_id: DUMMY_FILE_ID,
+                            start: 8,
+                            end: 9
+                        },
                     }),
                     right: Box::new(Expr::IntLiteral {
                         value: 2,
                         suffix: IntLiteralSuffix::None,
                         base: IntLiteralBase::Decimal,
-                        span: Span { start: 12, end: 13 },
+                        span: Span {
+                            file_id: DUMMY_FILE_ID,
+                            start: 12,
+                            end: 13
+                        },
                     }),
                 }),
                 op: BinaryOp::Add,
-                op_span: Span { start: 15, end: 17 },
+                op_span: Span {
+                    file_id: DUMMY_FILE_ID,
+                    start: 15,
+                    end: 17
+                },
                 value: Box::new(Expr::IntLiteral {
                     value: 3,
                     suffix: IntLiteralSuffix::None,
                     base: IntLiteralBase::Decimal,
-                    span: Span { start: 18, end: 19 },
+                    span: Span {
+                        file_id: DUMMY_FILE_ID,
+                        start: 18,
+                        end: 19
+                    },
                 }),
             })
         );
@@ -1253,7 +1329,14 @@ mod tests {
         };
 
         assert_eq!(op, BinaryOp::Add);
-        assert_eq!(op_span, Span { start: 2, end: 3 });
+        assert_eq!(
+            op_span,
+            Span {
+                file_id: DUMMY_FILE_ID,
+                start: 2,
+                end: 3
+            }
+        );
     }
 
     #[test]
@@ -1377,9 +1460,23 @@ mod tests {
         let params = &first_function(&program).params;
 
         assert_eq!(params[0].name, "x");
-        assert_eq!(params[0].name_span, Span { start: 12, end: 13 });
+        assert_eq!(
+            params[0].name_span,
+            Span {
+                file_id: DUMMY_FILE_ID,
+                start: 12,
+                end: 13
+            }
+        );
         assert_eq!(params[1].name, "y");
-        assert_eq!(params[1].name_span, Span { start: 19, end: 20 });
+        assert_eq!(
+            params[1].name_span,
+            Span {
+                file_id: DUMMY_FILE_ID,
+                start: 19,
+                end: 20
+            }
+        );
     }
 
     #[test]

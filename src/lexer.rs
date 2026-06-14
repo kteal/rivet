@@ -1,6 +1,7 @@
 use std::{iter::Peekable, str::Chars};
 
 use crate::ast::{IntLiteralBase, IntLiteralSuffix};
+use crate::source::{FileId, Span};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TokenKind {
@@ -73,12 +74,6 @@ pub enum TokenKind {
     Newline,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Span {
-    pub start: usize,
-    pub end: usize,
-}
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Token {
     pub kind: TokenKind,
@@ -95,14 +90,16 @@ struct Lexer<'a> {
     chars: Peekable<Chars<'a>>,
     tokens: Vec<Token>,
     offset: usize,
+    file_id: FileId,
 }
 
 impl<'a> Lexer<'a> {
-    fn new(source: &'a str) -> Self {
+    fn new(source: &'a str, file_id: FileId) -> Self {
         Self {
             chars: source.chars().peekable(),
             tokens: Vec::new(),
             offset: 0,
+            file_id,
         }
     }
 
@@ -152,10 +149,10 @@ impl<'a> Lexer<'a> {
                         self.skip_block_comment(start)?;
                     } else if self.consume_if('=') {
                         let end = self.offset;
-                        self.push(TokenKind::SlashEqual, Span { start, end });
+                        self.push(TokenKind::SlashEqual, self.span(start, end));
                     } else {
                         let end = self.offset;
-                        self.push(TokenKind::Slash, Span { start, end });
+                        self.push(TokenKind::Slash, self.span(start, end));
                     }
                 }
                 '%' => self.lex_one_or_two_char_operator(
@@ -207,23 +204,13 @@ impl<'a> Lexer<'a> {
                 _ => {
                     let start = self.offset;
                     let ch = self.advance().unwrap();
-                    let end = self.offset;
 
-                    return Err(LexError {
-                        message: format!("unexpected character {ch:?}"),
-                        span: Span { start, end },
-                    });
+                    return Err(self.error(start, &format!("unexpected character {ch:?}")));
                 }
             }
         }
 
-        self.push(
-            TokenKind::Eof,
-            Span {
-                start: self.offset,
-                end: self.offset,
-            },
-        );
+        self.push(TokenKind::Eof, self.span(self.offset, self.offset));
         Ok(std::mem::take(&mut self.tokens))
     }
 
@@ -240,13 +227,7 @@ impl<'a> Lexer<'a> {
                 text.push(self.advance().expect("peeked character should exist"));
             }
             if text.is_empty() {
-                return Err(LexError {
-                    message: format!("expected hex digit after '0{hex_x}'"),
-                    span: Span {
-                        start,
-                        end: self.offset,
-                    },
-                });
+                return Err(self.error(start, &format!("expected hex digit after '0{hex_x}'")));
             }
             IntLiteralBase::Hex
         } else {
@@ -260,25 +241,15 @@ impl<'a> Lexer<'a> {
             match self.advance() {
                 Some('u' | 'U') => {
                     if unsigned {
-                        return Err(LexError {
-                            message: "duplicate 'U' integer suffix".to_string(),
-                            span: Span {
-                                start,
-                                end: self.offset,
-                            },
-                        });
+                        return Err(self.error(start, "duplicate 'U' integer suffix"));
                     }
                     unsigned = true;
                 }
                 Some('l' | 'L') => {
                     if long {
-                        return Err(LexError {
-                            message: "'long long' integer suffix is not supported".to_string(),
-                            span: Span {
-                                start,
-                                end: self.offset,
-                            },
-                        });
+                        return Err(
+                            self.error(start, "'long long' integer suffix is not supported")
+                        );
                     }
                     long = true;
                 }
@@ -286,11 +257,8 @@ impl<'a> Lexer<'a> {
             }
         }
 
-        let end = self.offset;
-        let value = u64::from_str_radix(&text, base.radix()).map_err(|_| LexError {
-            message: format!("integer literal out of range: {text}"),
-            span: Span { start, end },
-        })?;
+        let value = u64::from_str_radix(&text, base.radix())
+            .map_err(|_| self.error(start, &format!("integer literal out of range: {text}")))?;
 
         Ok(Token {
             kind: TokenKind::IntLiteral {
@@ -303,7 +271,7 @@ impl<'a> Lexer<'a> {
                 },
                 base,
             },
-            span: Span { start, end },
+            span: self.span(start, self.offset),
         })
     }
 
@@ -337,13 +305,7 @@ impl<'a> Lexer<'a> {
                 '\\' => '\\' as i32,
                 c => {
                     self.advance();
-                    return Err(LexError {
-                        message: format!("unknown escape sequence '\\{c}'"),
-                        span: Span {
-                            start,
-                            end: self.offset,
-                        },
-                    });
+                    return Err(self.error(start, &format!("unknown escape sequence '\\{c}'")));
                 }
             };
 
@@ -377,10 +339,7 @@ impl<'a> Lexer<'a> {
 
         Ok(Token {
             kind: TokenKind::CharLiteral(value),
-            span: Span {
-                start,
-                end: self.offset,
-            },
+            span: self.span(start, self.offset),
         })
     }
 
@@ -397,13 +356,7 @@ impl<'a> Lexer<'a> {
                     text.push(ch);
                 }
                 None => {
-                    return Err(LexError {
-                        message: "unterminated string literal".to_string(),
-                        span: Span {
-                            start,
-                            end: self.offset,
-                        },
-                    });
+                    return Err(self.error(start, "unterminated string literal"));
                 }
             }
         }
@@ -411,10 +364,7 @@ impl<'a> Lexer<'a> {
 
         Ok(Token {
             kind: TokenKind::StringLiteral(text),
-            span: Span {
-                start,
-                end: self.offset,
-            },
+            span: self.span(start, self.offset),
         })
     }
 
@@ -448,7 +398,7 @@ impl<'a> Lexer<'a> {
 
         Token {
             kind,
-            span: Span { start, end },
+            span: self.span(start, end),
         }
     }
 
@@ -467,13 +417,7 @@ impl<'a> Lexer<'a> {
             }
         }
 
-        Err(LexError {
-            message: "unterminated block comment".to_string(),
-            span: Span {
-                start,
-                end: self.offset,
-            },
-        })
+        Err(self.error(start, "unterminated block comment"))
     }
 
     fn peek(&mut self) -> Option<char> {
@@ -513,7 +457,7 @@ impl<'a> Lexer<'a> {
         self.advance();
         let end = self.offset;
 
-        self.push(kind, Span { start, end });
+        self.push(kind, self.span(start, end));
     }
 
     fn lex_one_or_two_char_operator(
@@ -527,13 +471,13 @@ impl<'a> Lexer<'a> {
         for (ch, kind) in alternatives {
             if self.consume_if(*ch) {
                 let end = self.offset;
-                self.push(kind.clone(), Span { start, end });
+                self.push(kind.clone(), self.span(start, end));
                 return;
             }
         }
 
         let end = self.offset;
-        self.push(single, Span { start, end });
+        self.push(single, self.span(start, end));
     }
 
     fn lex_shift_or_compare(
@@ -549,26 +493,27 @@ impl<'a> Lexer<'a> {
 
         let end = self.offset;
         if self.consume_if('=') {
-            self.push(equal, Span { start, end });
+            self.push(equal, self.span(start, end));
         } else if self.consume_if(ch) {
             if self.consume_if('=') {
-                self.push(shift_equal, Span { start, end });
+                self.push(shift_equal, self.span(start, end));
             } else {
-                self.push(shift, Span { start, end });
+                self.push(shift, self.span(start, end));
             }
         } else {
-            self.push(single, Span { start, end });
+            self.push(single, self.span(start, end));
         }
     }
 
     fn error(&self, start: usize, message: &str) -> LexError {
         LexError {
             message: message.to_string(),
-            span: Span {
-                start,
-                end: self.offset,
-            },
+            span: self.span(start, self.offset),
         }
+    }
+
+    const fn span(&self, start: usize, end: usize) -> Span {
+        Span::new(self.file_id, start, end)
     }
 
     fn eof(&mut self) -> bool {
@@ -582,7 +527,7 @@ impl<'a> Lexer<'a> {
 ///
 /// Returns a [`LexError`] when the source contains an unknown character,
 /// malformed character constant, or unterminated block comment.
-pub fn lex(source: &str) -> Result<Vec<Token>, LexError> {
-    let mut lexer = Lexer::new(source);
+pub fn lex(source: &str, file_id: FileId) -> Result<Vec<Token>, LexError> {
+    let mut lexer = Lexer::new(source, file_id);
     lexer.lex()
 }

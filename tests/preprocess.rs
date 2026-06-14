@@ -1,10 +1,11 @@
 use rivet::ast::{IntLiteralBase, IntLiteralSuffix};
 use rivet::lexer::{TokenKind, lex};
 use rivet::preprocess::{preprocess, splice_escaped_newlines};
+use rivet::source::DUMMY_FILE_ID;
 
 fn preprocess_kinds(source: &str) -> Vec<TokenKind> {
     let source = splice_escaped_newlines(source);
-    let tokens = lex(&source).expect("lexing should succeed");
+    let tokens = lex(&source, DUMMY_FILE_ID).expect("lexing should succeed");
     preprocess(tokens)
         .expect("preprocessing should succeed")
         .into_iter()
@@ -233,7 +234,7 @@ fn eof_terminates_define_directive() {
 
 #[test]
 fn rejects_define_without_macro_name() {
-    let tokens = lex("#define 123 abc\n").expect("lexing should succeed");
+    let tokens = lex("#define 123 abc\n", DUMMY_FILE_ID).expect("lexing should succeed");
     let err = preprocess(tokens).expect_err("preprocessing should fail");
 
     assert_eq!(
@@ -244,8 +245,11 @@ fn rejects_define_without_macro_name() {
 
 #[test]
 fn rejects_wrong_function_like_macro_arg_count() {
-    let tokens = lex("#define ADD(x, y) x + y\nint main() { return ADD(1); }\n")
-        .expect("lexing should succeed");
+    let tokens = lex(
+        "#define ADD(x, y) x + y\nint main() { return ADD(1); }\n",
+        DUMMY_FILE_ID,
+    )
+    .expect("lexing should succeed");
     let err = preprocess(tokens).expect_err("preprocessing should fail");
 
     assert_eq!(
@@ -256,7 +260,7 @@ fn rejects_wrong_function_like_macro_arg_count() {
 
 #[test]
 fn rejects_unsupported_preprocessor_directive() {
-    let tokens = lex("#unsupported <foo>\n").expect("lexing should succeed");
+    let tokens = lex("#unsupported <foo>\n", DUMMY_FILE_ID).expect("lexing should succeed");
     let err = preprocess(tokens).expect_err("preprocessing should fail");
 
     assert_eq!(
@@ -388,7 +392,7 @@ fn inactive_unsupported_directive_is_skipped() {
 
 #[test]
 fn rejects_else_without_open_conditional() {
-    let tokens = lex("#else\nint x;\n").expect("lexing should succeed");
+    let tokens = lex("#else\nint x;\n", DUMMY_FILE_ID).expect("lexing should succeed");
     let err = preprocess(tokens).expect_err("preprocessing should fail");
 
     assert_eq!(
@@ -399,7 +403,7 @@ fn rejects_else_without_open_conditional() {
 
 #[test]
 fn rejects_endif_without_open_conditional() {
-    let tokens = lex("#endif\nint x;\n").expect("lexing should succeed");
+    let tokens = lex("#endif\nint x;\n", DUMMY_FILE_ID).expect("lexing should succeed");
     let err = preprocess(tokens).expect_err("preprocessing should fail");
 
     assert_eq!(
@@ -410,7 +414,8 @@ fn rejects_endif_without_open_conditional() {
 
 #[test]
 fn rejects_duplicate_else() {
-    let tokens = lex("#ifdef A\n#else\n#else\n#endif\n").expect("lexing should succeed");
+    let tokens =
+        lex("#ifdef A\n#else\n#else\n#endif\n", DUMMY_FILE_ID).expect("lexing should succeed");
     let err = preprocess(tokens).expect_err("preprocessing should fail");
 
     assert_eq!(err.message, "cannot use duplicate #else");
@@ -418,7 +423,7 @@ fn rejects_duplicate_else() {
 
 #[test]
 fn rejects_unterminated_conditional() {
-    let tokens = lex("#ifdef A\nint x;\n").expect("lexing should succeed");
+    let tokens = lex("#ifdef A\nint x;\n", DUMMY_FILE_ID).expect("lexing should succeed");
     let err = preprocess(tokens).expect_err("preprocessing should fail");
 
     assert_eq!(err.message, "unterminated conditional directive");

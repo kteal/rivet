@@ -1,16 +1,25 @@
 #![allow(dead_code)]
 
 use rivet::ast::{ExternalDecl, Function, Param, Program, Type};
-use rivet::lexer::Span;
+use rivet::source::{DUMMY_FILE_ID, Span};
+
 use rivet::typed_ast::{TypedExternalDecl, TypedFunction, TypedProgram};
 
 pub const fn span() -> Span {
-    Span { start: 0, end: 0 }
+    Span {
+        file_id: DUMMY_FILE_ID,
+        start: 0,
+        end: 0,
+    }
 }
 
 #[allow(dead_code)]
 pub const fn span_from(start: usize, end: usize) -> Span {
-    Span { start, end }
+    Span {
+        file_id: DUMMY_FILE_ID,
+        start,
+        end,
+    }
 }
 
 pub fn param(name: &str) -> Param {
