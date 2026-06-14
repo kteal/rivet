@@ -12,13 +12,13 @@ enum ProcessError {
 
 impl From<PreprocessError> for ProcessError {
     fn from(value: PreprocessError) -> Self {
-        ProcessError::Local(value)
+        Self::Local(value)
     }
 }
 
 impl From<PreprocessFileError> for ProcessError {
     fn from(value: PreprocessFileError) -> Self {
-        ProcessError::File(value)
+        Self::File(value)
     }
 }
 
@@ -293,17 +293,20 @@ impl InputScanner {
         file_name: &str,
         span: Span,
     ) -> Result<PathBuf, PreprocessError> {
-        if let Some(path) = &self.path {
-            Ok(path
-                .parent()
-                .expect("file not in a directory")
-                .join(file_name))
-        } else {
-            Err(PreprocessError {
-                message: "cannot resolve quoted include without source file path".to_string(),
-                span,
-            })
-        }
+        self.path.as_ref().map_or_else(
+            || {
+                Err(PreprocessError {
+                    message: "cannot resolve quoted include without source file path".to_string(),
+                    span,
+                })
+            },
+            |path| {
+                Ok(path
+                    .parent()
+                    .expect("file not in a directory")
+                    .join(file_name))
+            },
+        )
     }
 }
 
