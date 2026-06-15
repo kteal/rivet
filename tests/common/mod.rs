@@ -1,6 +1,6 @@
 #![allow(dead_code)]
 
-use rivet::ast::{ExternalDecl, Function, Param, Program, Type};
+use rivet::ast::{ExternalDecl, Function, Initializer, LocalDecl, Param, Program, Statement, Type};
 use rivet::source::{DUMMY_FILE_ID, Span};
 
 use rivet::typed_ast::{TypedExternalDecl, TypedFunction, TypedProgram};
@@ -32,6 +32,19 @@ pub fn param_with_span(ty: Type, name: &str, name_span: Span) -> Param {
         name: name.to_string(),
         name_span,
     }
+}
+
+pub fn local_decl(ty: Type, name: &str, init: Option<Initializer>) -> LocalDecl {
+    LocalDecl {
+        ty,
+        name: name.to_string(),
+        name_span: span(),
+        init,
+    }
+}
+
+pub fn decl(ty: Type, name: &str, init: Option<Initializer>) -> Statement {
+    Statement::Decl(vec![local_decl(ty, name, init)])
 }
 
 pub fn program_with_functions(functions: Vec<Function>) -> Program {

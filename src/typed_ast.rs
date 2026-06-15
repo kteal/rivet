@@ -31,14 +31,17 @@ pub struct TypedParam {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TypedLocalDecl {
+    pub id: LocalId,
+    pub ty: Type,
+    pub name: String,
+    pub name_span: Span,
+    pub init: Option<TypedInitializer>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TypedStatement {
-    VarDecl {
-        id: LocalId,
-        ty: Type,
-        name: String,
-        name_span: Span,
-        init: Option<TypedInitializer>,
-    },
+    Decl(Vec<TypedLocalDecl>),
     Return(TypedExpr),
     Block(Vec<Self>),
     If {

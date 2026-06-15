@@ -609,6 +609,11 @@ fn qemu_local_variable_programs_return_expected_values() {
         8,
     );
     run_qemu_case(
+        "multiple-local-declarators",
+        "int main() {\n    int a = 2, b = a + 3, c = b + a;\n    return c;\n}\n",
+        7,
+    );
+    run_qemu_case(
         "three-locals",
         "int main() {\n    int x = 2;\n    int y = x + 3;\n    int z = y * 4;\n    return z;\n}\n",
         20,

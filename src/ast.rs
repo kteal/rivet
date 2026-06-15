@@ -36,13 +36,16 @@ pub struct Param {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LocalDecl {
+    pub ty: Type,
+    pub name: String,
+    pub name_span: Span,
+    pub init: Option<Initializer>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Statement {
-    VarDecl {
-        ty: Type,
-        name: String,
-        name_span: Span,
-        init: Option<Initializer>,
-    },
+    Decl(Vec<LocalDecl>),
     Return(Expr),
     Block(Vec<Self>),
     If {

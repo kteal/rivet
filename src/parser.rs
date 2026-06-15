@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 
 use crate::ast::{
-    BinaryOp, Expr, ExternalDecl, Function, Initializer, IntLiteralBase, IntLiteralSuffix, Param,
-    Program, Statement, Type, Typedef, UnaryOp,
+    BinaryOp, Expr, ExternalDecl, Function, Initializer, IntLiteralBase, IntLiteralSuffix,
+    LocalDecl, Param, Program, Statement, Type, Typedef, UnaryOp,
 };
 use crate::lexer::{Token, TokenKind};
 use crate::source::Span;
@@ -49,6 +49,51 @@ pub struct ParseError {
     pub span: Span,
 }
 
+// Parser representation of one C declaration.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct Declaration {
+    spec: DeclSpec,
+    spec_span: Span,
+    declarators: Vec<InitDeclarator>,
+}
+
+// The declaration-specifier sequence: storage class, type words, and qualifiers
+// that appear before the declarator list.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct DeclSpec {
+    storage_class: Option<StorageClass>,
+    type_specifiers: Vec<TypeSpecifier>,
+    qualifiers: Vec<TypeQualifier>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum StorageClass {
+    Typedef,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum TypeSpecifier {
+    Char,
+    Int,
+    Signed,
+    Unsigned,
+    Long,
+    TypedefName { name: String, span: Span },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TypeQualifier {
+    Const,
+}
+
+// One declarator inside a declaration, plus its optional initializer.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct InitDeclarator {
+    declarator: Declarator,
+    initializer: Option<Initializer>,
+}
+
+// The part of a declaration that contains the name and pointer/array shape.
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct Declarator {
     kind: DeclaratorKind,
@@ -227,9 +272,7 @@ impl Parser {
         Ok(items)
     }
 
-    fn parse_call_arg(&mut self) -> Result<Expr, ParseError> {
-        self.parse_expr()
-    }
+    // Declaration / Type parsing
 
     fn is_type_decl(&self, token_kind: &TokenKind) -> bool {
         match token_kind {
@@ -242,6 +285,141 @@ impl Parser {
             TokenKind::Ident(name) => self.typedefs.contains_key(name),
             _ => false,
         }
+    }
+
+    fn parse_type(&mut self) -> Result<Type, ParseError> {
+        let (spec, span) = self.parse_decl_spec()?;
+        self.lower_decl_spec(&spec, span)
+    }
+
+    fn parse_decl_spec(&mut self) -> Result<(DeclSpec, Span), ParseError> {
+        let start = self.peek().span;
+        let mut spec = DeclSpec {
+            storage_class: None,
+            type_specifiers: vec![],
+            qualifiers: vec![],
+        };
+
+        let mut saw_any = false;
+        let mut saw_type = false;
+
+        loop {
+            match self.peek_kind() {
+                // storage class
+                TokenKind::KwTypedef => {
+                    self.advance();
+                    spec.storage_class = Some(StorageClass::Typedef);
+                    saw_any = true;
+                }
+
+                // qualifiers
+                TokenKind::KwConst => {
+                    self.advance();
+                    spec.qualifiers.push(TypeQualifier::Const);
+                    saw_any = true;
+                }
+
+                // type specifiers
+                TokenKind::KwUnsigned => {
+                    self.advance();
+                    spec.type_specifiers.push(TypeSpecifier::Unsigned);
+                    saw_any = true;
+                    saw_type = true;
+                }
+                TokenKind::KwSigned => {
+                    self.advance();
+                    spec.type_specifiers.push(TypeSpecifier::Signed);
+                    saw_any = true;
+                    saw_type = true;
+                }
+                TokenKind::KwInt => {
+                    self.advance();
+                    spec.type_specifiers.push(TypeSpecifier::Int);
+                    saw_any = true;
+                    saw_type = true;
+                }
+                TokenKind::KwChar => {
+                    self.advance();
+                    spec.type_specifiers.push(TypeSpecifier::Char);
+                    saw_any = true;
+                    saw_type = true;
+                }
+                TokenKind::KwLong => {
+                    self.advance();
+                    spec.type_specifiers.push(TypeSpecifier::Long);
+                    saw_any = true;
+                    saw_type = true;
+                }
+
+                TokenKind::Ident(name) if self.typedefs.contains_key(name) => {
+                    let name = name.clone();
+                    let span = self.advance().span;
+                    spec.type_specifiers
+                        .push(TypeSpecifier::TypedefName { name, span });
+                    saw_any = true;
+                    saw_type = true;
+                }
+
+                _ => break,
+            }
+        }
+
+        if !saw_any || !saw_type {
+            let token = self.peek();
+            return Err(ParseError {
+                message: format!("expected declaration specifier, found {:?}", token.kind),
+                span: token.span,
+            });
+        }
+
+        Ok((spec, start))
+    }
+
+    fn lower_decl_spec(&self, spec: &DeclSpec, span: Span) -> Result<Type, ParseError> {
+        let mut typedef_name = None;
+        let mut type_spec = TypeSpec::default();
+
+        for type_specifier in &spec.type_specifiers {
+            match type_specifier {
+                TypeSpecifier::TypedefName { name, span } => {
+                    if typedef_name.is_some() {
+                        return Err(ParseError {
+                            message: "multiple typedef names in declaration specifier".to_string(),
+                            span: *span,
+                        });
+                    }
+                    typedef_name = Some((name, *span));
+                }
+
+                TypeSpecifier::Unsigned => type_spec.unsigned = true,
+                TypeSpecifier::Signed => type_spec.signed = true,
+                TypeSpecifier::Int => type_spec.int_count += 1,
+                TypeSpecifier::Char => type_spec.char_count += 1,
+                TypeSpecifier::Long => type_spec.long_count += 1,
+            }
+        }
+
+        let saw_builtin = type_spec.unsigned
+            || type_spec.signed
+            || type_spec.int_count > 0
+            || type_spec.char_count > 0
+            || type_spec.long_count > 0;
+
+        if let Some((name, name_span)) = typedef_name {
+            if saw_builtin {
+                return Err(ParseError {
+                    message: "cannot combine typedef name with other type specifiers".to_string(),
+                    span: name_span,
+                });
+            }
+
+            return self.typedefs.get(name).cloned().ok_or_else(|| ParseError {
+                message: format!("unknown typedef name '{name}'"),
+                span: name_span,
+            });
+        }
+
+        Self::lower_type_spec(type_spec, span)
     }
 
     fn lower_type_spec(spec: TypeSpec, span: Span) -> Result<Type, ParseError> {
@@ -280,63 +458,66 @@ impl Parser {
         }
     }
 
-    fn parse_type(&mut self) -> Result<Type, ParseError> {
-        let start = self.peek().span;
-        let mut spec = TypeSpec::default();
-        let mut saw_any = false;
+    fn parse_declaration(&mut self) -> Result<Declaration, ParseError> {
+        let (spec, spec_span) = self.parse_decl_spec()?;
+        let mut declarators = vec![self.parse_init_declarator()?];
 
-        loop {
-            match self.peek_kind() {
-                TokenKind::KwUnsigned => {
-                    self.advance();
-                    spec.unsigned = true;
-                    saw_any = true;
-                }
-                TokenKind::KwSigned => {
-                    self.advance();
-                    spec.signed = true;
-                    saw_any = true;
-                }
-                TokenKind::KwInt => {
-                    self.advance();
-                    spec.int_count += 1;
-                    saw_any = true;
-                }
-                TokenKind::KwChar => {
-                    self.advance();
-                    spec.char_count += 1;
-                    saw_any = true;
-                }
-                TokenKind::KwLong => {
-                    self.advance();
-                    spec.long_count += 1;
-                    saw_any = true;
-                }
-                TokenKind::KwConst => {
-                    self.advance();
-                }
-                TokenKind::Ident(name) if self.typedefs.contains_key(name) => {
-                    let ty = self
-                        .typedefs
-                        .get(name)
-                        .expect("cannot use undefined typedef")
-                        .clone();
-                    self.advance();
-                    return Ok(ty);
-                }
-                _ => break,
-            }
+        while self.peek_kind() == &TokenKind::Comma {
+            self.expect(&TokenKind::Comma)?;
+            declarators.push(self.parse_init_declarator()?);
         }
 
-        if !saw_any {
-            let token = self.advance();
-            return Err(ParseError {
-                message: format!("expected type declaration, found {:?}", token.kind),
-                span: token.span,
+        self.expect(&TokenKind::Semicolon)?;
+
+        Ok(Declaration {
+            spec,
+            spec_span,
+            declarators,
+        })
+    }
+
+    fn parse_init_declarator(&mut self) -> Result<InitDeclarator, ParseError> {
+        let declarator = self.parse_declarator()?;
+
+        let initializer = if self.peek_kind() == &TokenKind::Equal {
+            self.expect(&TokenKind::Equal)?;
+            Some(self.parse_initializer()?)
+        } else {
+            None
+        };
+
+        Ok(InitDeclarator {
+            declarator,
+            initializer,
+        })
+    }
+
+    fn parse_initializer(&mut self) -> Result<Initializer, ParseError> {
+        if self.peek_kind() == &TokenKind::LBrace {
+            self.expect(&TokenKind::LBrace)?;
+            let elements = self.parse_comma_separated_until_terminator(
+                Self::parse_expr,
+                &TokenKind::RBrace,
+                true,
+            )?;
+            self.expect(&TokenKind::RBrace)?;
+            Ok(Initializer::List(elements))
+        } else {
+            let expr = self.parse_expr()?;
+            Ok(Initializer::Expr(expr))
+        }
+    }
+
+    fn parse_declarator(&mut self) -> Result<Declarator, ParseError> {
+        if self.peek_kind() == &TokenKind::Star {
+            self.advance();
+            let inner = self.parse_declarator()?;
+            return Ok(Declarator {
+                kind: DeclaratorKind::Pointer(Box::new(inner)),
             });
         }
 
-        Self::lower_type_spec(spec, start)
+        self.parse_direct_declarator()
     }
 
     fn parse_direct_declarator(&mut self) -> Result<Declarator, ParseError> {
@@ -369,18 +550,6 @@ impl Parser {
         Ok(Declarator {
             kind: DeclaratorKind::Name { name, name_span },
         })
-    }
-
-    fn parse_declarator(&mut self) -> Result<Declarator, ParseError> {
-        if self.peek_kind() == &TokenKind::Star {
-            self.advance();
-            let inner = self.parse_declarator()?;
-            return Ok(Declarator {
-                kind: DeclaratorKind::Pointer(Box::new(inner)),
-            });
-        }
-
-        self.parse_direct_declarator()
     }
 
     fn lower_declarator(
@@ -428,6 +597,12 @@ impl Parser {
             name,
             name_span,
         })
+    }
+
+    // Expression parsing
+
+    fn parse_call_arg(&mut self) -> Result<Expr, ParseError> {
+        self.parse_expr()
     }
 
     fn parse_primary(&mut self) -> Result<Expr, ParseError> {
@@ -670,51 +845,33 @@ impl Parser {
         self.parse_assignment()
     }
 
-    fn parse_var_decl(&mut self) -> Result<Statement, ParseError> {
-        let base_ty = self.parse_type()?;
-        let declarator = self.parse_declarator()?;
-        let LoweredDeclarator {
-            ty,
-            name,
-            name_span,
-        } = Self::lower_declarator(&base_ty, &declarator)?;
+    // Statement parsing
 
-        if self.peek_kind() == &TokenKind::Semicolon {
-            self.expect(&TokenKind::Semicolon)?;
-            return Ok(Statement::VarDecl {
-                ty,
-                name,
-                name_span,
-                init: None,
+    fn parse_decl_statement(&mut self) -> Result<Statement, ParseError> {
+        let mut declarators = vec![];
+        let declaration = self.parse_declaration()?;
+        if declaration.spec.storage_class.is_some() {
+            return Err(ParseError {
+                message: "storage class is not supported in local declarations".to_string(),
+                span: declaration.spec_span,
             });
         }
-        self.expect(&TokenKind::Equal)?;
-
-        if self.peek_kind() == &TokenKind::LBrace {
-            self.expect(&TokenKind::LBrace)?;
-            let elements = self.parse_comma_separated_until_terminator(
-                Self::parse_expr,
-                &TokenKind::RBrace,
-                true,
-            )?;
-            self.expect(&TokenKind::RBrace)?;
-            self.expect(&TokenKind::Semicolon)?;
-            Ok(Statement::VarDecl {
+        let base_ty = self.lower_decl_spec(&declaration.spec, declaration.spec_span)?;
+        for init_declarator in declaration.declarators {
+            let LoweredDeclarator {
                 ty,
                 name,
                 name_span,
-                init: Some(Initializer::List(elements)),
-            })
-        } else {
-            let expr = self.parse_expr()?;
-            self.expect(&TokenKind::Semicolon)?;
-            Ok(Statement::VarDecl {
+            } = Self::lower_declarator(&base_ty, &init_declarator.declarator)?;
+            declarators.push(LocalDecl {
                 ty,
                 name,
                 name_span,
-                init: Some(Initializer::Expr(expr)),
-            })
+                init: init_declarator.initializer,
+            });
         }
+
+        Ok(Statement::Decl(declarators))
     }
 
     fn parse_through_rbrace(&mut self, vec: &mut Vec<Statement>) -> Result<(), ParseError> {
@@ -782,7 +939,7 @@ impl Parser {
     fn parse_for_statement_init(&mut self) -> Result<Statement, ParseError> {
         match self.peek_kind() {
             // Variable declaration
-            token_kind if self.is_type_decl(token_kind) => self.parse_var_decl(),
+            token_kind if self.is_type_decl(token_kind) => self.parse_decl_statement(),
             // Empty
             TokenKind::Semicolon => {
                 self.expect(&TokenKind::Semicolon)?;
@@ -871,7 +1028,7 @@ impl Parser {
             }
             TokenKind::KwFor => self.parse_for_statement(),
             // Variable declaration
-            token_kind if self.is_type_decl(token_kind) => self.parse_var_decl(),
+            token_kind if self.is_type_decl(token_kind) => self.parse_decl_statement(),
             // Block
             TokenKind::LBrace => {
                 self.expect(&TokenKind::LBrace)?;
@@ -923,28 +1080,39 @@ impl Parser {
         })
     }
 
-    fn parse_typedef(&mut self) -> Result<Typedef, ParseError> {
-        self.expect(&TokenKind::KwTypedef)?;
-        let base_ty = self.parse_type()?;
-        let declarator = self.parse_declarator()?;
-        let LoweredDeclarator {
-            ty,
-            name,
-            name_span,
-        } = Self::lower_declarator(&base_ty, &declarator)?;
-        self.expect(&TokenKind::Semicolon)?;
-        if self.typedefs.contains_key(&name) {
+    fn parse_typedefs(&mut self) -> Result<Vec<Typedef>, ParseError> {
+        let mut typedefs = vec![];
+        let declaration = self.parse_declaration()?;
+        if declaration.spec.storage_class != Some(StorageClass::Typedef) {
             return Err(ParseError {
-                message: format!("duplicate typedef with name '{name}'"),
-                span: name_span,
+                message: "expected typedef declaration".to_string(),
+                span: declaration.spec_span,
             });
         }
-        self.typedefs.insert(name.clone(), ty.clone());
-        Ok(Typedef {
-            name,
-            name_span,
-            ty,
-        })
+        let base_ty = self.lower_decl_spec(&declaration.spec, declaration.spec_span)?;
+        for init_declarator in declaration.declarators {
+            if init_declarator.initializer.is_some() {
+                return Err(ParseError {
+                    message: "typedef declarator cannot have an initializer".to_string(),
+                    span: declaration.spec_span,
+                });
+            }
+            let lowered = Self::lower_declarator(&base_ty, &init_declarator.declarator)?;
+            if self.typedefs.contains_key(&lowered.name) {
+                return Err(ParseError {
+                    message: format!("duplicate typedef with name '{}'", lowered.name),
+                    span: lowered.name_span,
+                });
+            }
+            self.typedefs
+                .insert(lowered.name.clone(), lowered.ty.clone());
+            typedefs.push(Typedef {
+                name: lowered.name,
+                name_span: lowered.name_span,
+                ty: lowered.ty,
+            });
+        }
+        Ok(typedefs)
     }
 
     fn parse_program(&mut self) -> Result<Program, ParseError> {
@@ -954,7 +1122,9 @@ impl Parser {
             match self.peek_kind() {
                 TokenKind::Eof => break,
                 TokenKind::KwTypedef => {
-                    declarations.push(ExternalDecl::Typedef(self.parse_typedef()?));
+                    for typedef in self.parse_typedefs()? {
+                        declarations.push(ExternalDecl::Typedef(typedef));
+                    }
                 }
                 _ => declarations.push(ExternalDecl::Function(self.parse_function()?)),
             }
@@ -2090,7 +2260,7 @@ mod tests {
                 name: "main".to_string(),
                 params: vec![],
                 body: vec![
-                    Statement::VarDecl {
+                    Statement::Decl(vec![LocalDecl {
                         ty: Type::Int,
                         name_span: span(),
                         name: "x".to_string(),
@@ -2100,7 +2270,7 @@ mod tests {
                             base: IntLiteralBase::Decimal,
                             span: span()
                         })),
-                    },
+                    }]),
                     Statement::Return(Expr::IntLiteral {
                         value: 42,
                         suffix: IntLiteralSuffix::None,
@@ -2146,7 +2316,7 @@ mod tests {
                 name: "main".to_string(),
                 params: vec![],
                 body: vec![
-                    Statement::VarDecl {
+                    Statement::Decl(vec![LocalDecl {
                         ty: Type::Int,
                         name_span: span(),
                         name: "x".to_string(),
@@ -2156,7 +2326,7 @@ mod tests {
                             base: IntLiteralBase::Decimal,
                             span: span()
                         })),
-                    },
+                    }]),
                     Statement::Return(Expr::Variable {
                         name: "x".to_string(),
                         span: span()
@@ -2564,7 +2734,7 @@ mod tests {
         assert_eq!(
             statement,
             Statement::For {
-                init: Some(Box::new(Statement::VarDecl {
+                init: Some(Box::new(Statement::Decl(vec![LocalDecl {
                     ty: Type::Int,
                     name_span: span(),
                     name: "i".to_string(),
@@ -2574,7 +2744,7 @@ mod tests {
                         base: IntLiteralBase::Decimal,
                         span: span()
                     })),
-                })),
+                }]))),
                 cond: Some(Expr::Binary {
                     op: BinaryOp::Less,
                     op_span: span(),

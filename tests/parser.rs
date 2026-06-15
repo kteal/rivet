@@ -2,8 +2,8 @@ mod common;
 
 use common::{first_function, functions};
 use rivet::ast::{
-    BinaryOp, Expr, ExternalDecl, Initializer, IntLiteralBase, IntLiteralSuffix, Statement, Type,
-    UnaryOp,
+    BinaryOp, Expr, ExternalDecl, Initializer, IntLiteralBase, IntLiteralSuffix, LocalDecl,
+    Statement, Type, UnaryOp,
 };
 use rivet::lexer::lex;
 use rivet::parser::parse;
@@ -39,6 +39,14 @@ fn only_return_expr(source: &str) -> Expr {
         panic!("expected return statement");
     };
     expr
+}
+
+fn single_decl(statement: &Statement) -> &LocalDecl {
+    let Statement::Decl(decls) = statement else {
+        panic!("expected declaration statement");
+    };
+    assert_eq!(decls.len(), 1);
+    &decls[0]
 }
 
 #[test]
@@ -186,10 +194,11 @@ fn parses_expression_and_empty_statements() {
 #[test]
 fn parses_char_literals_as_int_literals() {
     let body = main_body("int main() { char c = '\\n'; return 'A'; }");
+    let decl = single_decl(&body[0]);
 
     assert!(matches!(
-        &body[0],
-        Statement::VarDecl {
+        decl,
+        LocalDecl {
             ty: Type::Char,
             name,
             init: Some(Initializer::Expr(Expr::IntLiteral { value: 10, .. })),
@@ -235,10 +244,12 @@ fn rejects_trailing_commas_in_lists() {
 #[test]
 fn parses_variable_declarations() {
     let body = main_body("int main() { int x = 1; char y; return x; }");
+    let first_decl = single_decl(&body[0]);
+    let second_decl = single_decl(&body[1]);
 
     assert!(matches!(
-        &body[0],
-        Statement::VarDecl {
+        first_decl,
+        LocalDecl {
             ty: Type::Int,
             name,
             init: Some(Initializer::Expr(Expr::IntLiteral { value: 1, .. })),
@@ -246,14 +257,42 @@ fn parses_variable_declarations() {
         } if name == "x"
     ));
     assert!(matches!(
-        &body[1],
-        Statement::VarDecl {
+        second_decl,
+        LocalDecl {
             ty: Type::Char,
             name,
             init: None,
             ..
         } if name == "y"
     ));
+}
+
+#[test]
+fn parses_multiple_local_declarators() {
+    let body = main_body("int main() { int a, *p, arr[4]; return 0; }");
+
+    let Statement::Decl(decls) = &body[0] else {
+        panic!("expected declaration statement");
+    };
+    assert_eq!(decls.len(), 3);
+
+    assert_eq!(decls[0].name, "a");
+    assert_eq!(decls[0].ty, Type::Int);
+    assert_eq!(decls[0].init, None);
+
+    assert_eq!(decls[1].name, "p");
+    assert_eq!(decls[1].ty, Type::Pointer(Box::new(Type::Int)));
+    assert_eq!(decls[1].init, None);
+
+    assert_eq!(decls[2].name, "arr");
+    assert_eq!(
+        decls[2].ty,
+        Type::Array {
+            element: Box::new(Type::Int),
+            len: 4,
+        }
+    );
+    assert_eq!(decls[2].init, None);
 }
 
 #[test]
@@ -475,23 +514,20 @@ fn parses_pointer_local_declarations() {
 
     let body = &first_function(&program).body;
 
-    let Statement::VarDecl { ty: buf_ty, .. } = &body[0] else {
-        panic!("expected first local declaration");
-    };
-    assert_eq!(*buf_ty, Type::Pointer(Box::new(Type::Char)));
-
-    let Statement::VarDecl { ty: cursor_ty, .. } = &body[1] else {
-        panic!("expected second local declaration");
-    };
     assert_eq!(
-        *cursor_ty,
+        single_decl(&body[0]).ty,
+        Type::Pointer(Box::new(Type::Char))
+    );
+
+    assert_eq!(
+        single_decl(&body[1]).ty,
         Type::Pointer(Box::new(Type::Pointer(Box::new(Type::Int))))
     );
 
-    let Statement::VarDecl { ty: sums_ty, .. } = &body[2] else {
-        panic!("expected third local declaration");
-    };
-    assert_eq!(*sums_ty, Type::Pointer(Box::new(Type::UnsignedInt)));
+    assert_eq!(
+        single_decl(&body[2]).ty,
+        Type::Pointer(Box::new(Type::UnsignedInt))
+    );
 }
 
 #[test]
@@ -502,25 +538,13 @@ fn parses_signed_type_specifiers() {
 
     let body = &first_function(&program).body;
 
-    let Statement::VarDecl { ty: a_ty, .. } = &body[0] else {
-        panic!("expected first local declaration");
-    };
-    assert_eq!(*a_ty, Type::Int);
+    assert_eq!(single_decl(&body[0]).ty, Type::Int);
 
-    let Statement::VarDecl { ty: b_ty, .. } = &body[1] else {
-        panic!("expected second local declaration");
-    };
-    assert_eq!(*b_ty, Type::Int);
+    assert_eq!(single_decl(&body[1]).ty, Type::Int);
 
-    let Statement::VarDecl { ty: c_ty, .. } = &body[2] else {
-        panic!("expected third local declaration");
-    };
-    assert_eq!(*c_ty, Type::Long);
+    assert_eq!(single_decl(&body[2]).ty, Type::Long);
 
-    let Statement::VarDecl { ty: d_ty, .. } = &body[3] else {
-        panic!("expected fourth local declaration");
-    };
-    assert_eq!(*d_ty, Type::Long);
+    assert_eq!(single_decl(&body[3]).ty, Type::Long);
 }
 
 #[test]
@@ -529,22 +553,16 @@ fn parses_array_local_declarations() {
 
     let body = &first_function(&program).body;
 
-    let Statement::VarDecl { ty: buf_ty, .. } = &body[0] else {
-        panic!("expected first local declaration");
-    };
     assert_eq!(
-        *buf_ty,
+        single_decl(&body[0]).ty,
         Type::Array {
             element: Box::new(Type::Char),
             len: 3,
         }
     );
 
-    let Statement::VarDecl { ty: nums_ty, .. } = &body[1] else {
-        panic!("expected second local declaration");
-    };
     assert_eq!(
-        *nums_ty,
+        single_decl(&body[1]).ty,
         Type::Array {
             element: Box::new(Type::Int),
             len: 10,
@@ -556,9 +574,7 @@ fn parses_array_local_declarations() {
 fn parses_array_initializer_list() {
     let program = parse_source("int main() { char buf[3] = {1, 2, 3}; return 0; }");
 
-    let Statement::VarDecl { init, .. } = &first_function(&program).body[0] else {
-        panic!("expected local declaration");
-    };
+    let init = &single_decl(&first_function(&program).body[0]).init;
 
     let Some(Initializer::List(values)) = init else {
         panic!("expected initializer list");
@@ -574,9 +590,7 @@ fn parses_array_initializer_list() {
 fn parses_array_initializer_list_with_trailing_comma() {
     let program = parse_source("int main() { char buf[3] = {1, 2, 3,}; return 0; }");
 
-    let Statement::VarDecl { init, .. } = &first_function(&program).body[0] else {
-        panic!("expected local declaration");
-    };
+    let init = &single_decl(&first_function(&program).body[0]).init;
 
     let Some(Initializer::List(values)) = init else {
         panic!("expected initializer list");
@@ -592,9 +606,7 @@ fn parses_array_initializer_list_with_trailing_comma() {
 fn parses_empty_array_initializer_list() {
     let program = parse_source("int main() { int nums[2] = {}; return 0; }");
 
-    let Statement::VarDecl { init, .. } = &first_function(&program).body[0] else {
-        panic!("expected local declaration");
-    };
+    let init = &single_decl(&first_function(&program).body[0]).init;
 
     let Some(Initializer::List(values)) = init else {
         panic!("expected initializer list");
@@ -607,13 +619,11 @@ fn parses_empty_array_initializer_list() {
 fn parses_array_of_pointers_declaration() {
     let program = parse_source("int main() { char *bufs[4]; return 0; }");
 
-    let Statement::VarDecl { ty, name, .. } = &first_function(&program).body[0] else {
-        panic!("expected local declaration");
-    };
+    let decl = single_decl(&first_function(&program).body[0]);
 
-    assert_eq!(name, "bufs");
+    assert_eq!(decl.name, "bufs");
     assert_eq!(
-        *ty,
+        decl.ty,
         Type::Array {
             element: Box::new(Type::Pointer(Box::new(Type::Char))),
             len: 4,
@@ -727,6 +737,28 @@ fn parses_typedef_declarations() {
     };
     assert_eq!(second.name, "BytefPtr");
     assert_eq!(second.ty, Type::Pointer(Box::new(Type::UnsignedChar)));
+
+    let function = first_function(&program);
+    assert_eq!(function.name, "main");
+}
+
+#[test]
+fn parses_multiple_typedef_declarators() {
+    let program = parse_source("typedef unsigned long uLong, *uLongp;\nint main() { return 0; }");
+
+    assert_eq!(program.declarations.len(), 3);
+
+    let ExternalDecl::Typedef(first) = &program.declarations[0] else {
+        panic!("expected first declaration to be typedef");
+    };
+    assert_eq!(first.name, "uLong");
+    assert_eq!(first.ty, Type::UnsignedLong);
+
+    let ExternalDecl::Typedef(second) = &program.declarations[1] else {
+        panic!("expected second declaration to be typedef");
+    };
+    assert_eq!(second.name, "uLongp");
+    assert_eq!(second.ty, Type::Pointer(Box::new(Type::UnsignedLong)));
 
     let function = first_function(&program);
     assert_eq!(function.name, "main");

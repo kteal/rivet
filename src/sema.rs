@@ -8,7 +8,7 @@ use crate::source::Span;
 
 use crate::typed_ast::{
     LocalId, TypedExpr, TypedExprKind, TypedExternalDecl, TypedFunction, TypedInitializer,
-    TypedParam, TypedProgram, TypedStatement,
+    TypedLocalDecl, TypedParam, TypedProgram, TypedStatement,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -884,25 +884,35 @@ impl Checker {
                 }
                 Ok(TypedStatement::Return(typed_expr))
             }
-            Statement::VarDecl {
-                ty,
-                name,
-                name_span,
-                init,
-            } => {
-                let symbol = self.declare_local(ty, name, *name_span)?;
-                let typed_init = init
-                    .as_ref()
-                    .map(|initializer| self.check_initializer(ty, *name_span, initializer))
-                    .transpose()?;
+            Statement::Decl(declarations) => {
+                let mut typed_declarations = vec![];
+                for declaration in declarations {
+                    let symbol = self.declare_local(
+                        &declaration.ty,
+                        &declaration.name,
+                        declaration.name_span,
+                    )?;
+                    let typed_init = declaration
+                        .init
+                        .as_ref()
+                        .map(|initializer| {
+                            self.check_initializer(
+                                &declaration.ty,
+                                declaration.name_span,
+                                initializer,
+                            )
+                        })
+                        .transpose()?;
+                    typed_declarations.push(TypedLocalDecl {
+                        id: symbol.id,
+                        ty: symbol.ty,
+                        name: declaration.name.clone(),
+                        name_span: declaration.name_span,
+                        init: typed_init,
+                    });
+                }
 
-                Ok(TypedStatement::VarDecl {
-                    id: symbol.id,
-                    ty: symbol.ty,
-                    name: name.clone(),
-                    name_span: *name_span,
-                    init: typed_init,
-                })
+                Ok(TypedStatement::Decl(typed_declarations))
             }
             Statement::Block(body) => self.check_block(body),
             Statement::If {

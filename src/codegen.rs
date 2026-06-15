@@ -76,7 +76,11 @@ impl FrameLayout {
 
     fn add_statement_slot(&mut self, statement: &TypedStatement, local_bytes: &mut i32) {
         match statement {
-            TypedStatement::VarDecl { id, ty, .. } => self.add_slot(*id, ty, local_bytes),
+            TypedStatement::Decl(declarations) => {
+                for declaration in declarations {
+                    self.add_slot(declaration.id, &declaration.ty, local_bytes);
+                }
+            }
             TypedStatement::Block(body) => {
                 self.add_statement_slots(body, local_bytes);
             }
@@ -775,46 +779,48 @@ impl Codegen {
                     .expect("codegen should have an active return label");
                 self.emit_line(format_args!("j {return_label}"));
             }
-            TypedStatement::VarDecl { id, init, .. } => {
-                if let Some(initializer) = init {
-                    match initializer {
-                        TypedInitializer::Expr(init_expr) => {
-                            self.emit_expr(init_expr);
-                            let slot = self.resolve_local(*id).clone();
-                            self.emit_store_local(&slot);
-                        }
-                        TypedInitializer::List(values) => {
-                            let (element_ty, array_len, offset) = {
-                                let slot = self.resolve_local(*id);
+            TypedStatement::Decl(declarations) => {
+                for declaration in declarations {
+                    if let Some(initializer) = &declaration.init {
+                        match initializer {
+                            TypedInitializer::Expr(init_expr) => {
+                                self.emit_expr(init_expr);
+                                let slot = self.resolve_local(declaration.id).clone();
+                                self.emit_store_local(&slot);
+                            }
+                            TypedInitializer::List(values) => {
+                                let (element_ty, array_len, offset) = {
+                                    let slot = self.resolve_local(declaration.id);
 
-                                let Type::Array { element, len } = &slot.ty else {
-                                    unreachable!("sema guarantees that this is an array");
+                                    let Type::Array { element, len } = &slot.ty else {
+                                        unreachable!("sema guarantees that this is an array");
+                                    };
+
+                                    ((*element).clone(), *len, slot.offset)
                                 };
 
-                                ((*element).clone(), *len, slot.offset)
-                            };
+                                for (i, expr) in values.iter().enumerate() {
+                                    self.emit_expr(expr);
+                                    self.emit_store_to_base_offset(
+                                        &element_ty,
+                                        "s0",
+                                        offset
+                                            + i32::try_from(i * element_ty.size())
+                                                .expect("type size too large for i32"),
+                                    );
+                                }
 
-                            for (i, expr) in values.iter().enumerate() {
-                                self.emit_expr(expr);
-                                self.emit_store_to_base_offset(
-                                    &element_ty,
-                                    "s0",
-                                    offset
-                                        + i32::try_from(i * element_ty.size())
-                                            .expect("type size too large for i32"),
-                                );
-                            }
-
-                            // Zero-initialize remaining elements
-                            for i in values.len()..array_len {
-                                self.emit_line(format_args!("li a0, 0"));
-                                self.emit_store_to_base_offset(
-                                    &element_ty,
-                                    "s0",
-                                    offset
-                                        + i32::try_from(i * element_ty.size())
-                                            .expect("type size too large for i32"),
-                                );
+                                // Zero-initialize remaining elements
+                                for i in values.len()..array_len {
+                                    self.emit_line(format_args!("li a0, 0"));
+                                    self.emit_store_to_base_offset(
+                                        &element_ty,
+                                        "s0",
+                                        offset
+                                            + i32::try_from(i * element_ty.size())
+                                                .expect("type size too large for i32"),
+                                    );
+                                }
                             }
                         }
                     }

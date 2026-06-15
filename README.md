@@ -185,11 +185,12 @@ Program structure and declarations:
 - [x] nested blocks and scope
 - [x] function definitions beyond `main`
 - [x] declarations without initializers
+- [x] multiple local declarators in one declaration
 - [ ] declaration lists mixed with statements
 - [ ] multiple translation-unit-level declarations
 - [ ] globals
-- [x] simple top-level typedef aliases
-- [ ] full typedef behavior: comma-separated declarators, arbitrary declaration-specifier ordering, alias-preserving diagnostics, and scope shadowing
+- [x] top-level typedef aliases with comma-separated declarators
+- [ ] full typedef behavior: arbitrary declaration-specifier ordering, alias-preserving diagnostics, and scope shadowing
 - [ ] storage classes: `extern`, `static`, `auto`, `register`, `thread_local`
 - [x] ignored `const` qualifier parsing
 - [ ] remaining qualifiers: `volatile`, `restrict`, `_Atomic`

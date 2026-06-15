@@ -118,7 +118,7 @@ fn resets_local_offsets_between_functions() {
             name: "first".to_string(),
             params: vec![],
             body: vec![
-                Statement::VarDecl {
+                Statement::Decl(vec![rivet::ast::LocalDecl {
                     ty: Type::Int,
                     name_span: span(),
                     name: "x".to_string(),
@@ -128,7 +128,7 @@ fn resets_local_offsets_between_functions() {
                         base: IntLiteralBase::Decimal,
                         span: span(),
                     })),
-                },
+                }]),
                 Statement::Return(Expr::Variable {
                     name: "x".to_string(),
                     span: span(),
@@ -141,7 +141,7 @@ fn resets_local_offsets_between_functions() {
             name: "main".to_string(),
             params: vec![],
             body: vec![
-                Statement::VarDecl {
+                Statement::Decl(vec![rivet::ast::LocalDecl {
                     ty: Type::Int,
                     name_span: span(),
                     name: "x".to_string(),
@@ -151,7 +151,7 @@ fn resets_local_offsets_between_functions() {
                         base: IntLiteralBase::Decimal,
                         span: span(),
                     })),
-                },
+                }]),
                 Statement::Return(Expr::Variable {
                     name: "x".to_string(),
                     span: span(),
@@ -188,7 +188,7 @@ fn computes_frame_layout_per_function() {
             name: "main".to_string(),
             params: vec![],
             body: vec![
-                Statement::VarDecl {
+                Statement::Decl(vec![rivet::ast::LocalDecl {
                     ty: Type::Int,
                     name_span: span(),
                     name: "a".to_string(),
@@ -198,8 +198,8 @@ fn computes_frame_layout_per_function() {
                         base: IntLiteralBase::Decimal,
                         span: span(),
                     })),
-                },
-                Statement::VarDecl {
+                }]),
+                Statement::Decl(vec![rivet::ast::LocalDecl {
                     ty: Type::Int,
                     name_span: span(),
                     name: "b".to_string(),
@@ -209,8 +209,8 @@ fn computes_frame_layout_per_function() {
                         base: IntLiteralBase::Decimal,
                         span: span(),
                     })),
-                },
-                Statement::VarDecl {
+                }]),
+                Statement::Decl(vec![rivet::ast::LocalDecl {
                     ty: Type::Int,
                     name_span: span(),
                     name: "c".to_string(),
@@ -220,7 +220,7 @@ fn computes_frame_layout_per_function() {
                         base: IntLiteralBase::Decimal,
                         span: span(),
                     })),
-                },
+                }]),
                 Statement::Return(Expr::Variable {
                     name: "c".to_string(),
                     span: span(),
@@ -615,7 +615,7 @@ fn generates_single_local_variable() {
         name: "main".to_string(),
         params: vec![],
         body: vec![
-            Statement::VarDecl {
+            Statement::Decl(vec![rivet::ast::LocalDecl {
                 ty: Type::Int,
                 name_span: span(),
                 name: "x".to_string(),
@@ -625,7 +625,7 @@ fn generates_single_local_variable() {
                     base: IntLiteralBase::Decimal,
                     span: span(),
                 })),
-            },
+            }]),
             Statement::Return(Expr::Variable {
                 name: "x".to_string(),
                 span: span(),
@@ -649,12 +649,12 @@ fn generates_local_variable_without_initializer() {
         name: "main".to_string(),
         params: vec![],
         body: vec![
-            Statement::VarDecl {
+            Statement::Decl(vec![rivet::ast::LocalDecl {
                 ty: Type::Int,
                 name_span: span(),
                 name: "x".to_string(),
                 init: None,
-            },
+            }]),
             Statement::ExprStatement(Expr::Assign {
                 op_span: span(),
                 target: Box::new(Expr::Variable {
@@ -691,7 +691,7 @@ fn array_local_reserves_full_frame_slot_and_aligns_next_local() {
         name: "main".to_string(),
         params: vec![],
         body: vec![
-            Statement::VarDecl {
+            Statement::Decl(vec![rivet::ast::LocalDecl {
                 ty: Type::Array {
                     element: Box::new(Type::Char),
                     len: 3,
@@ -699,8 +699,8 @@ fn array_local_reserves_full_frame_slot_and_aligns_next_local() {
                 name_span: span(),
                 name: "buf".to_string(),
                 init: None,
-            },
-            Statement::VarDecl {
+            }]),
+            Statement::Decl(vec![rivet::ast::LocalDecl {
                 ty: Type::Int,
                 name_span: span(),
                 name: "x".to_string(),
@@ -710,7 +710,7 @@ fn array_local_reserves_full_frame_slot_and_aligns_next_local() {
                     base: IntLiteralBase::Decimal,
                     span: span(),
                 })),
-            },
+            }]),
             Statement::Return(Expr::Variable {
                 name: "x".to_string(),
                 span: span(),
@@ -733,7 +733,7 @@ fn generates_array_initializer_element_stores() {
         name: "main".to_string(),
         params: vec![],
         body: vec![
-            Statement::VarDecl {
+            Statement::Decl(vec![rivet::ast::LocalDecl {
                 ty: Type::Array {
                     element: Box::new(Type::Char),
                     len: 3,
@@ -760,8 +760,8 @@ fn generates_array_initializer_element_stores() {
                         span: span(),
                     },
                 ])),
-            },
-            Statement::VarDecl {
+            }]),
+            Statement::Decl(vec![rivet::ast::LocalDecl {
                 ty: Type::Array {
                     element: Box::new(Type::Int),
                     len: 2,
@@ -782,7 +782,7 @@ fn generates_array_initializer_element_stores() {
                         span: span(),
                     },
                 ])),
-            },
+            }]),
             Statement::Return(Expr::IntLiteral {
                 value: 0,
                 suffix: IntLiteralSuffix::None,
@@ -809,7 +809,7 @@ fn generates_zero_stores_for_empty_array_initializer_list() {
         name: "main".to_string(),
         params: vec![],
         body: vec![
-            Statement::VarDecl {
+            Statement::Decl(vec![rivet::ast::LocalDecl {
                 ty: Type::Array {
                     element: Box::new(Type::Char),
                     len: 2,
@@ -817,8 +817,8 @@ fn generates_zero_stores_for_empty_array_initializer_list() {
                 name_span: span(),
                 name: "buf".to_string(),
                 init: Some(Initializer::List(vec![])),
-            },
-            Statement::VarDecl {
+            }]),
+            Statement::Decl(vec![rivet::ast::LocalDecl {
                 ty: Type::Array {
                     element: Box::new(Type::Int),
                     len: 2,
@@ -826,7 +826,7 @@ fn generates_zero_stores_for_empty_array_initializer_list() {
                 name_span: span(),
                 name: "nums".to_string(),
                 init: Some(Initializer::List(vec![])),
-            },
+            }]),
             Statement::Return(Expr::IntLiteral {
                 value: 0,
                 suffix: IntLiteralSuffix::None,
@@ -852,7 +852,7 @@ fn narrows_char_local_initializer() {
         name: "main".to_string(),
         params: vec![],
         body: vec![
-            Statement::VarDecl {
+            Statement::Decl(vec![rivet::ast::LocalDecl {
                 ty: Type::Char,
                 name_span: span(),
                 name: "c".to_string(),
@@ -862,7 +862,7 @@ fn narrows_char_local_initializer() {
                     base: IntLiteralBase::Decimal,
                     span: span(),
                 })),
-            },
+            }]),
             Statement::Return(Expr::Variable {
                 name: "c".to_string(),
                 span: span(),
@@ -883,7 +883,7 @@ fn loads_char_local_with_unsigned_byte_load() {
         name: "main".to_string(),
         params: vec![],
         body: vec![
-            Statement::VarDecl {
+            Statement::Decl(vec![rivet::ast::LocalDecl {
                 ty: Type::Char,
                 name_span: span(),
                 name: "c".to_string(),
@@ -893,7 +893,7 @@ fn loads_char_local_with_unsigned_byte_load() {
                     base: IntLiteralBase::Decimal,
                     span: span(),
                 })),
-            },
+            }]),
             Statement::Return(Expr::Variable {
                 name: "c".to_string(),
                 span: span(),
@@ -914,12 +914,12 @@ fn narrows_char_assignment_through_address() {
         name: "main".to_string(),
         params: vec![],
         body: vec![
-            Statement::VarDecl {
+            Statement::Decl(vec![rivet::ast::LocalDecl {
                 ty: Type::Char,
                 name_span: span(),
                 name: "c".to_string(),
                 init: None,
-            },
+            }]),
             Statement::ExprStatement(Expr::Assign {
                 op_span: span(),
                 target: Box::new(Expr::Variable {
@@ -955,7 +955,7 @@ fn generates_compound_assignment() {
         name: "main".to_string(),
         params: vec![],
         body: vec![
-            Statement::VarDecl {
+            Statement::Decl(vec![rivet::ast::LocalDecl {
                 ty: Type::Int,
                 name_span: span(),
                 name: "x".to_string(),
@@ -965,7 +965,7 @@ fn generates_compound_assignment() {
                     base: IntLiteralBase::Decimal,
                     span: span(),
                 })),
-            },
+            }]),
             Statement::ExprStatement(Expr::CompoundAssign {
                 target: Box::new(Expr::Variable {
                     name: "x".to_string(),
@@ -1002,7 +1002,7 @@ fn generates_compound_assignment_expression_result() {
         name: "main".to_string(),
         params: vec![],
         body: vec![
-            Statement::VarDecl {
+            Statement::Decl(vec![rivet::ast::LocalDecl {
                 ty: Type::Int,
                 name_span: span(),
                 name: "x".to_string(),
@@ -1012,7 +1012,7 @@ fn generates_compound_assignment_expression_result() {
                     base: IntLiteralBase::Decimal,
                     span: span(),
                 })),
-            },
+            }]),
             Statement::Return(Expr::CompoundAssign {
                 target: Box::new(Expr::Variable {
                     name: "x".to_string(),
@@ -1045,7 +1045,7 @@ fn narrows_char_compound_assignment() {
         name: "main".to_string(),
         params: vec![],
         body: vec![
-            Statement::VarDecl {
+            Statement::Decl(vec![rivet::ast::LocalDecl {
                 ty: Type::Char,
                 name_span: span(),
                 name: "c".to_string(),
@@ -1055,7 +1055,7 @@ fn narrows_char_compound_assignment() {
                     base: IntLiteralBase::Decimal,
                     span: span(),
                 })),
-            },
+            }]),
             Statement::ExprStatement(Expr::CompoundAssign {
                 target: Box::new(Expr::Variable {
                     name: "c".to_string(),
@@ -1149,7 +1149,7 @@ fn narrows_char_increment_store() {
         name: "main".to_string(),
         params: vec![],
         body: vec![
-            Statement::VarDecl {
+            Statement::Decl(vec![rivet::ast::LocalDecl {
                 ty: Type::Char,
                 name_span: span(),
                 name: "c".to_string(),
@@ -1159,7 +1159,7 @@ fn narrows_char_increment_store() {
                     base: IntLiteralBase::Decimal,
                     span: span(),
                 })),
-            },
+            }]),
             Statement::ExprStatement(Expr::PrefixInc {
                 expr: Box::new(Expr::Variable {
                     name: "c".to_string(),
@@ -1189,18 +1189,18 @@ fn generates_chained_assignment_expression_right_associative() {
         name: "main".to_string(),
         params: vec![],
         body: vec![
-            Statement::VarDecl {
+            Statement::Decl(vec![rivet::ast::LocalDecl {
                 ty: Type::Int,
                 name_span: span(),
                 name: "x".to_string(),
                 init: None,
-            },
-            Statement::VarDecl {
+            }]),
+            Statement::Decl(vec![rivet::ast::LocalDecl {
                 ty: Type::Int,
                 name_span: span(),
                 name: "y".to_string(),
                 init: None,
-            },
+            }]),
             Statement::ExprStatement(Expr::Assign {
                 op_span: span(),
                 target: Box::new(Expr::Variable {
@@ -1329,7 +1329,7 @@ fn generates_while_loop() {
         name: "main".to_string(),
         params: vec![],
         body: vec![
-            Statement::VarDecl {
+            Statement::Decl(vec![rivet::ast::LocalDecl {
                 ty: Type::Int,
                 name_span: span(),
                 name: "x".to_string(),
@@ -1339,7 +1339,7 @@ fn generates_while_loop() {
                     base: IntLiteralBase::Decimal,
                     span: span(),
                 })),
-            },
+            }]),
             Statement::While {
                 cond: Expr::Variable {
                     name: "x".to_string(),
@@ -1459,7 +1459,7 @@ fn generates_do_while_loop_with_body_before_condition() {
         name: "main".to_string(),
         params: vec![],
         body: vec![
-            Statement::VarDecl {
+            Statement::Decl(vec![rivet::ast::LocalDecl {
                 ty: Type::Int,
                 name_span: span(),
                 name: "x".to_string(),
@@ -1469,7 +1469,7 @@ fn generates_do_while_loop_with_body_before_condition() {
                     base: IntLiteralBase::Decimal,
                     span: span(),
                 })),
-            },
+            }]),
             Statement::DoWhile {
                 body: Box::new(Statement::Block(vec![Statement::ExprStatement(
                     Expr::Assign {
@@ -1560,7 +1560,7 @@ fn counts_locals_inside_do_while_body_for_frame_size() {
         body: vec![
             Statement::DoWhile {
                 body: Box::new(Statement::Block(vec![
-                    Statement::VarDecl {
+                    Statement::Decl(vec![rivet::ast::LocalDecl {
                         ty: Type::Int,
                         name_span: span(),
                         name: "a".to_string(),
@@ -1570,8 +1570,8 @@ fn counts_locals_inside_do_while_body_for_frame_size() {
                             base: IntLiteralBase::Decimal,
                             span: span(),
                         })),
-                    },
-                    Statement::VarDecl {
+                    }]),
+                    Statement::Decl(vec![rivet::ast::LocalDecl {
                         ty: Type::Int,
                         name_span: span(),
                         name: "b".to_string(),
@@ -1581,8 +1581,8 @@ fn counts_locals_inside_do_while_body_for_frame_size() {
                             base: IntLiteralBase::Decimal,
                             span: span(),
                         })),
-                    },
-                    Statement::VarDecl {
+                    }]),
+                    Statement::Decl(vec![rivet::ast::LocalDecl {
                         ty: Type::Int,
                         name_span: span(),
                         name: "c".to_string(),
@@ -1592,7 +1592,7 @@ fn counts_locals_inside_do_while_body_for_frame_size() {
                             base: IntLiteralBase::Decimal,
                             span: span(),
                         })),
-                    },
+                    }]),
                 ])),
                 cond: Expr::IntLiteral {
                     value: 0,
@@ -1662,7 +1662,7 @@ fn generates_for_loop_with_init_condition_and_post() {
         name: "main".to_string(),
         params: vec![],
         body: vec![
-            Statement::VarDecl {
+            Statement::Decl(vec![rivet::ast::LocalDecl {
                 ty: Type::Int,
                 name_span: span(),
                 name: "i".to_string(),
@@ -1672,7 +1672,7 @@ fn generates_for_loop_with_init_condition_and_post() {
                     base: IntLiteralBase::Decimal,
                     span: span(),
                 })),
-            },
+            }]),
             Statement::For {
                 init: Some(Box::new(Statement::ExprStatement(Expr::Assign {
                     op_span: span(),
@@ -1779,7 +1779,7 @@ fn generates_continue_in_for_loop_to_post_clause() {
         name: "main".to_string(),
         params: vec![],
         body: vec![
-            Statement::VarDecl {
+            Statement::Decl(vec![rivet::ast::LocalDecl {
                 ty: Type::Int,
                 name_span: span(),
                 name: "i".to_string(),
@@ -1789,7 +1789,7 @@ fn generates_continue_in_for_loop_to_post_clause() {
                     base: IntLiteralBase::Decimal,
                     span: span(),
                 })),
-            },
+            }]),
             Statement::For {
                 init: None,
                 cond: Some(Expr::Binary {
@@ -1851,7 +1851,7 @@ fn counts_locals_inside_for_init_and_body_for_frame_size() {
         params: vec![],
         body: vec![
             Statement::For {
-                init: Some(Box::new(Statement::VarDecl {
+                init: Some(Box::new(Statement::Decl(vec![rivet::ast::LocalDecl {
                     ty: Type::Int,
                     name_span: span(),
                     name: "i".to_string(),
@@ -1861,7 +1861,7 @@ fn counts_locals_inside_for_init_and_body_for_frame_size() {
                         base: IntLiteralBase::Decimal,
                         span: span(),
                     })),
-                })),
+                }]))),
                 cond: Some(Expr::Binary {
                     op: BinaryOp::Less,
                     op_span: span(),
@@ -1878,7 +1878,7 @@ fn counts_locals_inside_for_init_and_body_for_frame_size() {
                 }),
                 post: None,
                 body: Box::new(Statement::Block(vec![
-                    Statement::VarDecl {
+                    Statement::Decl(vec![rivet::ast::LocalDecl {
                         ty: Type::Int,
                         name_span: span(),
                         name: "a".to_string(),
@@ -1888,8 +1888,8 @@ fn counts_locals_inside_for_init_and_body_for_frame_size() {
                             base: IntLiteralBase::Decimal,
                             span: span(),
                         })),
-                    },
-                    Statement::VarDecl {
+                    }]),
+                    Statement::Decl(vec![rivet::ast::LocalDecl {
                         ty: Type::Int,
                         name_span: span(),
                         name: "b".to_string(),
@@ -1899,8 +1899,8 @@ fn counts_locals_inside_for_init_and_body_for_frame_size() {
                             base: IntLiteralBase::Decimal,
                             span: span(),
                         })),
-                    },
-                    Statement::VarDecl {
+                    }]),
+                    Statement::Decl(vec![rivet::ast::LocalDecl {
                         ty: Type::Int,
                         name_span: span(),
                         name: "c".to_string(),
@@ -1910,7 +1910,7 @@ fn counts_locals_inside_for_init_and_body_for_frame_size() {
                             base: IntLiteralBase::Decimal,
                             span: span(),
                         })),
-                    },
+                    }]),
                     Statement::Break { span: span() },
                 ])),
             },
@@ -1936,7 +1936,7 @@ fn for_init_scope_can_shadow_outer_local_without_replacing_it() {
         name: "main".to_string(),
         params: vec![],
         body: vec![
-            Statement::VarDecl {
+            Statement::Decl(vec![rivet::ast::LocalDecl {
                 ty: Type::Int,
                 name_span: span(),
                 name: "i".to_string(),
@@ -1946,9 +1946,9 @@ fn for_init_scope_can_shadow_outer_local_without_replacing_it() {
                     base: IntLiteralBase::Decimal,
                     span: span(),
                 })),
-            },
+            }]),
             Statement::For {
-                init: Some(Box::new(Statement::VarDecl {
+                init: Some(Box::new(Statement::Decl(vec![rivet::ast::LocalDecl {
                     ty: Type::Int,
                     name_span: span(),
                     name: "i".to_string(),
@@ -1958,7 +1958,7 @@ fn for_init_scope_can_shadow_outer_local_without_replacing_it() {
                         base: IntLiteralBase::Decimal,
                         span: span(),
                     })),
-                })),
+                }]))),
                 cond: Some(Expr::Binary {
                     op: BinaryOp::Less,
                     op_span: span(),
@@ -2020,7 +2020,7 @@ fn counts_locals_inside_while_body_for_frame_size() {
         name: "main".to_string(),
         params: vec![],
         body: vec![
-            Statement::VarDecl {
+            Statement::Decl(vec![rivet::ast::LocalDecl {
                 ty: Type::Int,
                 name_span: span(),
                 name: "x".to_string(),
@@ -2030,14 +2030,14 @@ fn counts_locals_inside_while_body_for_frame_size() {
                     base: IntLiteralBase::Decimal,
                     span: span(),
                 })),
-            },
+            }]),
             Statement::While {
                 cond: Expr::Variable {
                     name: "x".to_string(),
                     span: span(),
                 },
                 body: Box::new(Statement::Block(vec![
-                    Statement::VarDecl {
+                    Statement::Decl(vec![rivet::ast::LocalDecl {
                         ty: Type::Int,
                         name_span: span(),
                         name: "a".to_string(),
@@ -2047,8 +2047,8 @@ fn counts_locals_inside_while_body_for_frame_size() {
                             base: IntLiteralBase::Decimal,
                             span: span(),
                         })),
-                    },
-                    Statement::VarDecl {
+                    }]),
+                    Statement::Decl(vec![rivet::ast::LocalDecl {
                         ty: Type::Int,
                         name_span: span(),
                         name: "b".to_string(),
@@ -2058,8 +2058,8 @@ fn counts_locals_inside_while_body_for_frame_size() {
                             base: IntLiteralBase::Decimal,
                             span: span(),
                         })),
-                    },
-                    Statement::VarDecl {
+                    }]),
+                    Statement::Decl(vec![rivet::ast::LocalDecl {
                         ty: Type::Int,
                         name_span: span(),
                         name: "c".to_string(),
@@ -2069,7 +2069,7 @@ fn counts_locals_inside_while_body_for_frame_size() {
                             base: IntLiteralBase::Decimal,
                             span: span(),
                         })),
-                    },
+                    }]),
                     Statement::Return(Expr::Binary {
                         op: BinaryOp::Add,
                         op_span: span(),
@@ -2352,12 +2352,12 @@ fn scales_int_pointer_compound_assignment_by_pointee_size() {
         name: "main".to_string(),
         params: vec![],
         body: vec![
-            Statement::VarDecl {
+            Statement::Decl(vec![rivet::ast::LocalDecl {
                 ty: Type::Pointer(Box::new(Type::Int)),
                 name_span: span(),
                 name: "p".to_string(),
                 init: None,
-            },
+            }]),
             Statement::ExprStatement(Expr::CompoundAssign {
                 target: Box::new(Expr::Variable {
                     name: "p".to_string(),
@@ -2396,12 +2396,12 @@ fn scales_int_pointer_increment_by_pointee_size() {
         name: "main".to_string(),
         params: vec![],
         body: vec![
-            Statement::VarDecl {
+            Statement::Decl(vec![rivet::ast::LocalDecl {
                 ty: Type::Pointer(Box::new(Type::Int)),
                 name_span: span(),
                 name: "p".to_string(),
                 init: None,
-            },
+            }]),
             Statement::ExprStatement(Expr::PrefixInc {
                 expr: Box::new(Expr::Variable {
                     name: "p".to_string(),
@@ -2433,12 +2433,12 @@ fn leaves_char_pointer_increment_unscaled() {
         name: "main".to_string(),
         params: vec![],
         body: vec![
-            Statement::VarDecl {
+            Statement::Decl(vec![rivet::ast::LocalDecl {
                 ty: Type::Pointer(Box::new(Type::Char)),
                 name_span: span(),
                 name: "p".to_string(),
                 init: None,
-            },
+            }]),
             Statement::ExprStatement(Expr::PrefixInc {
                 expr: Box::new(Expr::Variable {
                     name: "p".to_string(),

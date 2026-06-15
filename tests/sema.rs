@@ -73,7 +73,7 @@ fn accepts_same_local_name_in_different_functions() {
         function(
             "first",
             vec![
-                Statement::VarDecl {
+                Statement::Decl(vec![rivet::ast::LocalDecl {
                     ty: Type::Int,
                     name_span: span(),
                     name: "x".to_string(),
@@ -83,7 +83,7 @@ fn accepts_same_local_name_in_different_functions() {
                         base: IntLiteralBase::Decimal,
                         span: span(),
                     })),
-                },
+                }]),
                 Statement::Return(Expr::Variable {
                     name: "x".to_string(),
                     span: span(),
@@ -93,7 +93,7 @@ fn accepts_same_local_name_in_different_functions() {
         function(
             "second",
             vec![
-                Statement::VarDecl {
+                Statement::Decl(vec![rivet::ast::LocalDecl {
                     ty: Type::Int,
                     name_span: span(),
                     name: "x".to_string(),
@@ -103,7 +103,7 @@ fn accepts_same_local_name_in_different_functions() {
                         base: IntLiteralBase::Decimal,
                         span: span(),
                     })),
-                },
+                }]),
                 Statement::Return(Expr::Variable {
                     name: "x".to_string(),
                     span: span(),
@@ -367,7 +367,7 @@ fn rejects_local_redeclaring_parameter_in_function_scope() {
         "main",
         &["x"],
         vec![
-            Statement::VarDecl {
+            Statement::Decl(vec![rivet::ast::LocalDecl {
                 ty: Type::Int,
                 name_span: span(),
                 name: "x".to_string(),
@@ -377,7 +377,7 @@ fn rejects_local_redeclaring_parameter_in_function_scope() {
                     base: IntLiteralBase::Decimal,
                     span: span(),
                 })),
-            },
+            }]),
             Statement::Return(Expr::Variable {
                 name: "x".to_string(),
                 span: span(),
@@ -396,7 +396,7 @@ fn accepts_inner_block_shadowing_parameter() {
         "main",
         &["x"],
         vec![Statement::Block(vec![
-            Statement::VarDecl {
+            Statement::Decl(vec![rivet::ast::LocalDecl {
                 ty: Type::Int,
                 name_span: span(),
                 name: "x".to_string(),
@@ -406,7 +406,7 @@ fn accepts_inner_block_shadowing_parameter() {
                     base: IntLiteralBase::Decimal,
                     span: span(),
                 })),
-            },
+            }]),
             Statement::Return(Expr::Variable {
                 name: "x".to_string(),
                 span: span(),
@@ -682,7 +682,7 @@ fn rejects_call_with_more_than_eight_arguments() {
 #[test]
 fn accepts_declared_local_usage() {
     let program = main_program(vec![
-        Statement::VarDecl {
+        Statement::Decl(vec![rivet::ast::LocalDecl {
             ty: Type::Int,
             name_span: span(),
             name: "x".to_string(),
@@ -692,7 +692,7 @@ fn accepts_declared_local_usage() {
                 base: IntLiteralBase::Decimal,
                 span: span(),
             })),
-        },
+        }]),
         Statement::ExprStatement(Expr::Assign {
             op_span: span(),
             target: Box::new(Expr::Variable {
@@ -726,12 +726,12 @@ fn accepts_declared_local_usage() {
 #[test]
 fn accepts_declaration_without_initializer_assigned_before_use() {
     let program = main_program(vec![
-        Statement::VarDecl {
+        Statement::Decl(vec![rivet::ast::LocalDecl {
             ty: Type::Int,
             name_span: span(),
             name: "x".to_string(),
             init: None,
-        },
+        }]),
         Statement::ExprStatement(Expr::Assign {
             op_span: span(),
             target: Box::new(Expr::Variable {
@@ -757,12 +757,12 @@ fn accepts_declaration_without_initializer_assigned_before_use() {
 #[test]
 fn accepts_assignment_expression_in_return() {
     let program = main_program(vec![
-        Statement::VarDecl {
+        Statement::Decl(vec![rivet::ast::LocalDecl {
             ty: Type::Int,
             name_span: span(),
             name: "x".to_string(),
             init: None,
-        },
+        }]),
         Statement::Return(Expr::Assign {
             op_span: span(),
             target: Box::new(Expr::Variable {
@@ -784,7 +784,7 @@ fn accepts_assignment_expression_in_return() {
 #[test]
 fn accepts_compound_assignment_to_int() {
     let program = main_program(vec![
-        Statement::VarDecl {
+        Statement::Decl(vec![rivet::ast::LocalDecl {
             ty: Type::Int,
             name_span: span(),
             name: "x".to_string(),
@@ -794,7 +794,7 @@ fn accepts_compound_assignment_to_int() {
                 base: IntLiteralBase::Decimal,
                 span: span(),
             })),
-        },
+        }]),
         Statement::ExprStatement(Expr::CompoundAssign {
             target: Box::new(Expr::Variable {
                 name: "x".to_string(),
@@ -821,7 +821,7 @@ fn accepts_compound_assignment_to_int() {
 #[test]
 fn accepts_compound_assignment_to_char_from_int_expression() {
     let program = main_program(vec![
-        Statement::VarDecl {
+        Statement::Decl(vec![rivet::ast::LocalDecl {
             ty: Type::Char,
             name_span: span(),
             name: "c".to_string(),
@@ -831,7 +831,7 @@ fn accepts_compound_assignment_to_char_from_int_expression() {
                 base: IntLiteralBase::Decimal,
                 span: span(),
             })),
-        },
+        }]),
         Statement::ExprStatement(Expr::CompoundAssign {
             target: Box::new(Expr::Variable {
                 name: "c".to_string(),
@@ -858,7 +858,7 @@ fn accepts_compound_assignment_to_char_from_int_expression() {
 #[test]
 fn accepts_compound_assignment_expression_in_return() {
     let program = main_program(vec![
-        Statement::VarDecl {
+        Statement::Decl(vec![rivet::ast::LocalDecl {
             ty: Type::Int,
             name_span: span(),
             name: "x".to_string(),
@@ -868,7 +868,7 @@ fn accepts_compound_assignment_expression_in_return() {
                 base: IntLiteralBase::Decimal,
                 span: span(),
             })),
-        },
+        }]),
         Statement::Return(Expr::CompoundAssign {
             target: Box::new(Expr::Variable {
                 name: "x".to_string(),
@@ -920,7 +920,7 @@ fn typed_binary_expression_has_result_type() {
 #[test]
 fn typed_shift_uses_promoted_left_operand_type() {
     let program = main_program(vec![
-        Statement::VarDecl {
+        Statement::Decl(vec![rivet::ast::LocalDecl {
             ty: Type::Int,
             name_span: span(),
             name: "x".to_string(),
@@ -930,8 +930,8 @@ fn typed_shift_uses_promoted_left_operand_type() {
                 base: IntLiteralBase::Decimal,
                 span: span(),
             })),
-        },
-        Statement::VarDecl {
+        }]),
+        Statement::Decl(vec![rivet::ast::LocalDecl {
             ty: Type::UnsignedInt,
             name_span: span(),
             name: "shift".to_string(),
@@ -941,7 +941,7 @@ fn typed_shift_uses_promoted_left_operand_type() {
                 base: IntLiteralBase::Decimal,
                 span: span(),
             })),
-        },
+        }]),
         Statement::Return(Expr::Binary {
             op: BinaryOp::ShiftRight,
             op_span: span(),
@@ -973,7 +973,7 @@ fn typed_shift_uses_promoted_left_operand_type() {
 #[test]
 fn typed_unary_negate_preserves_unsigned_operand_type() {
     let program = main_program(vec![
-        Statement::VarDecl {
+        Statement::Decl(vec![rivet::ast::LocalDecl {
             ty: Type::UnsignedInt,
             name_span: span(),
             name: "x".to_string(),
@@ -983,7 +983,7 @@ fn typed_unary_negate_preserves_unsigned_operand_type() {
                 base: IntLiteralBase::Decimal,
                 span: span(),
             })),
-        },
+        }]),
         Statement::Return(Expr::Unary {
             op: UnaryOp::Negate,
             op_span: span(),
@@ -1007,7 +1007,7 @@ fn typed_unary_negate_preserves_unsigned_operand_type() {
 #[test]
 fn typed_unary_bitwise_not_preserves_unsigned_operand_type() {
     let program = main_program(vec![
-        Statement::VarDecl {
+        Statement::Decl(vec![rivet::ast::LocalDecl {
             ty: Type::UnsignedInt,
             name_span: span(),
             name: "x".to_string(),
@@ -1017,7 +1017,7 @@ fn typed_unary_bitwise_not_preserves_unsigned_operand_type() {
                 base: IntLiteralBase::Decimal,
                 span: span(),
             })),
-        },
+        }]),
         Statement::Return(Expr::Unary {
             op: UnaryOp::BitwiseNot,
             op_span: span(),
@@ -1041,7 +1041,7 @@ fn typed_unary_bitwise_not_preserves_unsigned_operand_type() {
 #[test]
 fn typed_unary_logical_not_returns_int_for_unsigned_operand() {
     let program = main_program(vec![
-        Statement::VarDecl {
+        Statement::Decl(vec![rivet::ast::LocalDecl {
             ty: Type::UnsignedInt,
             name_span: span(),
             name: "x".to_string(),
@@ -1051,7 +1051,7 @@ fn typed_unary_logical_not_returns_int_for_unsigned_operand() {
                 base: IntLiteralBase::Decimal,
                 span: span(),
             })),
-        },
+        }]),
         Statement::Return(Expr::Unary {
             op: UnaryOp::LogicalNot,
             op_span: span(),
@@ -1340,12 +1340,12 @@ fn typed_pointer_arithmetic_has_pointer_operand_and_result_type() {
 #[test]
 fn accepts_pointer_compound_assignment_by_integer() {
     let program = main_program(vec![
-        Statement::VarDecl {
+        Statement::Decl(vec![rivet::ast::LocalDecl {
             ty: Type::Pointer(Box::new(Type::Char)),
             name_span: span(),
             name: "buf".to_string(),
             init: None,
-        },
+        }]),
         Statement::ExprStatement(Expr::CompoundAssign {
             target: Box::new(Expr::Variable {
                 name: "buf".to_string(),
@@ -1393,7 +1393,7 @@ fn rejects_dereference_of_non_pointer_expression() {
 fn rejects_assignment_through_non_pointer_dereference() {
     let op_span = span_from(10, 11);
     let program = main_program(vec![
-        Statement::VarDecl {
+        Statement::Decl(vec![rivet::ast::LocalDecl {
             ty: Type::Int,
             name_span: span(),
             name: "x".to_string(),
@@ -1403,7 +1403,7 @@ fn rejects_assignment_through_non_pointer_dereference() {
                 base: IntLiteralBase::Decimal,
                 span: span(),
             })),
-        },
+        }]),
         Statement::Return(Expr::Assign {
             target: Box::new(Expr::Unary {
                 op: UnaryOp::Dereference,
@@ -1432,18 +1432,18 @@ fn rejects_assignment_through_non_pointer_dereference() {
 #[test]
 fn rejects_pointer_plus_pointer() {
     let program = main_program(vec![
-        Statement::VarDecl {
+        Statement::Decl(vec![rivet::ast::LocalDecl {
             ty: Type::Pointer(Box::new(Type::Char)),
             name_span: span(),
             name: "left".to_string(),
             init: None,
-        },
-        Statement::VarDecl {
+        }]),
+        Statement::Decl(vec![rivet::ast::LocalDecl {
             ty: Type::Pointer(Box::new(Type::Char)),
             name_span: span(),
             name: "right".to_string(),
             init: None,
-        },
+        }]),
         Statement::Return(Expr::Binary {
             op: BinaryOp::Add,
             op_span: span(),
@@ -1466,18 +1466,18 @@ fn rejects_pointer_plus_pointer() {
 #[test]
 fn rejects_assignment_between_different_pointer_types() {
     let program = main_program(vec![
-        Statement::VarDecl {
+        Statement::Decl(vec![rivet::ast::LocalDecl {
             ty: Type::Pointer(Box::new(Type::Char)),
             name_span: span(),
             name: "chars".to_string(),
             init: None,
-        },
-        Statement::VarDecl {
+        }]),
+        Statement::Decl(vec![rivet::ast::LocalDecl {
             ty: Type::Pointer(Box::new(Type::Int)),
             name_span: span(),
             name: "ints".to_string(),
             init: None,
-        },
+        }]),
         Statement::ExprStatement(Expr::Assign {
             target: Box::new(Expr::Variable {
                 name: "chars".to_string(),
@@ -1508,7 +1508,7 @@ fn rejects_assignment_between_different_pointer_types() {
 #[test]
 fn typed_char_compound_assignment_has_target_type() {
     let program = main_program(vec![
-        Statement::VarDecl {
+        Statement::Decl(vec![rivet::ast::LocalDecl {
             ty: Type::Char,
             name_span: span(),
             name: "c".to_string(),
@@ -1518,7 +1518,7 @@ fn typed_char_compound_assignment_has_target_type() {
                 base: IntLiteralBase::Decimal,
                 span: span(),
             })),
-        },
+        }]),
         Statement::Return(Expr::CompoundAssign {
             target: Box::new(Expr::Variable {
                 name: "c".to_string(),
@@ -1548,7 +1548,7 @@ fn typed_char_compound_assignment_has_target_type() {
 #[test]
 fn typed_postfix_increment_preserves_postfix_kind() {
     let program = main_program(vec![
-        Statement::VarDecl {
+        Statement::Decl(vec![rivet::ast::LocalDecl {
             ty: Type::Int,
             name_span: span(),
             name: "x".to_string(),
@@ -1558,7 +1558,7 @@ fn typed_postfix_increment_preserves_postfix_kind() {
                 base: IntLiteralBase::Decimal,
                 span: span(),
             })),
-        },
+        }]),
         Statement::Return(Expr::PostfixInc {
             expr: Box::new(Expr::Variable {
                 name: "x".to_string(),
@@ -1720,7 +1720,7 @@ fn rejects_compound_assignment_to_non_lvalue_expression() {
 #[test]
 fn accepts_prefix_and_postfix_increment_decrement() {
     let program = main_program(vec![
-        Statement::VarDecl {
+        Statement::Decl(vec![rivet::ast::LocalDecl {
             ty: Type::Int,
             name_span: span(),
             name: "x".to_string(),
@@ -1730,7 +1730,7 @@ fn accepts_prefix_and_postfix_increment_decrement() {
                 base: IntLiteralBase::Decimal,
                 span: span(),
             })),
-        },
+        }]),
         Statement::ExprStatement(Expr::PrefixInc {
             expr: Box::new(Expr::Variable {
                 name: "x".to_string(),
@@ -1796,7 +1796,7 @@ fn rejects_increment_of_non_lvalue_expression() {
 #[test]
 fn accepts_initializer_using_earlier_local() {
     let program = main_program(vec![
-        Statement::VarDecl {
+        Statement::Decl(vec![rivet::ast::LocalDecl {
             ty: Type::Int,
             name_span: span(),
             name: "x".to_string(),
@@ -1806,8 +1806,8 @@ fn accepts_initializer_using_earlier_local() {
                 base: IntLiteralBase::Decimal,
                 span: span(),
             })),
-        },
-        Statement::VarDecl {
+        }]),
+        Statement::Decl(vec![rivet::ast::LocalDecl {
             ty: Type::Int,
             name_span: span(),
             name: "y".to_string(),
@@ -1815,7 +1815,7 @@ fn accepts_initializer_using_earlier_local() {
                 name: "x".to_string(),
                 span: span(),
             })),
-        },
+        }]),
         Statement::Return(Expr::Variable {
             name: "y".to_string(),
             span: span(),
@@ -1826,9 +1826,53 @@ fn accepts_initializer_using_earlier_local() {
 }
 
 #[test]
+fn accepts_multiple_local_declarators_left_to_right() {
+    let program = main_program(vec![
+        Statement::Decl(vec![
+            rivet::ast::LocalDecl {
+                ty: Type::Int,
+                name_span: span(),
+                name: "a".to_string(),
+                init: Some(Initializer::Expr(Expr::IntLiteral {
+                    value: 1,
+                    suffix: IntLiteralSuffix::None,
+                    base: IntLiteralBase::Decimal,
+                    span: span(),
+                })),
+            },
+            rivet::ast::LocalDecl {
+                ty: Type::Int,
+                name_span: span(),
+                name: "b".to_string(),
+                init: Some(Initializer::Expr(Expr::Binary {
+                    op: BinaryOp::Add,
+                    op_span: span(),
+                    left: Box::new(Expr::Variable {
+                        name: "a".to_string(),
+                        span: span(),
+                    }),
+                    right: Box::new(Expr::IntLiteral {
+                        value: 1,
+                        suffix: IntLiteralSuffix::None,
+                        base: IntLiteralBase::Decimal,
+                        span: span(),
+                    }),
+                })),
+            },
+        ]),
+        Statement::Return(Expr::Variable {
+            name: "b".to_string(),
+            span: span(),
+        }),
+    ]);
+
+    check(&program).expect("semantic check should succeed");
+}
+
+#[test]
 fn accepts_initializer_using_declared_name_itself() {
     let program = main_program(vec![
-        Statement::VarDecl {
+        Statement::Decl(vec![rivet::ast::LocalDecl {
             ty: Type::Int,
             name_span: span(),
             name: "x".to_string(),
@@ -1836,7 +1880,7 @@ fn accepts_initializer_using_declared_name_itself() {
                 name: "x".to_string(),
                 span: span(),
             })),
-        },
+        }]),
         Statement::Return(Expr::Variable {
             name: "x".to_string(),
             span: span(),
@@ -1849,7 +1893,7 @@ fn accepts_initializer_using_declared_name_itself() {
 #[test]
 fn accepts_local_array_declaration_without_value_use() {
     let program = main_program(vec![
-        Statement::VarDecl {
+        Statement::Decl(vec![rivet::ast::LocalDecl {
             ty: Type::Array {
                 element: Box::new(Type::Char),
                 len: 3,
@@ -1857,8 +1901,8 @@ fn accepts_local_array_declaration_without_value_use() {
             name_span: span(),
             name: "buf".to_string(),
             init: None,
-        },
-        Statement::VarDecl {
+        }]),
+        Statement::Decl(vec![rivet::ast::LocalDecl {
             ty: Type::Int,
             name_span: span(),
             name: "x".to_string(),
@@ -1868,7 +1912,7 @@ fn accepts_local_array_declaration_without_value_use() {
                 base: IntLiteralBase::Decimal,
                 span: span(),
             })),
-        },
+        }]),
         Statement::Return(Expr::Variable {
             name: "x".to_string(),
             span: span(),
@@ -1905,7 +1949,7 @@ fn typed_array_variable_expression_decays_to_pointer_argument() {
             name: "main".to_string(),
             params: vec![],
             body: vec![
-                Statement::VarDecl {
+                Statement::Decl(vec![rivet::ast::LocalDecl {
                     ty: Type::Array {
                         element: Box::new(Type::Char),
                         len: 3,
@@ -1913,7 +1957,7 @@ fn typed_array_variable_expression_decays_to_pointer_argument() {
                     name_span: span(),
                     name: "buf".to_string(),
                     init: None,
-                },
+                }]),
                 Statement::Return(Expr::Call {
                     name_span: span(),
                     name: "takes_char_pointer".to_string(),
@@ -1940,7 +1984,7 @@ fn typed_array_variable_expression_decays_to_pointer_argument() {
 #[test]
 fn accepts_local_array_initializer_list() {
     let program = main_program(vec![
-        Statement::VarDecl {
+        Statement::Decl(vec![rivet::ast::LocalDecl {
             ty: Type::Array {
                 element: Box::new(Type::Char),
                 len: 3,
@@ -1967,7 +2011,7 @@ fn accepts_local_array_initializer_list() {
                     span: span(),
                 },
             ])),
-        },
+        }]),
         Statement::Return(Expr::IntLiteral {
             value: 0,
             suffix: IntLiteralSuffix::None,
@@ -1982,7 +2026,7 @@ fn accepts_local_array_initializer_list() {
 #[test]
 fn accepts_local_array_initializer_list_with_shorter_length() {
     let program = main_program(vec![
-        Statement::VarDecl {
+        Statement::Decl(vec![rivet::ast::LocalDecl {
             ty: Type::Array {
                 element: Box::new(Type::Char),
                 len: 3,
@@ -2003,7 +2047,7 @@ fn accepts_local_array_initializer_list_with_shorter_length() {
                     span: span(),
                 },
             ])),
-        },
+        }]),
         Statement::Return(Expr::IntLiteral {
             value: 0,
             suffix: IntLiteralSuffix::None,
@@ -2018,7 +2062,7 @@ fn accepts_local_array_initializer_list_with_shorter_length() {
 #[test]
 fn accepts_empty_local_array_initializer_list() {
     let program = main_program(vec![
-        Statement::VarDecl {
+        Statement::Decl(vec![rivet::ast::LocalDecl {
             ty: Type::Array {
                 element: Box::new(Type::Int),
                 len: 2,
@@ -2026,7 +2070,7 @@ fn accepts_empty_local_array_initializer_list() {
             name_span: span(),
             name: "nums".to_string(),
             init: Some(Initializer::List(vec![])),
-        },
+        }]),
         Statement::Return(Expr::IntLiteral {
             value: 0,
             suffix: IntLiteralSuffix::None,
@@ -2041,7 +2085,7 @@ fn accepts_empty_local_array_initializer_list() {
 #[test]
 fn rejects_array_initializer_list_with_larger_length() {
     let program = main_program(vec![
-        Statement::VarDecl {
+        Statement::Decl(vec![rivet::ast::LocalDecl {
             ty: Type::Array {
                 element: Box::new(Type::Char),
                 len: 3,
@@ -2074,7 +2118,7 @@ fn rejects_array_initializer_list_with_larger_length() {
                     span: span(),
                 },
             ])),
-        },
+        }]),
         Statement::Return(Expr::IntLiteral {
             value: 0,
             suffix: IntLiteralSuffix::None,
@@ -2094,7 +2138,7 @@ fn rejects_array_initializer_list_with_larger_length() {
 #[test]
 fn rejects_array_initializer_expression() {
     let program = main_program(vec![
-        Statement::VarDecl {
+        Statement::Decl(vec![rivet::ast::LocalDecl {
             ty: Type::Array {
                 element: Box::new(Type::Char),
                 len: 3,
@@ -2107,7 +2151,7 @@ fn rejects_array_initializer_expression() {
                 base: IntLiteralBase::Decimal,
                 span: span(),
             })),
-        },
+        }]),
         Statement::Return(Expr::IntLiteral {
             value: 0,
             suffix: IntLiteralSuffix::None,
@@ -2124,7 +2168,7 @@ fn rejects_array_initializer_expression() {
 #[test]
 fn rejects_scalar_initializer_list() {
     let program = main_program(vec![
-        Statement::VarDecl {
+        Statement::Decl(vec![rivet::ast::LocalDecl {
             ty: Type::Int,
             name_span: span(),
             name: "x".to_string(),
@@ -2134,7 +2178,7 @@ fn rejects_scalar_initializer_list() {
                 base: IntLiteralBase::Decimal,
                 span: span(),
             }])),
-        },
+        }]),
         Statement::Return(Expr::IntLiteral {
             value: 0,
             suffix: IntLiteralSuffix::None,
@@ -2151,7 +2195,7 @@ fn rejects_scalar_initializer_list() {
 #[test]
 fn rejects_duplicate_local_declaration() {
     let program = main_program(vec![
-        Statement::VarDecl {
+        Statement::Decl(vec![rivet::ast::LocalDecl {
             ty: Type::Int,
             name_span: span(),
             name: "x".to_string(),
@@ -2161,8 +2205,8 @@ fn rejects_duplicate_local_declaration() {
                 base: IntLiteralBase::Decimal,
                 span: span(),
             })),
-        },
-        Statement::VarDecl {
+        }]),
+        Statement::Decl(vec![rivet::ast::LocalDecl {
             ty: Type::Int,
             name_span: span(),
             name: "x".to_string(),
@@ -2172,7 +2216,7 @@ fn rejects_duplicate_local_declaration() {
                 base: IntLiteralBase::Decimal,
                 span: span(),
             })),
-        },
+        }]),
         Statement::Return(Expr::Variable {
             name: "x".to_string(),
             span: span(),
@@ -2228,7 +2272,7 @@ fn rejects_returning_undeclared_local() {
 #[test]
 fn rejects_initializer_using_later_local() {
     let program = main_program(vec![
-        Statement::VarDecl {
+        Statement::Decl(vec![rivet::ast::LocalDecl {
             ty: Type::Int,
             name_span: span(),
             name: "y".to_string(),
@@ -2236,8 +2280,8 @@ fn rejects_initializer_using_later_local() {
                 name: "x".to_string(),
                 span: span(),
             })),
-        },
-        Statement::VarDecl {
+        }]),
+        Statement::Decl(vec![rivet::ast::LocalDecl {
             ty: Type::Int,
             name_span: span(),
             name: "x".to_string(),
@@ -2247,7 +2291,7 @@ fn rejects_initializer_using_later_local() {
                 base: IntLiteralBase::Decimal,
                 span: span(),
             })),
-        },
+        }]),
         Statement::Return(Expr::Variable {
             name: "y".to_string(),
             span: span(),
@@ -2260,9 +2304,45 @@ fn rejects_initializer_using_later_local() {
 }
 
 #[test]
+fn rejects_multiple_local_declarator_initializer_using_later_name() {
+    let program = main_program(vec![
+        Statement::Decl(vec![
+            rivet::ast::LocalDecl {
+                ty: Type::Int,
+                name_span: span(),
+                name: "a".to_string(),
+                init: Some(Initializer::Expr(Expr::Variable {
+                    name: "b".to_string(),
+                    span: span(),
+                })),
+            },
+            rivet::ast::LocalDecl {
+                ty: Type::Int,
+                name_span: span(),
+                name: "b".to_string(),
+                init: Some(Initializer::Expr(Expr::IntLiteral {
+                    value: 1,
+                    suffix: IntLiteralSuffix::None,
+                    base: IntLiteralBase::Decimal,
+                    span: span(),
+                })),
+            },
+        ]),
+        Statement::Return(Expr::Variable {
+            name: "a".to_string(),
+            span: span(),
+        }),
+    ]);
+
+    let err = check(&program).expect_err("semantic check should fail");
+
+    assert_eq!(err.message, "undeclared local variable 'b'");
+}
+
+#[test]
 fn rejects_undeclared_local_inside_nested_expression() {
     let program = main_program(vec![
-        Statement::VarDecl {
+        Statement::Decl(vec![rivet::ast::LocalDecl {
             ty: Type::Int,
             name_span: span(),
             name: "x".to_string(),
@@ -2272,7 +2352,7 @@ fn rejects_undeclared_local_inside_nested_expression() {
                 base: IntLiteralBase::Decimal,
                 span: span(),
             })),
-        },
+        }]),
         Statement::Return(Expr::Binary {
             op: BinaryOp::Multiply,
             op_span: span(),
@@ -2311,7 +2391,7 @@ fn accepts_char_function_return_used_as_char_initializer() {
             name: "main".to_string(),
             params: vec![param_with_span(Type::Char, "c", span())],
             body: vec![
-                Statement::VarDecl {
+                Statement::Decl(vec![rivet::ast::LocalDecl {
                     ty: Type::Char,
                     name_span: span(),
                     name: "result".to_string(),
@@ -2323,7 +2403,7 @@ fn accepts_char_function_return_used_as_char_initializer() {
                             span: span(),
                         }],
                     })),
-                },
+                }]),
                 Statement::Return(Expr::IntLiteral {
                     value: 0,
                     suffix: IntLiteralSuffix::None,
@@ -2340,7 +2420,7 @@ fn accepts_char_function_return_used_as_char_initializer() {
 #[test]
 fn accepts_char_initializer_from_int_literal() {
     let program = main_program(vec![
-        Statement::VarDecl {
+        Statement::Decl(vec![rivet::ast::LocalDecl {
             ty: Type::Char,
             name_span: span(),
             name: "c".to_string(),
@@ -2350,7 +2430,7 @@ fn accepts_char_initializer_from_int_literal() {
                 base: IntLiteralBase::Decimal,
                 span: span(),
             })),
-        },
+        }]),
         Statement::Return(Expr::IntLiteral {
             value: 0,
             suffix: IntLiteralSuffix::None,
@@ -2365,7 +2445,7 @@ fn accepts_char_initializer_from_int_literal() {
 #[test]
 fn accepts_char_initializer_from_int_expression() {
     let program = main_program(vec![
-        Statement::VarDecl {
+        Statement::Decl(vec![rivet::ast::LocalDecl {
             ty: Type::Char,
             name_span: span(),
             name: "c".to_string(),
@@ -2385,7 +2465,7 @@ fn accepts_char_initializer_from_int_expression() {
                     span: span(),
                 }),
             })),
-        },
+        }]),
         Statement::Return(Expr::IntLiteral {
             value: 0,
             suffix: IntLiteralSuffix::None,
@@ -2400,18 +2480,18 @@ fn accepts_char_initializer_from_int_expression() {
 #[test]
 fn accepts_char_assignment_from_int_expression() {
     let program = main_program(vec![
-        Statement::VarDecl {
+        Statement::Decl(vec![rivet::ast::LocalDecl {
             ty: Type::Char,
             name_span: span(),
             name: "c".to_string(),
             init: None,
-        },
-        Statement::VarDecl {
+        }]),
+        Statement::Decl(vec![rivet::ast::LocalDecl {
             ty: Type::Int,
             name_span: span(),
             name: "i".to_string(),
             init: None,
-        },
+        }]),
         Statement::ExprStatement(Expr::Assign {
             op_span: span(),
             target: Box::new(Expr::Variable {
@@ -2437,7 +2517,7 @@ fn accepts_char_assignment_from_int_expression() {
 #[test]
 fn accepts_int_initializer_from_char_expression() {
     let program = main_program(vec![
-        Statement::VarDecl {
+        Statement::Decl(vec![rivet::ast::LocalDecl {
             ty: Type::Char,
             name_span: span(),
             name: "c".to_string(),
@@ -2447,8 +2527,8 @@ fn accepts_int_initializer_from_char_expression() {
                 base: IntLiteralBase::Decimal,
                 span: span(),
             })),
-        },
-        Statement::VarDecl {
+        }]),
+        Statement::Decl(vec![rivet::ast::LocalDecl {
             ty: Type::Int,
             name_span: span(),
             name: "i".to_string(),
@@ -2456,7 +2536,7 @@ fn accepts_int_initializer_from_char_expression() {
                 name: "c".to_string(),
                 span: span(),
             })),
-        },
+        }]),
         Statement::Return(Expr::Variable {
             name: "i".to_string(),
             span: span(),
@@ -2487,12 +2567,12 @@ fn accepts_char_argument_from_int_expression() {
             name: "main".to_string(),
             params: vec![],
             body: vec![
-                Statement::VarDecl {
+                Statement::Decl(vec![rivet::ast::LocalDecl {
                     ty: Type::Int,
                     name_span: span(),
                     name: "i".to_string(),
                     init: None,
-                },
+                }]),
                 Statement::Return(Expr::Call {
                     name_span: span(),
                     name: "takes_char".to_string(),
@@ -2527,7 +2607,7 @@ fn accepts_int_argument_from_char_expression() {
             name: "main".to_string(),
             params: vec![],
             body: vec![
-                Statement::VarDecl {
+                Statement::Decl(vec![rivet::ast::LocalDecl {
                     ty: Type::Char,
                     name_span: span(),
                     name: "c".to_string(),
@@ -2537,7 +2617,7 @@ fn accepts_int_argument_from_char_expression() {
                         base: IntLiteralBase::Decimal,
                         span: span(),
                     })),
-                },
+                }]),
                 Statement::Return(Expr::Call {
                     name_span: span(),
                     name: "takes_int".to_string(),
@@ -2600,18 +2680,18 @@ fn accepts_int_return_from_char_expression() {
 #[test]
 fn accepts_binary_expression_between_char_and_int() {
     let program = main_program(vec![
-        Statement::VarDecl {
+        Statement::Decl(vec![rivet::ast::LocalDecl {
             ty: Type::Char,
             name_span: span(),
             name: "c".to_string(),
             init: None,
-        },
-        Statement::VarDecl {
+        }]),
+        Statement::Decl(vec![rivet::ast::LocalDecl {
             ty: Type::Int,
             name_span: span(),
             name: "i".to_string(),
             init: None,
-        },
+        }]),
         Statement::Return(Expr::Binary {
             op: BinaryOp::Add,
             op_span: span(),
@@ -2632,7 +2712,7 @@ fn accepts_binary_expression_between_char_and_int() {
 #[test]
 fn accepts_block_using_outer_local() {
     let program = main_program(vec![
-        Statement::VarDecl {
+        Statement::Decl(vec![rivet::ast::LocalDecl {
             ty: Type::Int,
             name_span: span(),
             name: "x".to_string(),
@@ -2642,7 +2722,7 @@ fn accepts_block_using_outer_local() {
                 base: IntLiteralBase::Decimal,
                 span: span(),
             })),
-        },
+        }]),
         Statement::Block(vec![Statement::Return(Expr::Variable {
             name: "x".to_string(),
             span: span(),
@@ -2655,7 +2735,7 @@ fn accepts_block_using_outer_local() {
 #[test]
 fn rejects_use_of_local_after_block_scope_ends() {
     let program = main_program(vec![
-        Statement::Block(vec![Statement::VarDecl {
+        Statement::Block(vec![Statement::Decl(vec![rivet::ast::LocalDecl {
             ty: Type::Int,
             name_span: span(),
             name: "x".to_string(),
@@ -2665,7 +2745,7 @@ fn rejects_use_of_local_after_block_scope_ends() {
                 base: IntLiteralBase::Decimal,
                 span: span(),
             })),
-        }]),
+        }])]),
         Statement::Return(Expr::Variable {
             name: "x".to_string(),
             span: span(),
@@ -2680,7 +2760,7 @@ fn rejects_use_of_local_after_block_scope_ends() {
 #[test]
 fn accepts_shadowing_in_inner_block() {
     let program = main_program(vec![
-        Statement::VarDecl {
+        Statement::Decl(vec![rivet::ast::LocalDecl {
             ty: Type::Int,
             name_span: span(),
             name: "x".to_string(),
@@ -2690,9 +2770,9 @@ fn accepts_shadowing_in_inner_block() {
                 base: IntLiteralBase::Decimal,
                 span: span(),
             })),
-        },
+        }]),
         Statement::Block(vec![
-            Statement::VarDecl {
+            Statement::Decl(vec![rivet::ast::LocalDecl {
                 ty: Type::Int,
                 name_span: span(),
                 name: "x".to_string(),
@@ -2702,7 +2782,7 @@ fn accepts_shadowing_in_inner_block() {
                     base: IntLiteralBase::Decimal,
                     span: span(),
                 })),
-            },
+            }]),
             Statement::Return(Expr::Variable {
                 name: "x".to_string(),
                 span: span(),
@@ -2717,7 +2797,7 @@ fn accepts_shadowing_in_inner_block() {
 fn rejects_duplicate_local_in_same_block() {
     let program = main_program(vec![
         Statement::Block(vec![
-            Statement::VarDecl {
+            Statement::Decl(vec![rivet::ast::LocalDecl {
                 ty: Type::Int,
                 name_span: span(),
                 name: "x".to_string(),
@@ -2727,8 +2807,8 @@ fn rejects_duplicate_local_in_same_block() {
                     base: IntLiteralBase::Decimal,
                     span: span(),
                 })),
-            },
-            Statement::VarDecl {
+            }]),
+            Statement::Decl(vec![rivet::ast::LocalDecl {
                 ty: Type::Int,
                 name_span: span(),
                 name: "x".to_string(),
@@ -2738,7 +2818,7 @@ fn rejects_duplicate_local_in_same_block() {
                     base: IntLiteralBase::Decimal,
                     span: span(),
                 })),
-            },
+            }]),
         ]),
         Statement::Return(Expr::IntLiteral {
             value: 0,
@@ -2756,7 +2836,7 @@ fn rejects_duplicate_local_in_same_block() {
 #[test]
 fn accepts_if_else_with_locals_in_branches() {
     let program = main_program(vec![
-        Statement::VarDecl {
+        Statement::Decl(vec![rivet::ast::LocalDecl {
             ty: Type::Int,
             name_span: span(),
             name: "x".to_string(),
@@ -2766,7 +2846,7 @@ fn accepts_if_else_with_locals_in_branches() {
                 base: IntLiteralBase::Decimal,
                 span: span(),
             })),
-        },
+        }]),
         Statement::If {
             cond: Expr::Binary {
                 op: BinaryOp::Less,
@@ -2783,7 +2863,7 @@ fn accepts_if_else_with_locals_in_branches() {
                 }),
             },
             then_branch: Box::new(Statement::Block(vec![
-                Statement::VarDecl {
+                Statement::Decl(vec![rivet::ast::LocalDecl {
                     ty: Type::Int,
                     name_span: span(),
                     name: "y".to_string(),
@@ -2791,14 +2871,14 @@ fn accepts_if_else_with_locals_in_branches() {
                         name: "x".to_string(),
                         span: span(),
                     })),
-                },
+                }]),
                 Statement::Return(Expr::Variable {
                     name: "y".to_string(),
                     span: span(),
                 }),
             ])),
             else_branch: Some(Box::new(Statement::Block(vec![
-                Statement::VarDecl {
+                Statement::Decl(vec![rivet::ast::LocalDecl {
                     ty: Type::Int,
                     name_span: span(),
                     name: "z".to_string(),
@@ -2806,7 +2886,7 @@ fn accepts_if_else_with_locals_in_branches() {
                         name: "x".to_string(),
                         span: span(),
                     })),
-                },
+                }]),
                 Statement::Return(Expr::Variable {
                     name: "z".to_string(),
                     span: span(),
@@ -2821,7 +2901,7 @@ fn accepts_if_else_with_locals_in_branches() {
 #[test]
 fn accepts_while_with_local_condition_and_body() {
     let program = main_program(vec![
-        Statement::VarDecl {
+        Statement::Decl(vec![rivet::ast::LocalDecl {
             ty: Type::Int,
             name_span: span(),
             name: "x".to_string(),
@@ -2831,7 +2911,7 @@ fn accepts_while_with_local_condition_and_body() {
                 base: IntLiteralBase::Decimal,
                 span: span(),
             })),
-        },
+        }]),
         Statement::While {
             cond: Expr::Variable {
                 name: "x".to_string(),
@@ -3054,7 +3134,7 @@ fn rejects_non_integer_array_index() {
         return_type: Type::Int,
         params: vec![],
         body: vec![
-            Statement::VarDecl {
+            Statement::Decl(vec![rivet::ast::LocalDecl {
                 name: "buf".to_string(),
                 name_span: span(),
                 ty: Type::Array {
@@ -3062,13 +3142,13 @@ fn rejects_non_integer_array_index() {
                     len: 3,
                 },
                 init: None,
-            },
-            Statement::VarDecl {
+            }]),
+            Statement::Decl(vec![rivet::ast::LocalDecl {
                 name: "p".to_string(),
                 name_span: span(),
                 ty: Type::Pointer(Box::new(Type::Int)),
                 init: None,
-            },
+            }]),
             Statement::Return(Expr::Index {
                 base: Box::new(Expr::Variable {
                     name: "buf".to_string(),
@@ -3094,7 +3174,7 @@ fn rejects_non_integer_array_index() {
 #[test]
 fn rejects_assigning_to_array_variable() {
     let program = main_program(vec![
-        Statement::VarDecl {
+        Statement::Decl(vec![rivet::ast::LocalDecl {
             name: "buf".to_string(),
             ty: Type::Array {
                 element: Box::new(Type::Char),
@@ -3102,7 +3182,7 @@ fn rejects_assigning_to_array_variable() {
             },
             init: None,
             name_span: span(),
-        },
+        }]),
         Statement::ExprStatement(Expr::Assign {
             target: Box::new(Expr::Variable {
                 name: "buf".to_string(),
@@ -3318,7 +3398,7 @@ fn rejects_cast_from_pointer_to_integer() {
         name: "main".to_string(),
         params: vec![],
         body: vec![
-            Statement::VarDecl {
+            Statement::Decl(vec![rivet::ast::LocalDecl {
                 ty: Type::Pointer(Box::new(Type::Char)),
                 name: "p".to_string(),
                 name_span: span(),
@@ -3328,7 +3408,7 @@ fn rejects_cast_from_pointer_to_integer() {
                     base: IntLiteralBase::Decimal,
                     span: span(),
                 })),
-            },
+            }]),
             Statement::Return(Expr::Cast {
                 ty: Type::Int,
                 span: span(),
