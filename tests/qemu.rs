@@ -1004,6 +1004,11 @@ fn qemu_function_calls_return_expected_values() {
         5,
     );
     run_qemu_case(
+        "prototype-before-forward-call",
+        "int helper(int);\n\nint main() {\n    return helper(4);\n}\n\nint helper(int value) {\n    return value + 3;\n}\n",
+        7,
+    );
+    run_qemu_case(
         "call-result-in-expression",
         "int helper() {\n    return 3;\n}\n\nint main() {\n    return helper() + 2;\n}\n",
         5,

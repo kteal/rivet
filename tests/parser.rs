@@ -63,6 +63,33 @@ fn parses_basic_main_function() {
 }
 
 #[test]
+fn parses_function_prototype_with_unnamed_parameter() {
+    let program = parse_source("int helper(int); int main() { return helper(3); }");
+
+    assert_eq!(program.declarations.len(), 2);
+    let ExternalDecl::FunctionDecl(function) = &program.declarations[0] else {
+        panic!("expected function declaration");
+    };
+
+    assert_eq!(function.return_type, Type::Int);
+    assert_eq!(function.name, "helper");
+    assert_eq!(function.params.len(), 1);
+    assert_eq!(function.params[0].ty, Type::Int);
+    assert_eq!(function.params[0].name, None);
+    assert_eq!(function.params[0].name_span, None);
+}
+
+#[test]
+fn rejects_function_definition_with_unnamed_parameter() {
+    let err = parse_source_err("int helper(int) { return 1; }");
+
+    assert_eq!(
+        err.message,
+        "expected parameter name in function definition"
+    );
+}
+
+#[test]
 fn parses_integer_literal_suffixes() {
     let body = main_body("int main() { 1U; 2u; 3L; 4l; 5UL; 6ul; 7LU; 8lu; return 0; }");
 

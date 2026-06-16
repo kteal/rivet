@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 
 use crate::ast::{
-    BinaryOp, Expr, ExternalDecl, Function, Initializer, IntLiteralBase, IntLiteralSuffix,
-    LocalDecl, Param, Program, Statement, Type, Typedef, UnaryOp,
+    BinaryOp, Expr, ExternalDecl, FunctionDecl, FunctionDef, Initializer, IntLiteralBase,
+    IntLiteralSuffix, LocalDecl, Param, ParamDecl, Program, Statement, Type, Typedef, UnaryOp,
 };
 use crate::lexer::{Token, TokenKind};
 use crate::source::Span;
@@ -120,6 +120,22 @@ struct TypeSpec {
     int_count: usize,
     char_count: usize,
     long_count: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ParsedFunctionSignature {
+    return_type: Type,
+    name: String,
+    name_span: Span,
+    params: Vec<RawParam>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RawParam {
+    pub ty: Type,
+    pub ty_span: Span,
+    pub name: Option<String>,
+    pub name_span: Option<Span>,
 }
 
 struct Parser {
@@ -583,20 +599,30 @@ impl Parser {
         }
     }
 
-    fn parse_param(&mut self) -> Result<Param, ParseError> {
-        let base_ty = self.parse_type()?;
-        let declarator = self.parse_declarator()?;
-        let LoweredDeclarator {
-            ty,
-            name,
-            name_span,
-        } = Self::lower_declarator(&base_ty, &declarator)?;
-
-        Ok(Param {
-            ty,
-            name,
-            name_span,
-        })
+    fn parse_raw_param(&mut self) -> Result<RawParam, ParseError> {
+        let (spec, ty_span) = self.parse_decl_spec()?;
+        let ty = self.lower_decl_spec(&spec, ty_span)?;
+        if matches!(self.peek_kind(), TokenKind::Comma | TokenKind::RParen) {
+            Ok(RawParam {
+                ty,
+                ty_span,
+                name: None,
+                name_span: None,
+            })
+        } else {
+            let declarator = self.parse_declarator()?;
+            let LoweredDeclarator {
+                ty,
+                name,
+                name_span,
+            } = Self::lower_declarator(&ty, &declarator)?;
+            Ok(RawParam {
+                ty,
+                ty_span,
+                name: Some(name),
+                name_span: Some(name_span),
+            })
+        }
     }
 
     // Expression parsing
@@ -1050,7 +1076,7 @@ impl Parser {
         }
     }
 
-    fn parse_function(&mut self) -> Result<Function, ParseError> {
+    fn parse_function_signature(&mut self) -> Result<ParsedFunctionSignature, ParseError> {
         let base_ty = self.parse_type()?;
         let declarator = self.parse_declarator()?;
         let LoweredDeclarator {
@@ -1061,23 +1087,57 @@ impl Parser {
 
         self.expect(&TokenKind::LParen)?;
         let params = self.parse_comma_separated_until_terminator(
-            Self::parse_param,
+            Self::parse_raw_param,
             &TokenKind::RParen,
             false,
         )?;
         self.expect(&TokenKind::RParen)?;
 
-        self.expect(&TokenKind::LBrace)?;
-        let mut body = vec![];
-        self.parse_through_rbrace(&mut body)?;
-
-        Ok(Function {
+        Ok(ParsedFunctionSignature {
             return_type: ty,
             name,
             name_span,
             params,
-            body,
         })
+    }
+
+    fn parse_function_external_decl(&mut self) -> Result<ExternalDecl, ParseError> {
+        let sig = self.parse_function_signature()?;
+
+        match self.peek_kind() {
+            TokenKind::Semicolon => {
+                self.advance();
+                Ok(ExternalDecl::FunctionDecl(FunctionDecl {
+                    return_type: sig.return_type,
+                    name: sig.name,
+                    name_span: sig.name_span,
+                    params: sig.params.into_iter().map(raw_param_to_decl).collect(),
+                }))
+            }
+            TokenKind::LBrace => {
+                self.advance();
+                let mut body = vec![];
+                self.parse_through_rbrace(&mut body)?;
+                Ok(ExternalDecl::FunctionDef(FunctionDef {
+                    return_type: sig.return_type,
+                    name: sig.name,
+                    name_span: sig.name_span,
+                    params: sig
+                        .params
+                        .into_iter()
+                        .map(raw_param_to_def)
+                        .collect::<Result<Vec<_>, _>>()?,
+                    body,
+                }))
+            }
+            _ => {
+                let token = self.peek();
+                Err(ParseError {
+                    message: format!("expected ';' or '{{', got '{:?}'", token.kind),
+                    span: token.span,
+                })
+            }
+        }
     }
 
     fn parse_typedefs(&mut self) -> Result<Vec<Typedef>, ParseError> {
@@ -1126,7 +1186,7 @@ impl Parser {
                         declarations.push(ExternalDecl::Typedef(typedef));
                     }
                 }
-                _ => declarations.push(ExternalDecl::Function(self.parse_function()?)),
+                _ => declarations.push(self.parse_function_external_decl()?),
             }
         }
         let token = self.expect(&TokenKind::Eof)?;
@@ -1146,6 +1206,33 @@ impl Parser {
 pub fn parse(tokens: Vec<Token>) -> Result<Program, ParseError> {
     let mut parser = Parser::new(tokens);
     parser.parse_program()
+}
+
+fn raw_param_to_decl(raw: RawParam) -> ParamDecl {
+    ParamDecl {
+        ty: raw.ty,
+        name: raw.name,
+        name_span: raw.name_span,
+    }
+}
+
+fn raw_param_to_def(raw: RawParam) -> Result<Param, ParseError> {
+    let Some(name) = raw.name else {
+        return Err(ParseError {
+            message: "expected parameter name in function definition".to_string(),
+            span: raw.ty_span,
+        });
+    };
+
+    let Some(name_span) = raw.name_span else {
+        unreachable!("parameter name and span should be present together");
+    };
+
+    Ok(Param {
+        ty: raw.ty,
+        name,
+        name_span,
+    })
 }
 
 #[cfg(test)]
@@ -1190,22 +1277,25 @@ mod tests {
         };
     }
 
-    fn program_with_functions(functions: Vec<Function>) -> Program {
+    fn program_with_functions(functions: Vec<FunctionDef>) -> Program {
         Program {
-            declarations: functions.into_iter().map(ExternalDecl::Function).collect(),
+            declarations: functions
+                .into_iter()
+                .map(ExternalDecl::FunctionDef)
+                .collect(),
             eof_span: span(),
         }
     }
 
-    fn first_function(program: &Program) -> &Function {
+    fn first_function(program: &Program) -> &FunctionDef {
         program
             .declarations
             .iter()
             .find_map(|decl| match decl {
-                ExternalDecl::Function(function) => Some(function),
-                ExternalDecl::Typedef(_) => None,
+                ExternalDecl::FunctionDef(function) => Some(function),
+                ExternalDecl::Typedef(_) | ExternalDecl::FunctionDecl(_) => None,
             })
-            .expect("expected function declaration")
+            .expect("expected function definition")
     }
 
     #[test]
@@ -1686,7 +1776,7 @@ mod tests {
 
         assert_eq!(
             program,
-            program_with_functions(vec![Function {
+            program_with_functions(vec![FunctionDef {
                 return_type: Type::Int,
                 name_span: span(),
                 name: "main".to_string(),
@@ -1756,7 +1846,7 @@ mod tests {
 
         assert_eq!(
             program,
-            program_with_functions(vec![Function {
+            program_with_functions(vec![FunctionDef {
                 return_type: Type::Int,
                 name_span: span(),
                 name: "main".to_string(),
@@ -2069,7 +2159,7 @@ mod tests {
 
         assert_eq!(
             program,
-            program_with_functions(vec![Function {
+            program_with_functions(vec![FunctionDef {
                 return_type: Type::Int,
                 name_span: span(),
                 name: "main".to_string(),
@@ -2129,7 +2219,7 @@ mod tests {
 
         assert_eq!(
             program,
-            program_with_functions(vec![Function {
+            program_with_functions(vec![FunctionDef {
                 return_type: Type::Int,
                 name_span: span(),
                 name: "main".to_string(),
@@ -2187,7 +2277,7 @@ mod tests {
 
         assert_eq!(
             program,
-            program_with_functions(vec![Function {
+            program_with_functions(vec![FunctionDef {
                 return_type: Type::Int,
                 name_span: span(),
                 name: "main".to_string(),
@@ -2254,7 +2344,7 @@ mod tests {
 
         assert_eq!(
             program,
-            program_with_functions(vec![Function {
+            program_with_functions(vec![FunctionDef {
                 return_type: Type::Int,
                 name_span: span(),
                 name: "main".to_string(),
@@ -2310,7 +2400,7 @@ mod tests {
 
         assert_eq!(
             program,
-            program_with_functions(vec![Function {
+            program_with_functions(vec![FunctionDef {
                 return_type: Type::Int,
                 name_span: span(),
                 name: "main".to_string(),

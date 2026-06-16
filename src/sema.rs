@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use crate::ast::{
-    BinaryOp, Expr, ExternalDecl, Function, Initializer, IntLiteralBase, IntLiteralSuffix, Param,
+    BinaryOp, Expr, ExternalDecl, FunctionDef, Initializer, IntLiteralBase, IntLiteralSuffix,
     Program, Statement, Type, UnaryOp,
 };
 use crate::source::Span;
@@ -20,7 +20,8 @@ pub struct SemanticError {
 pub struct FunctionInfo {
     return_type: Type,
     name: String,
-    params: Vec<Param>,
+    param_types: Vec<Type>,
+    defined: bool,
 }
 
 struct BinaryTypeInfo {
@@ -125,32 +126,67 @@ impl Checker {
         })
     }
 
-    fn declare_function(&mut self, function: &Function) -> Result<(), SemanticError> {
-        if self.functions.contains_key(&function.name) {
-            return Err(SemanticError {
-                message: format!("duplicate function '{}'", &function.name),
-                span: function.name_span,
-            });
+    fn declare_function_signature(
+        &mut self,
+        name: &str,
+        name_span: Span,
+        return_type: &Type,
+        param_types: Vec<Type>,
+        has_body: bool,
+    ) -> Result<(), SemanticError> {
+        if self.functions.contains_key(name) {
+            let existing = self.functions.get_mut(name).unwrap();
+            if existing.return_type != *return_type {
+                return Err(SemanticError {
+                    message: format!(
+                        "function declaration and definition must have same return type, got '{:?}' and '{return_type:?}'",
+                        existing.return_type
+                    ),
+                    span: name_span,
+                });
+            }
+            if existing.param_types != param_types {
+                return Err(SemanticError {
+                    message: format!(
+                        "function declaration and definition must have same parameter types, got '{:?}' and '{param_types:?}'",
+                        existing.param_types
+                    ),
+                    span: name_span,
+                });
+            }
+
+            if has_body && existing.defined {
+                return Err(SemanticError {
+                    message: format!("duplicate function definition '{name}'"),
+                    span: name_span,
+                });
+            }
+
+            if has_body {
+                existing.defined = true;
+            }
+        } else {
+            // For now, limit to 8 args (no stack-passed arguments)
+            if param_types.len() > 8 {
+                return Err(SemanticError {
+                    message: format!(
+                        "too many parameters in function {}, got {}, max 8",
+                        name,
+                        param_types.len()
+                    ),
+                    span: name_span,
+                });
+            }
+            self.functions.insert(
+                name.to_string(),
+                FunctionInfo {
+                    return_type: return_type.clone(),
+                    name: name.to_string(),
+                    param_types,
+                    defined: has_body,
+                },
+            );
         }
-        // For now, limit to 8 args (no stack-passed arguments)
-        if function.params.len() > 8 {
-            return Err(SemanticError {
-                message: format!(
-                    "too many parameters in function {}, got {}, max 8",
-                    function.name,
-                    function.params.len()
-                ),
-                span: function.params[8].name_span,
-            });
-        }
-        self.functions.insert(
-            function.name.clone(),
-            FunctionInfo {
-                return_type: function.return_type.clone(),
-                name: function.name.clone(),
-                params: function.params.clone(),
-            },
-        );
         Ok(())
     }
 
@@ -418,13 +454,13 @@ impl Checker {
             });
         }
 
-        if function_info.params.len() != args.len() {
+        if function_info.param_types.len() != args.len() {
             return Err(SemanticError {
                 message: format!(
                     "function call of '{}' has {} arguments, declaration has {}",
                     function_info.name,
                     args.len(),
-                    function_info.params.len()
+                    function_info.param_types.len()
                 ),
                 span: *name_span,
             });
@@ -435,12 +471,12 @@ impl Checker {
             .map(|arg| self.check_expr(arg))
             .collect::<Result<Vec<_>, _>>()?;
 
-        for (param, typed_arg) in function_info.params.iter().zip(&typed_args) {
-            if !Self::is_assignable_expr(&param.ty, typed_arg) {
+        for (ty, typed_arg) in function_info.param_types.iter().zip(&typed_args) {
+            if !Self::is_assignable_expr(ty, typed_arg) {
                 return Err(SemanticError {
                     message: format!(
-                        "cannot pass value of type '{:?}' to parameter of type '{:?}'",
-                        typed_arg.ty, param.ty
+                        "cannot pass value of type '{:?}' to parameter of type '{ty:?}'",
+                        typed_arg.ty,
                     ),
                     span: typed_arg.diagnostic_span(),
                 });
@@ -1040,7 +1076,10 @@ impl Checker {
         res
     }
 
-    fn check_function(&mut self, function: &Function) -> Result<TypedFunction, SemanticError> {
+    fn check_function_def(
+        &mut self,
+        function: &FunctionDef,
+    ) -> Result<TypedFunction, SemanticError> {
         self.enter_scope();
         let old_return_type = self
             .current_function_return_type
@@ -1099,8 +1138,26 @@ pub fn check(program: &Program) -> Result<TypedProgram, SemanticError> {
     let mut checker = Checker::new();
 
     for decl in &program.declarations {
-        if let ExternalDecl::Function(function) = decl {
-            checker.declare_function(function)?;
+        match decl {
+            ExternalDecl::FunctionDecl(function) => {
+                checker.declare_function_signature(
+                    &function.name,
+                    function.name_span,
+                    &function.return_type,
+                    function.params.iter().map(|p| p.ty.clone()).collect(),
+                    false,
+                )?;
+            }
+            ExternalDecl::FunctionDef(function) => {
+                checker.declare_function_signature(
+                    &function.name,
+                    function.name_span,
+                    &function.return_type,
+                    function.params.iter().map(|p| p.ty.clone()).collect(),
+                    true,
+                )?;
+            }
+            ExternalDecl::Typedef(_) => (),
         }
     }
 
@@ -1108,9 +1165,9 @@ pub fn check(program: &Program) -> Result<TypedProgram, SemanticError> {
 
     let mut declarations = vec![];
     for decl in &program.declarations {
-        if let ExternalDecl::Function(function) = decl {
+        if let ExternalDecl::FunctionDef(function) = decl {
             declarations.push(TypedExternalDecl::Function(
-                checker.check_function(function)?,
+                checker.check_function_def(function)?,
             ));
         }
     }

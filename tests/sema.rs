@@ -5,14 +5,16 @@ use common::{
     typed_function_at,
 };
 use rivet::ast::{
-    BinaryOp, Expr, Function, Initializer, IntLiteralBase, IntLiteralSuffix, Program, Statement,
-    Type, UnaryOp,
+    BinaryOp, Expr, ExternalDecl, FunctionDecl, FunctionDef, Initializer, IntLiteralBase,
+    IntLiteralSuffix, Program, Statement, Type, UnaryOp,
 };
 use rivet::sema::check;
 use rivet::typed_ast::{TypedExprKind, TypedStatement};
 
+use crate::common::param_decl;
+
 fn main_program(body: Vec<Statement>) -> Program {
-    program_with_functions(vec![Function {
+    program_with_functions(vec![FunctionDef {
         return_type: Type::Int,
         name_span: span(),
         name: "main".to_string(),
@@ -21,8 +23,8 @@ fn main_program(body: Vec<Statement>) -> Program {
     }])
 }
 
-fn function(name: &str, body: Vec<Statement>) -> Function {
-    Function {
+fn function(name: &str, body: Vec<Statement>) -> FunctionDef {
+    FunctionDef {
         return_type: Type::Int,
         name_span: span(),
         name: name.to_string(),
@@ -31,13 +33,22 @@ fn function(name: &str, body: Vec<Statement>) -> Function {
     }
 }
 
-fn function_with_params(name: &str, params: &[&str], body: Vec<Statement>) -> Function {
-    Function {
+fn function_with_params(name: &str, params: &[&str], body: Vec<Statement>) -> FunctionDef {
+    FunctionDef {
         return_type: Type::Int,
         name_span: span(),
         name: name.to_string(),
         params: params.iter().map(|name| param(name)).collect(),
         body,
+    }
+}
+
+fn function_decl(name: &str, params: &[&str]) -> FunctionDecl {
+    FunctionDecl {
+        return_type: Type::Int,
+        name_span: span(),
+        name: name.to_string(),
+        params: params.iter().map(|name| param_decl(name)).collect(),
     }
 }
 
@@ -149,7 +160,7 @@ fn rejects_duplicate_function_names() {
 
     let err = check(&program).expect_err("semantic check should fail");
 
-    assert_eq!(err.message, "duplicate function 'main'");
+    assert_eq!(err.message, "duplicate function definition 'main'");
 }
 
 #[test]
@@ -217,6 +228,138 @@ fn accepts_forward_call_to_later_function() {
     ]);
 
     check(&program).expect("semantic check should succeed");
+}
+
+#[test]
+fn accepts_function_prototype_before_definition() {
+    let program = Program {
+        declarations: vec![
+            ExternalDecl::FunctionDecl(function_decl("helper", &["x"])),
+            ExternalDecl::FunctionDef(function_with_params(
+                "helper",
+                &["value"],
+                vec![Statement::Return(Expr::Variable {
+                    name: "value".to_string(),
+                    span: span(),
+                })],
+            )),
+            ExternalDecl::FunctionDef(function(
+                "main",
+                vec![Statement::Return(Expr::Call {
+                    name_span: span(),
+                    name: "helper".to_string(),
+                    args: vec![Expr::IntLiteral {
+                        value: 3,
+                        suffix: IntLiteralSuffix::None,
+                        base: IntLiteralBase::Decimal,
+                        span: span(),
+                    }],
+                })],
+            )),
+        ],
+        eof_span: span(),
+    };
+
+    check(&program).expect("semantic check should succeed");
+}
+
+#[test]
+fn accepts_call_to_prototyped_function_without_definition() {
+    let program = Program {
+        declarations: vec![
+            ExternalDecl::FunctionDecl(function_decl("helper", &["x"])),
+            ExternalDecl::FunctionDef(function(
+                "main",
+                vec![Statement::Return(Expr::Call {
+                    name_span: span(),
+                    name: "helper".to_string(),
+                    args: vec![Expr::IntLiteral {
+                        value: 3,
+                        suffix: IntLiteralSuffix::None,
+                        base: IntLiteralBase::Decimal,
+                        span: span(),
+                    }],
+                })],
+            )),
+        ],
+        eof_span: span(),
+    };
+
+    check(&program).expect("semantic check should succeed");
+}
+
+#[test]
+fn rejects_function_definition_with_conflicting_prototype_return_type() {
+    let program = Program {
+        declarations: vec![
+            ExternalDecl::FunctionDecl(function_decl("helper", &["x"])),
+            ExternalDecl::FunctionDef(FunctionDef {
+                return_type: Type::Char,
+                name_span: span(),
+                name: "helper".to_string(),
+                params: vec![param("x")],
+                body: vec![Statement::Return(Expr::IntLiteral {
+                    value: 1,
+                    suffix: IntLiteralSuffix::None,
+                    base: IntLiteralBase::Decimal,
+                    span: span(),
+                })],
+            }),
+            ExternalDecl::FunctionDef(function(
+                "main",
+                vec![Statement::Return(Expr::IntLiteral {
+                    value: 0,
+                    suffix: IntLiteralSuffix::None,
+                    base: IntLiteralBase::Decimal,
+                    span: span(),
+                })],
+            )),
+        ],
+        eof_span: span(),
+    };
+
+    let err = check(&program).expect_err("semantic check should fail");
+
+    assert_eq!(
+        err.message,
+        "function declaration and definition must have same return type, got 'Int' and 'Char'"
+    );
+}
+
+#[test]
+fn rejects_function_definition_with_conflicting_prototype_parameter_type() {
+    let program = Program {
+        declarations: vec![
+            ExternalDecl::FunctionDecl(function_decl("helper", &["x"])),
+            ExternalDecl::FunctionDef(FunctionDef {
+                return_type: Type::Int,
+                name_span: span(),
+                name: "helper".to_string(),
+                params: vec![param_with_span(Type::Char, "x", span())],
+                body: vec![Statement::Return(Expr::Variable {
+                    name: "x".to_string(),
+                    span: span(),
+                })],
+            }),
+            ExternalDecl::FunctionDef(function(
+                "main",
+                vec![Statement::Return(Expr::IntLiteral {
+                    value: 0,
+                    suffix: IntLiteralSuffix::None,
+                    base: IntLiteralBase::Decimal,
+                    span: span(),
+                })],
+            )),
+        ],
+        eof_span: span(),
+    };
+
+    let err = check(&program).expect_err("semantic check should fail");
+
+    assert_eq!(
+        err.message,
+        "function declaration and definition must have same parameter types, got '[Int]' and '[Char]'"
+    );
 }
 
 #[test]
@@ -341,7 +484,7 @@ fn rejects_duplicate_parameter_names() {
 #[test]
 fn duplicate_parameter_errors_point_at_duplicate_parameter() {
     let duplicate_span = span_from(20, 21);
-    let program = program_with_functions(vec![Function {
+    let program = program_with_functions(vec![FunctionDef {
         return_type: Type::Int,
         name_span: span_from(4, 8),
         name: "main".to_string(),
@@ -562,7 +705,7 @@ fn rejects_function_with_more_than_eight_parameters() {
 #[test]
 fn too_many_parameter_errors_point_at_ninth_parameter() {
     let ninth_span = span_from(50, 51);
-    let program = program_with_functions(vec![Function {
+    let program = program_with_functions(vec![FunctionDef {
         return_type: Type::Int,
         name_span: span_from(4, 8),
         name: "main".to_string(),
@@ -591,7 +734,7 @@ fn too_many_parameter_errors_point_at_ninth_parameter() {
         err.message,
         "too many parameters in function main, got 9, max 8"
     );
-    assert_eq!(err.span, ninth_span);
+    assert_eq!(err.span, span_from(4, 8));
 }
 
 #[test]
@@ -1075,7 +1218,7 @@ fn typed_unary_logical_not_returns_int_for_unsigned_operand() {
 #[test]
 fn typed_pointer_dereference_has_pointee_type() {
     let program = program_with_functions(vec![
-        Function {
+        FunctionDef {
             return_type: Type::Int,
             name_span: span(),
             name: "first".to_string(),
@@ -1123,7 +1266,7 @@ fn typed_pointer_dereference_has_pointee_type() {
 #[test]
 fn accepts_assignment_through_pointer_dereference() {
     let program = program_with_functions(vec![
-        Function {
+        FunctionDef {
             return_type: Type::Int,
             name_span: span(),
             name: "store".to_string(),
@@ -1184,7 +1327,7 @@ fn accepts_assignment_through_pointer_dereference() {
 #[test]
 fn accepts_compound_assignment_through_pointer_dereference() {
     let program = program_with_functions(vec![
-        Function {
+        FunctionDef {
             return_type: Type::Int,
             name_span: span(),
             name: "add_to_pointed_value".to_string(),
@@ -1243,7 +1386,7 @@ fn accepts_compound_assignment_through_pointer_dereference() {
 #[test]
 fn accepts_increment_through_pointer_dereference() {
     let program = program_with_functions(vec![
-        Function {
+        FunctionDef {
             return_type: Type::Int,
             name_span: span(),
             name: "increment_pointed_value".to_string(),
@@ -1292,7 +1435,7 @@ fn accepts_increment_through_pointer_dereference() {
 fn typed_pointer_arithmetic_has_pointer_operand_and_result_type() {
     let pointer_to_int = Type::Pointer(Box::new(Type::Int));
     let program = program_with_functions(vec![
-        Function {
+        FunctionDef {
             return_type: pointer_to_int.clone(),
             name_span: span(),
             name: "advance".to_string(),
@@ -1581,7 +1724,7 @@ fn typed_postfix_increment_preserves_postfix_kind() {
 #[test]
 fn typed_call_preserves_typed_arguments() {
     let program = program_with_functions(vec![
-        Function {
+        FunctionDef {
             return_type: Type::Int,
             name_span: span(),
             name: "id".to_string(),
@@ -1591,7 +1734,7 @@ fn typed_call_preserves_typed_arguments() {
                 span: span(),
             })],
         },
-        Function {
+        FunctionDef {
             return_type: Type::Int,
             name_span: span(),
             name: "main".to_string(),
@@ -1925,7 +2068,7 @@ fn accepts_local_array_declaration_without_value_use() {
 #[test]
 fn typed_array_variable_expression_decays_to_pointer_argument() {
     let program = program_with_functions(vec![
-        Function {
+        FunctionDef {
             return_type: Type::Int,
             name_span: span(),
             name: "takes_char_pointer".to_string(),
@@ -1943,7 +2086,7 @@ fn typed_array_variable_expression_decays_to_pointer_argument() {
                 }),
             })],
         },
-        Function {
+        FunctionDef {
             return_type: Type::Int,
             name_span: span(),
             name: "main".to_string(),
@@ -2375,7 +2518,7 @@ fn rejects_undeclared_local_inside_nested_expression() {
 #[test]
 fn accepts_char_function_return_used_as_char_initializer() {
     let program = program_with_functions(vec![
-        Function {
+        FunctionDef {
             return_type: Type::Char,
             name_span: span(),
             name: "id".to_string(),
@@ -2385,7 +2528,7 @@ fn accepts_char_function_return_used_as_char_initializer() {
                 span: span(),
             })],
         },
-        Function {
+        FunctionDef {
             return_type: Type::Int,
             name_span: span(),
             name: "main".to_string(),
@@ -2549,7 +2692,7 @@ fn accepts_int_initializer_from_char_expression() {
 #[test]
 fn accepts_char_argument_from_int_expression() {
     let program = program_with_functions(vec![
-        Function {
+        FunctionDef {
             return_type: Type::Int,
             name_span: span(),
             name: "takes_char".to_string(),
@@ -2561,7 +2704,7 @@ fn accepts_char_argument_from_int_expression() {
                 span: span(),
             })],
         },
-        Function {
+        FunctionDef {
             return_type: Type::Int,
             name_span: span(),
             name: "main".to_string(),
@@ -2591,7 +2734,7 @@ fn accepts_char_argument_from_int_expression() {
 #[test]
 fn accepts_int_argument_from_char_expression() {
     let program = program_with_functions(vec![
-        Function {
+        FunctionDef {
             return_type: Type::Int,
             name_span: span(),
             name: "takes_int".to_string(),
@@ -2601,7 +2744,7 @@ fn accepts_int_argument_from_char_expression() {
                 span: span(),
             })],
         },
-        Function {
+        FunctionDef {
             return_type: Type::Int,
             name_span: span(),
             name: "main".to_string(),
@@ -2635,7 +2778,7 @@ fn accepts_int_argument_from_char_expression() {
 
 #[test]
 fn accepts_char_return_from_int_expression() {
-    let program = program_with_functions(vec![Function {
+    let program = program_with_functions(vec![FunctionDef {
         return_type: Type::Char,
         name_span: span(),
         name: "main".to_string(),
@@ -2663,7 +2806,7 @@ fn accepts_char_return_from_int_expression() {
 
 #[test]
 fn accepts_int_return_from_char_expression() {
-    let program = program_with_functions(vec![Function {
+    let program = program_with_functions(vec![FunctionDef {
         return_type: Type::Int,
         name_span: span(),
         name: "main".to_string(),
@@ -3128,7 +3271,7 @@ fn rejects_indexing_non_array_non_pointer() {
 
 #[test]
 fn rejects_non_integer_array_index() {
-    let program = program_with_functions(vec![Function {
+    let program = program_with_functions(vec![FunctionDef {
         name: "main".to_string(),
         name_span: span(),
         return_type: Type::Int,
@@ -3392,7 +3535,7 @@ fn accepts_casts_between_integer_types() {
 
 #[test]
 fn rejects_cast_from_pointer_to_integer() {
-    let program = program_with_functions(vec![Function {
+    let program = program_with_functions(vec![FunctionDef {
         return_type: Type::Int,
         name_span: span(),
         name: "main".to_string(),
