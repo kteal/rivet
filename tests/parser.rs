@@ -50,6 +50,79 @@ fn single_decl(statement: &Statement) -> &LocalDecl {
 }
 
 #[test]
+fn parse_errors_use_unexpected_token_span() {
+    let source = "int main() { return ); }";
+    let err = parse_source_err(source);
+    let right_paren = source
+        .rfind(')')
+        .expect("source should contain right paren");
+
+    assert_eq!(err.message, "expected expression, found RParen");
+    assert_eq!(err.span.file_id, DUMMY_FILE_ID);
+    assert_eq!(err.span.start, right_paren);
+    assert_eq!(err.span.end, right_paren + 1);
+}
+
+#[test]
+fn missing_semicolon_errors_point_at_following_token() {
+    let source = "int main() { x return 0; }";
+    let err = parse_source_err(source);
+    let return_start = source.find("return").expect("source should contain return");
+
+    assert!(err.message.contains("expected Semicolon"));
+    assert_eq!(err.span.file_id, DUMMY_FILE_ID);
+    assert_eq!(err.span.start, return_start);
+    assert_eq!(err.span.end, return_start + "return".len());
+}
+
+#[test]
+fn trailing_comma_errors_point_at_right_paren() {
+    let source = "int main() { return add(1,); }";
+    let err = parse_source_err(source);
+    let right_paren = source.find(");").expect("source should contain );");
+
+    assert_eq!(err.message, "trailing comma");
+    assert_eq!(err.span.file_id, DUMMY_FILE_ID);
+    assert_eq!(err.span.start, right_paren);
+    assert_eq!(err.span.end, right_paren + 1);
+}
+
+#[test]
+fn binary_expression_preserves_operator_span() {
+    let source = "int main() { return x + y; }";
+    let expr = only_return_expr(source);
+    let plus = source.find('+').expect("source should contain plus");
+
+    let Expr::Binary { op, op_span, .. } = expr else {
+        panic!("expected binary expression");
+    };
+
+    assert_eq!(op, BinaryOp::Add);
+    assert_eq!(op_span.file_id, DUMMY_FILE_ID);
+    assert_eq!(op_span.start, plus);
+    assert_eq!(op_span.end, plus + 1);
+}
+
+#[test]
+fn parameter_name_spans_are_preserved() {
+    let source = "int add(int x, char y) { return x; }";
+    let program = parse_source(source);
+    let params = &first_function(&program).params;
+    let x_start = source.find('x').expect("source should contain x");
+    let y_start = source.find('y').expect("source should contain y");
+
+    assert_eq!(params[0].name, "x");
+    assert_eq!(params[0].name_span.file_id, DUMMY_FILE_ID);
+    assert_eq!(params[0].name_span.start, x_start);
+    assert_eq!(params[0].name_span.end, x_start + 1);
+
+    assert_eq!(params[1].name, "y");
+    assert_eq!(params[1].name_span.file_id, DUMMY_FILE_ID);
+    assert_eq!(params[1].name_span.start, y_start);
+    assert_eq!(params[1].name_span.end, y_start + 1);
+}
+
+#[test]
 fn parses_basic_main_function() {
     let program = parse_source("int main() { return 42; }");
 
@@ -442,6 +515,46 @@ fn parses_assignment_expressions() {
 }
 
 #[test]
+fn parses_assignment_to_non_variable_expression() {
+    let expr = only_return_expr("int main() { return (1 + 2) = 3; }");
+
+    let Expr::Assign { target, value, .. } = expr else {
+        panic!("expected assignment expression");
+    };
+
+    assert!(matches!(
+        target.as_ref(),
+        Expr::Binary {
+            op: BinaryOp::Add,
+            ..
+        }
+    ));
+    assert!(matches!(value.as_ref(), Expr::IntLiteral { value: 3, .. }));
+}
+
+#[test]
+fn parses_compound_assignment_to_non_variable_expression() {
+    let expr = only_return_expr("int main() { return (1 + 2) += 3; }");
+
+    let Expr::CompoundAssign {
+        target, op, value, ..
+    } = expr
+    else {
+        panic!("expected compound assignment expression");
+    };
+
+    assert_eq!(op, BinaryOp::Add);
+    assert!(matches!(
+        target.as_ref(),
+        Expr::Binary {
+            op: BinaryOp::Add,
+            ..
+        }
+    ));
+    assert!(matches!(value.as_ref(), Expr::IntLiteral { value: 3, .. }));
+}
+
+#[test]
 fn parses_loop_and_jump_statements() {
     let body = main_body(
         "int main() { while (x) break; do continue; while (x); for (i = 0; i < 3; i++) { x += i; } return 0; }",
@@ -451,6 +564,78 @@ fn parses_loop_and_jump_statements() {
     assert!(matches!(body[1], Statement::DoWhile { .. }));
     assert!(matches!(body[2], Statement::For { .. }));
     assert!(matches!(body[3], Statement::Return(_)));
+}
+
+#[test]
+fn parses_for_loop_clause_shapes() {
+    let body = main_body(
+        "int main() { for (;;) ; for (i = 0; i < 10; i = i + 1) ; for (int i = 0; i < 10; i = i + 1) ; for (; i < 10;) ; return 0; }",
+    );
+
+    let Statement::For {
+        init,
+        cond,
+        post,
+        body: for_body,
+    } = &body[0]
+    else {
+        panic!("expected for statement");
+    };
+    assert!(init.is_none());
+    assert!(cond.is_none());
+    assert!(post.is_none());
+    assert!(matches!(for_body.as_ref(), Statement::Empty));
+
+    let Statement::For {
+        init, cond, post, ..
+    } = &body[1]
+    else {
+        panic!("expected for statement");
+    };
+    assert!(matches!(
+        init.as_deref(),
+        Some(Statement::ExprStatement(Expr::Assign { .. }))
+    ));
+    assert!(matches!(
+        cond,
+        Some(Expr::Binary {
+            op: BinaryOp::Less,
+            ..
+        })
+    ));
+    assert!(matches!(post, Some(Expr::Assign { .. })));
+
+    let Statement::For {
+        init, cond, post, ..
+    } = &body[2]
+    else {
+        panic!("expected for statement");
+    };
+    assert!(matches!(init.as_deref(), Some(Statement::Decl(_))));
+    assert!(matches!(
+        cond,
+        Some(Expr::Binary {
+            op: BinaryOp::Less,
+            ..
+        })
+    ));
+    assert!(matches!(post, Some(Expr::Assign { .. })));
+
+    let Statement::For {
+        init, cond, post, ..
+    } = &body[3]
+    else {
+        panic!("expected for statement");
+    };
+    assert!(init.is_none());
+    assert!(matches!(
+        cond,
+        Some(Expr::Binary {
+            op: BinaryOp::Less,
+            ..
+        })
+    ));
+    assert!(post.is_none());
 }
 
 #[test]
