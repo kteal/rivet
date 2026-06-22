@@ -132,6 +132,7 @@ enum DeclaratorKind {
         inner: Box<Declarator>,
         params: Vec<RawParam>,
     },
+    Grouped(Box<Declarator>),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -676,9 +677,27 @@ impl Parser {
     }
 
     fn parse_direct_declarator(&mut self) -> Result<Declarator, ParseError> {
-        let (name, name_span) = self.expect_ident()?;
-        let mut declarator = Declarator {
-            kind: DeclaratorKind::Name { name, name_span },
+        let mut declarator = match self.peek_kind() {
+            TokenKind::Ident(_) => {
+                let (name, name_span) = self.expect_ident()?;
+                Declarator {
+                    kind: DeclaratorKind::Name { name, name_span },
+                }
+            }
+            TokenKind::LParen => {
+                self.expect(&TokenKind::LParen)?;
+                let inner = self.parse_declarator()?;
+                self.expect(&TokenKind::RParen)?;
+                Declarator {
+                    kind: DeclaratorKind::Grouped(Box::new(inner)),
+                }
+            }
+            _ => {
+                return Err(ParseError {
+                    message: "expected declarator".to_string(),
+                    span: self.peek().span,
+                });
+            }
         };
 
         loop {
@@ -740,8 +759,17 @@ impl Parser {
             DeclaratorKind::Pointer(inner) => {
                 Self::lower_declarator(&Type::Pointer(Box::new(base_type.clone())), inner)
             }
-            DeclaratorKind::Array { inner, len } => {
-                match Self::lower_declarator(base_type, inner)? {
+            DeclaratorKind::Array { inner, len } => match inner.as_ref() {
+                Declarator {
+                    kind: DeclaratorKind::Grouped(grouped_inner),
+                } => Self::lower_declarator(
+                    &Type::Array {
+                        element: Box::new(base_type.clone()),
+                        len: *len,
+                    },
+                    grouped_inner,
+                ),
+                _ => match Self::lower_declarator(base_type, inner)? {
                     LoweredDeclarator::Object {
                         ty,
                         name,
@@ -758,8 +786,8 @@ impl Parser {
                         message: "function returning array is unsupported".to_string(),
                         span: name_span,
                     }),
-                }
-            }
+                },
+            },
             DeclaratorKind::Function { inner, params } => {
                 match Self::lower_declarator(base_type, inner)? {
                     LoweredDeclarator::Object {
@@ -778,6 +806,7 @@ impl Parser {
                     }),
                 }
             }
+            DeclaratorKind::Grouped(inner) => Self::lower_declarator(base_type, inner),
         }
     }
 

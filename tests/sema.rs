@@ -8,7 +8,11 @@ use rivet::ast::{
     BinaryOp, Expr, ExternalDecl, FunctionDecl, FunctionDef, GlobalDecl, Initializer,
     IntLiteralBase, IntLiteralSuffix, Program, Statement, Type, UnaryOp,
 };
+use rivet::lexer::lex;
+use rivet::parser::parse;
+use rivet::preprocess::preprocess;
 use rivet::sema::check;
+use rivet::source::DUMMY_FILE_ID;
 use rivet::typed_ast::{
     GlobalId, LocalId, ObjectId, TypedExprKind, TypedExternalDecl, TypedInitializer, TypedStatement,
 };
@@ -23,6 +27,13 @@ fn main_program(body: Vec<Statement>) -> Program {
         params: vec![],
         body,
     }])
+}
+
+fn check_source(source: &str) -> rivet::typed_ast::TypedProgram {
+    let tokens = lex(source, DUMMY_FILE_ID).expect("lexing should succeed");
+    let tokens = preprocess(tokens).expect("preprocessing should succeed");
+    let program = parse(tokens).expect("parsing should succeed");
+    check(&program).expect("semantic check should succeed")
 }
 
 fn function(name: &str, body: Vec<Statement>) -> FunctionDef {
@@ -1805,6 +1816,11 @@ fn typed_address_of_array_has_pointer_to_array_type() {
         panic!("expected address-of expression");
     };
     assert_eq!(operand.ty, array_ty);
+}
+
+#[test]
+fn accepts_parenthesized_pointer_to_array_initialized_from_address_of_array() {
+    check_source("int main() { int arr[3]; int (*p)[3] = &arr; return 0; }");
 }
 
 #[test]

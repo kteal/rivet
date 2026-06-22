@@ -194,6 +194,7 @@ Program structure and declarations:
 - [ ] storage classes: `extern`, `static`, `auto`, `register`, `thread_local`
 - [x] ignored `const` qualifier parsing
 - [ ] remaining qualifiers: `volatile`, `restrict`, `_Atomic`
+- [x] parenthesized pointer-to-array declarators: `int (*p)[3]`
 - [ ] full C declarator grammar
 
 Expressions and operators:
@@ -282,6 +283,7 @@ Objects, aggregate types, and declarators:
 - [x] trailing commas in initializer lists
 - [x] array indexing
 - [x] address-of arrays in semantic analysis: `&arr` has pointer-to-array type
+- [x] parenthesized pointer-to-array declarators and indexing through them: `(*p)[i]`
 - [ ] full C declarator grammar
 - [ ] structs and unions
 - [ ] member access: `.` and `->`

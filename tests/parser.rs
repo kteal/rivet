@@ -901,6 +901,55 @@ fn parses_array_local_declarations() {
 }
 
 #[test]
+fn parses_transparent_parenthesized_declarator() {
+    let program = parse_source("int main() { int (x); int ((*p)); return 0; }");
+
+    let body = &first_function(&program).body;
+
+    assert_eq!(single_decl(&body[0]).name, "x");
+    assert_eq!(single_decl(&body[0]).ty, Type::Int);
+
+    assert_eq!(single_decl(&body[1]).name, "p");
+    assert_eq!(single_decl(&body[1]).ty, Type::Pointer(Box::new(Type::Int)));
+}
+
+#[test]
+fn parses_parenthesized_pointer_to_array_declaration() {
+    let program = parse_source("int main() { int (*p)[3]; return 0; }");
+    let decl = single_decl(&first_function(&program).body[0]);
+
+    assert_eq!(decl.name, "p");
+    assert_eq!(
+        decl.ty,
+        Type::Pointer(Box::new(Type::Array {
+            element: Box::new(Type::Int),
+            len: 3,
+        }))
+    );
+}
+
+#[test]
+fn parenthesized_pointer_to_array_differs_from_array_of_pointers() {
+    let program = parse_source("int main() { int (*p)[3]; int *q[3]; return 0; }");
+    let body = &first_function(&program).body;
+
+    assert_eq!(
+        single_decl(&body[0]).ty,
+        Type::Pointer(Box::new(Type::Array {
+            element: Box::new(Type::Int),
+            len: 3,
+        }))
+    );
+    assert_eq!(
+        single_decl(&body[1]).ty,
+        Type::Array {
+            element: Box::new(Type::Pointer(Box::new(Type::Int))),
+            len: 3,
+        }
+    );
+}
+
+#[test]
 fn parses_array_initializer_list() {
     let program = parse_source("int main() { char buf[3] = {1, 2, 3}; return 0; }");
 

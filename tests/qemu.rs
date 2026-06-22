@@ -1185,6 +1185,12 @@ fn qemu_postfix_pointer_dereference_programs_return_expected_values() {
     );
 
     run_qemu_case(
+        "parenthesized-pointer-to-array-index",
+        "int main() {\n    int arr[3] = {1, 2, 3};\n    int (*p)[3] = &arr;\n    return (*p)[1];\n}\n",
+        2,
+    );
+
+    run_qemu_case(
         "postfix-pointer-dereference",
         "int main() {\n    char buf[3] = {'a', 'b', 'c'};\n    char *p = buf;\n    return *p++;\n}\n",
         97,
