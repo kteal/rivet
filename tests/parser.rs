@@ -153,6 +153,28 @@ fn parses_function_prototype_with_unnamed_parameter() {
 }
 
 #[test]
+fn parses_function_prototype_with_unnamed_pointer_parameter() {
+    let program = parse_source("int helper(int *, char **); int main() { return 0; }");
+
+    assert_eq!(program.declarations.len(), 2);
+    let ExternalDecl::FunctionDecl(function) = &program.declarations[0] else {
+        panic!("expected function declaration");
+    };
+
+    assert_eq!(function.name, "helper");
+    assert_eq!(function.params.len(), 2);
+    assert_eq!(function.params[0].ty, Type::Pointer(Box::new(Type::Int)));
+    assert_eq!(function.params[0].name, None);
+    assert_eq!(function.params[0].name_span, None);
+    assert_eq!(
+        function.params[1].ty,
+        Type::Pointer(Box::new(Type::Pointer(Box::new(Type::Char))))
+    );
+    assert_eq!(function.params[1].name, None);
+    assert_eq!(function.params[1].name_span, None);
+}
+
+#[test]
 fn rejects_function_definition_with_unnamed_parameter() {
     let err = parse_source_err("int helper(int) { return 1; }");
 

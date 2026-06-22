@@ -1030,7 +1030,7 @@ fn qemu_function_calls_return_expected_values() {
     );
     run_qemu_case(
         "pointer-return-function-call",
-        "int *id(int *p) {\n    return p;\n}\n\nint main() {\n    int *p;\n    id(p);\n    return 7;\n}\n",
+        "int *id(int *);\n\nint *id(int *p) {\n    return p;\n}\n\nint main() {\n    int *p;\n    id(p);\n    return 7;\n}\n",
         7,
     );
 }

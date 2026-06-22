@@ -86,6 +86,15 @@ enum TypeQualifier {
     Const,
 }
 
+#[derive(Default, Clone, Copy, PartialEq, Eq)]
+struct TypeSpec {
+    unsigned: bool,
+    signed: bool,
+    int_count: usize,
+    char_count: usize,
+    long_count: usize,
+}
+
 // One declarator inside a declaration, plus its optional initializer.
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct InitDeclarator {
@@ -100,42 +109,43 @@ struct Declarator {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-enum DeclaratorKind {
-    Name { name: String, name_span: Span },
-    Pointer(Box<Declarator>),
-    Array { inner: Box<Declarator>, len: usize },
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct LoweredDeclarator {
-    ty: Type,
-    name: String,
-    name_span: Span,
-}
-
-#[derive(Default, Clone, Copy, PartialEq, Eq)]
-struct TypeSpec {
-    unsigned: bool,
-    signed: bool,
-    int_count: usize,
-    char_count: usize,
-    long_count: usize,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct ParsedFunctionSignature {
-    return_type: Type,
-    name: String,
-    name_span: Span,
-    params: Vec<RawParam>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct RawParam {
+struct RawParam {
     pub ty: Type,
     pub ty_span: Span,
     pub name: Option<String>,
     pub name_span: Option<Span>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum DeclaratorKind {
+    Name {
+        name: String,
+        name_span: Span,
+    },
+    Pointer(Box<Declarator>),
+    Array {
+        inner: Box<Declarator>,
+        len: usize,
+    },
+    Function {
+        inner: Box<Declarator>,
+        params: Vec<RawParam>,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum LoweredDeclarator {
+    Object {
+        ty: Type,
+        name: String,
+        name_span: Span,
+    },
+    Function {
+        return_type: Type,
+        name: String,
+        name_span: Span,
+        params: Vec<RawParam>,
+    },
 }
 
 struct Parser {
@@ -231,37 +241,6 @@ impl Parser {
         }
     }
 
-    fn parse_left_assoc(
-        &mut self,
-        parse_operand: fn(&mut Self) -> Result<Expr, ParseError>,
-        ops: &[(TokenKind, BinaryOp)],
-    ) -> Result<Expr, ParseError> {
-        let mut left = parse_operand(self)?;
-
-        while let Some((op, op_span)) = self.parse_binary_op_from(ops) {
-            let right = parse_operand(self)?;
-            left = Expr::Binary {
-                op,
-                op_span,
-                left: Box::new(left),
-                right: Box::new(right),
-            }
-        }
-
-        Ok(left)
-    }
-
-    fn parse_binary_op_from(&mut self, ops: &[(TokenKind, BinaryOp)]) -> Option<(BinaryOp, Span)> {
-        for (token_kind, op) in ops {
-            if self.peek_kind() == token_kind {
-                let token = self.advance();
-                return Some((*op, token.span));
-            }
-        }
-
-        None
-    }
-
     fn parse_comma_separated_until_terminator<T>(
         &mut self,
         parse_item: fn(&mut Self) -> Result<T, ParseError>,
@@ -286,6 +265,142 @@ impl Parser {
         }
 
         Ok(items)
+    }
+
+    // Top level parsing
+
+    fn parse_program(&mut self) -> Result<Program, ParseError> {
+        let mut declarations = vec![];
+
+        while self.peek_kind() != &TokenKind::Eof {
+            declarations.extend(self.parse_external_decl()?);
+        }
+
+        let eof_span = self.expect(&TokenKind::Eof)?.span;
+
+        Ok(Program {
+            declarations,
+            eof_span,
+        })
+    }
+
+    fn parse_external_decl(&mut self) -> Result<Vec<ExternalDecl>, ParseError> {
+        if self.peek_kind() == &TokenKind::KwTypedef {
+            return Ok(self
+                .parse_typedefs()?
+                .into_iter()
+                .map(ExternalDecl::Typedef)
+                .collect());
+        }
+
+        let (spec, spec_span) = self.parse_decl_spec()?;
+        let base_ty = self.lower_decl_spec(&spec, spec_span)?;
+        let declarator = self.parse_declarator()?;
+        let lowered = Self::lower_declarator(&base_ty, &declarator)?;
+
+        match lowered {
+            LoweredDeclarator::Function {
+                return_type,
+                name,
+                name_span,
+                params,
+            } => match self.peek_kind() {
+                TokenKind::Semicolon => {
+                    self.expect(&TokenKind::Semicolon)?;
+                    Ok(vec![ExternalDecl::FunctionDecl(FunctionDecl {
+                        return_type,
+                        name,
+                        name_span,
+                        params: params.into_iter().map(raw_param_to_decl).collect(),
+                    })])
+                }
+                TokenKind::LBrace => {
+                    self.expect(&TokenKind::LBrace)?;
+                    let mut body = vec![];
+                    self.parse_through_rbrace(&mut body)?;
+                    Ok(vec![ExternalDecl::FunctionDef(FunctionDef {
+                        return_type,
+                        name,
+                        name_span,
+                        params: params
+                            .into_iter()
+                            .map(raw_param_to_def)
+                            .collect::<Result<Vec<_>, _>>()?,
+                        body,
+                    })])
+                }
+                _ => {
+                    let token = self.peek();
+                    Err(ParseError {
+                        message: format!(
+                            "expected ';' or '{{' after function declarator, got '{:?}'",
+                            token.kind
+                        ),
+                        span: token.span,
+                    })
+                }
+            },
+            LoweredDeclarator::Object { name_span, .. } => match self.peek() {
+                Token {
+                    kind: TokenKind::Semicolon,
+                    ..
+                } => Err(ParseError {
+                    message: "unsupported global object declaration".to_string(),
+                    span: name_span,
+                }),
+                token => Err(ParseError {
+                    message: format!("unexpected token in object declaration, '{:?}'", token.kind),
+                    span: token.span,
+                }),
+            },
+        }
+    }
+
+    fn parse_typedefs(&mut self) -> Result<Vec<Typedef>, ParseError> {
+        let mut typedefs = vec![];
+        let declaration = self.parse_declaration()?;
+        if declaration.spec.storage_class != Some(StorageClass::Typedef) {
+            return Err(ParseError {
+                message: "expected typedef declaration".to_string(),
+                span: declaration.spec_span,
+            });
+        }
+        let base_ty = self.lower_decl_spec(&declaration.spec, declaration.spec_span)?;
+        for init_declarator in declaration.declarators {
+            if init_declarator.initializer.is_some() {
+                return Err(ParseError {
+                    message: "typedef declarator cannot have an initializer".to_string(),
+                    span: declaration.spec_span,
+                });
+            }
+            match Self::lower_declarator(&base_ty, &init_declarator.declarator)? {
+                LoweredDeclarator::Object {
+                    ty,
+                    name,
+                    name_span,
+                } => {
+                    if self.typedefs.contains_key(&name) {
+                        return Err(ParseError {
+                            message: format!("duplicate typedef with name '{name}'"),
+                            span: name_span,
+                        });
+                    }
+                    self.typedefs.insert(name.clone(), ty.clone());
+                    typedefs.push(Typedef {
+                        name,
+                        name_span,
+                        ty,
+                    });
+                }
+                LoweredDeclarator::Function { name_span, .. } => {
+                    return Err(ParseError {
+                        message: "function typedefs are not supported".to_string(),
+                        span: name_span,
+                    });
+                }
+            }
+        }
+        Ok(typedefs)
     }
 
     // Declaration / Type parsing
@@ -538,34 +653,54 @@ impl Parser {
 
     fn parse_direct_declarator(&mut self) -> Result<Declarator, ParseError> {
         let (name, name_span) = self.expect_ident()?;
+        let mut declarator = Declarator {
+            kind: DeclaratorKind::Name { name, name_span },
+        };
 
-        // Array declaration
-        if self.peek_kind() == &TokenKind::LBracket {
-            self.advance();
-            let (len, _, _, len_span) = self.expect_int_literal()?;
+        loop {
+            match self.peek_kind() {
+                TokenKind::LBracket => {
+                    // Array declaration
+                    self.expect(&TokenKind::LBracket)?;
+                    let (len, _, _, len_span) = self.expect_int_literal()?;
 
-            // Don't allow array length <1
-            if len < 1 {
-                return Err(ParseError {
-                    message: format!("array size must be greater than 0, got '{len}'"),
-                    span: len_span,
-                });
+                    // Don't allow array length <1
+                    if len < 1 {
+                        return Err(ParseError {
+                            message: format!("array size must be greater than 0, got '{len}'"),
+                            span: len_span,
+                        });
+                    }
+
+                    self.expect(&TokenKind::RBracket)?;
+                    declarator = Declarator {
+                        kind: DeclaratorKind::Array {
+                            inner: Box::new(declarator),
+                            len: usize::try_from(len).expect("u64 cannot be converted to usize"),
+                        },
+                    };
+                }
+                TokenKind::LParen => {
+                    // Function declaration
+                    self.expect(&TokenKind::LParen)?;
+                    let params = self.parse_comma_separated_until_terminator(
+                        Self::parse_raw_param,
+                        &TokenKind::RParen,
+                        false,
+                    )?;
+                    self.expect(&TokenKind::RParen)?;
+                    declarator = Declarator {
+                        kind: DeclaratorKind::Function {
+                            inner: Box::new(declarator),
+                            params,
+                        },
+                    };
+                }
+                _ => break,
             }
-
-            self.expect(&TokenKind::RBracket)?;
-            return Ok(Declarator {
-                kind: DeclaratorKind::Array {
-                    inner: Box::new(Declarator {
-                        kind: DeclaratorKind::Name { name, name_span },
-                    }),
-                    len: usize::try_from(len).expect("u64 cannot be converted to usize"),
-                },
-            });
         }
 
-        Ok(Declarator {
-            kind: DeclaratorKind::Name { name, name_span },
-        })
+        Ok(declarator)
     }
 
     fn lower_declarator(
@@ -573,7 +708,7 @@ impl Parser {
         declarator: &Declarator,
     ) -> Result<LoweredDeclarator, ParseError> {
         match &declarator.kind {
-            DeclaratorKind::Name { name, name_span } => Ok(LoweredDeclarator {
+            DeclaratorKind::Name { name, name_span } => Ok(LoweredDeclarator::Object {
                 ty: base_type.clone(),
                 name: name.clone(),
                 name_span: *name_span,
@@ -582,19 +717,42 @@ impl Parser {
                 Self::lower_declarator(&Type::Pointer(Box::new(base_type.clone())), inner)
             }
             DeclaratorKind::Array { inner, len } => {
-                let LoweredDeclarator {
-                    ty,
-                    name,
-                    name_span,
-                } = Self::lower_declarator(base_type, inner)?;
-                Ok(LoweredDeclarator {
-                    ty: Type::Array {
-                        element: Box::new(ty),
-                        len: *len,
-                    },
-                    name,
-                    name_span,
-                })
+                match Self::lower_declarator(base_type, inner)? {
+                    LoweredDeclarator::Object {
+                        ty,
+                        name,
+                        name_span,
+                    } => Ok(LoweredDeclarator::Object {
+                        ty: Type::Array {
+                            element: Box::new(ty),
+                            len: *len,
+                        },
+                        name,
+                        name_span,
+                    }),
+                    LoweredDeclarator::Function { name_span, .. } => Err(ParseError {
+                        message: "function returning array is unsupported".to_string(),
+                        span: name_span,
+                    }),
+                }
+            }
+            DeclaratorKind::Function { inner, params } => {
+                match Self::lower_declarator(base_type, inner)? {
+                    LoweredDeclarator::Object {
+                        ty,
+                        name,
+                        name_span,
+                    } => Ok(LoweredDeclarator::Function {
+                        return_type: ty,
+                        name,
+                        name_span,
+                        params: params.clone(),
+                    }),
+                    LoweredDeclarator::Function { name_span, .. } => Err(ParseError {
+                        message: "function returning function is unsupported".to_string(),
+                        span: name_span,
+                    }),
+                }
             }
         }
     }
@@ -609,23 +767,98 @@ impl Parser {
                 name: None,
                 name_span: None,
             })
+        } else if matches!(self.peek_kind(), TokenKind::Star) {
+            let ty = self.parse_abstract_pointer_type(&ty)?;
+            match self.peek_kind() {
+                TokenKind::Comma | TokenKind::RParen => Ok(RawParam {
+                    ty,
+                    ty_span,
+                    name: None,
+                    name_span: None,
+                }),
+                TokenKind::Ident(_) => {
+                    let (name, name_span) = self.expect_ident()?;
+                    Ok(RawParam {
+                        ty,
+                        ty_span,
+                        name: Some(name),
+                        name_span: Some(name_span),
+                    })
+                }
+                _ => {
+                    let token = self.peek();
+                    Err(ParseError {
+                        message: format!(
+                            "expected pointer type, got unexpected token '{:?}'",
+                            token.kind
+                        ),
+                        span: token.span,
+                    })
+                }
+            }
         } else {
             let declarator = self.parse_declarator()?;
-            let LoweredDeclarator {
-                ty,
-                name,
-                name_span,
-            } = Self::lower_declarator(&ty, &declarator)?;
-            Ok(RawParam {
-                ty,
-                ty_span,
-                name: Some(name),
-                name_span: Some(name_span),
-            })
+            match Self::lower_declarator(&ty, &declarator)? {
+                LoweredDeclarator::Object {
+                    ty,
+                    name,
+                    name_span,
+                } => Ok(RawParam {
+                    ty,
+                    ty_span,
+                    name: Some(name),
+                    name_span: Some(name_span),
+                }),
+                LoweredDeclarator::Function { name_span, .. } => Err(ParseError {
+                    message: "function parameter declarators are not supported".to_string(),
+                    span: name_span,
+                }),
+            }
         }
     }
 
+    fn parse_abstract_pointer_type(&mut self, base: &Type) -> Result<Type, ParseError> {
+        let mut ty = base.clone();
+
+        while self.peek_kind() == &TokenKind::Star {
+            self.expect(&TokenKind::Star)?;
+            ty = Type::Pointer(Box::new(ty));
+        }
+
+        Ok(ty)
+    }
+
     // Expression parsing
+
+    fn parse_binary_op_from(&mut self, ops: &[(TokenKind, BinaryOp)]) -> Option<(BinaryOp, Span)> {
+        for (token_kind, op) in ops {
+            if self.peek_kind() == token_kind {
+                let token = self.advance();
+                return Some((*op, token.span));
+            }
+        }
+        None
+    }
+
+    fn parse_left_assoc(
+        &mut self,
+        parse_operand: fn(&mut Self) -> Result<Expr, ParseError>,
+        ops: &[(TokenKind, BinaryOp)],
+    ) -> Result<Expr, ParseError> {
+        let mut left = parse_operand(self)?;
+
+        while let Some((op, op_span)) = self.parse_binary_op_from(ops) {
+            let right = parse_operand(self)?;
+            left = Expr::Binary {
+                op,
+                op_span,
+                left: Box::new(left),
+                right: Box::new(right),
+            }
+        }
+
+        Ok(left)
+    }
 
     fn parse_call_arg(&mut self) -> Result<Expr, ParseError> {
         self.parse_expr()
@@ -884,17 +1117,27 @@ impl Parser {
         }
         let base_ty = self.lower_decl_spec(&declaration.spec, declaration.spec_span)?;
         for init_declarator in declaration.declarators {
-            let LoweredDeclarator {
-                ty,
-                name,
-                name_span,
-            } = Self::lower_declarator(&base_ty, &init_declarator.declarator)?;
-            declarators.push(LocalDecl {
-                ty,
-                name,
-                name_span,
-                init: init_declarator.initializer,
-            });
+            match Self::lower_declarator(&base_ty, &init_declarator.declarator)? {
+                LoweredDeclarator::Object {
+                    ty,
+                    name,
+                    name_span,
+                } => {
+                    declarators.push(LocalDecl {
+                        ty,
+                        name,
+                        name_span,
+                        init: init_declarator.initializer,
+                    });
+                }
+                LoweredDeclarator::Function { name_span, .. } => {
+                    return Err(ParseError {
+                        message: "function declarations are not supported inside blocks"
+                            .to_string(),
+                        span: name_span,
+                    });
+                }
+            }
         }
 
         Ok(Statement::Decl(declarators))
@@ -1074,127 +1317,6 @@ impl Parser {
                 span: self.peek().span,
             }),
         }
-    }
-
-    fn parse_function_signature(&mut self) -> Result<ParsedFunctionSignature, ParseError> {
-        let base_ty = self.parse_type()?;
-        let declarator = self.parse_declarator()?;
-        let LoweredDeclarator {
-            ty,
-            name,
-            name_span,
-        } = Self::lower_declarator(&base_ty, &declarator)?;
-
-        self.expect(&TokenKind::LParen)?;
-        let params = self.parse_comma_separated_until_terminator(
-            Self::parse_raw_param,
-            &TokenKind::RParen,
-            false,
-        )?;
-        self.expect(&TokenKind::RParen)?;
-
-        Ok(ParsedFunctionSignature {
-            return_type: ty,
-            name,
-            name_span,
-            params,
-        })
-    }
-
-    fn parse_function_external_decl(&mut self) -> Result<ExternalDecl, ParseError> {
-        let sig = self.parse_function_signature()?;
-
-        match self.peek_kind() {
-            TokenKind::Semicolon => {
-                self.advance();
-                Ok(ExternalDecl::FunctionDecl(FunctionDecl {
-                    return_type: sig.return_type,
-                    name: sig.name,
-                    name_span: sig.name_span,
-                    params: sig.params.into_iter().map(raw_param_to_decl).collect(),
-                }))
-            }
-            TokenKind::LBrace => {
-                self.advance();
-                let mut body = vec![];
-                self.parse_through_rbrace(&mut body)?;
-                Ok(ExternalDecl::FunctionDef(FunctionDef {
-                    return_type: sig.return_type,
-                    name: sig.name,
-                    name_span: sig.name_span,
-                    params: sig
-                        .params
-                        .into_iter()
-                        .map(raw_param_to_def)
-                        .collect::<Result<Vec<_>, _>>()?,
-                    body,
-                }))
-            }
-            _ => {
-                let token = self.peek();
-                Err(ParseError {
-                    message: format!("expected ';' or '{{', got '{:?}'", token.kind),
-                    span: token.span,
-                })
-            }
-        }
-    }
-
-    fn parse_typedefs(&mut self) -> Result<Vec<Typedef>, ParseError> {
-        let mut typedefs = vec![];
-        let declaration = self.parse_declaration()?;
-        if declaration.spec.storage_class != Some(StorageClass::Typedef) {
-            return Err(ParseError {
-                message: "expected typedef declaration".to_string(),
-                span: declaration.spec_span,
-            });
-        }
-        let base_ty = self.lower_decl_spec(&declaration.spec, declaration.spec_span)?;
-        for init_declarator in declaration.declarators {
-            if init_declarator.initializer.is_some() {
-                return Err(ParseError {
-                    message: "typedef declarator cannot have an initializer".to_string(),
-                    span: declaration.spec_span,
-                });
-            }
-            let lowered = Self::lower_declarator(&base_ty, &init_declarator.declarator)?;
-            if self.typedefs.contains_key(&lowered.name) {
-                return Err(ParseError {
-                    message: format!("duplicate typedef with name '{}'", lowered.name),
-                    span: lowered.name_span,
-                });
-            }
-            self.typedefs
-                .insert(lowered.name.clone(), lowered.ty.clone());
-            typedefs.push(Typedef {
-                name: lowered.name,
-                name_span: lowered.name_span,
-                ty: lowered.ty,
-            });
-        }
-        Ok(typedefs)
-    }
-
-    fn parse_program(&mut self) -> Result<Program, ParseError> {
-        let mut declarations = vec![];
-
-        loop {
-            match self.peek_kind() {
-                TokenKind::Eof => break,
-                TokenKind::KwTypedef => {
-                    for typedef in self.parse_typedefs()? {
-                        declarations.push(ExternalDecl::Typedef(typedef));
-                    }
-                }
-                _ => declarations.push(self.parse_function_external_decl()?),
-            }
-        }
-        let token = self.expect(&TokenKind::Eof)?;
-
-        Ok(Program {
-            declarations,
-            eof_span: token.span,
-        })
     }
 }
 

@@ -183,8 +183,6 @@ Program structure and declarations:
 - [x] `return`
 - [x] blocks
 - [x] nested blocks and scope
-- [x] function definitions beyond `main`
-- [x] simple function declarations/prototypes
 - [x] declarations without initializers
 - [x] multiple local declarators in one declaration
 - [ ] declaration lists mixed with statements
@@ -263,6 +261,7 @@ Functions:
 
 - [x] function definitions beyond `main`
 - [x] simple function declarations/prototypes
+- [x] unnamed scalar and pointer parameters in function prototypes
 - [x] zero-argument function calls
 - [x] function parameters
 - [x] function calls with up to 8 register arguments
@@ -273,6 +272,7 @@ Functions:
 Objects, aggregate types, and declarators:
 
 - [x] pointer parameters and local declarations
+- [x] function declarators for top-level functions
 - [x] pointer arithmetic scaled by pointee size
 - [x] fixed-size local array declarations and stack allocation
 - [x] scalar initializer lists with zero-fill for local arrays

@@ -264,6 +264,49 @@ fn accepts_function_prototype_before_definition() {
 }
 
 #[test]
+fn accepts_function_prototype_with_unnamed_pointer_parameter_before_definition() {
+    let int_pointer = Type::Pointer(Box::new(Type::Int));
+    let program = Program {
+        declarations: vec![
+            ExternalDecl::FunctionDecl(FunctionDecl {
+                return_type: Type::Int,
+                name_span: span(),
+                name: "helper".to_string(),
+                params: vec![rivet::ast::ParamDecl {
+                    ty: int_pointer.clone(),
+                    name: None,
+                    name_span: None,
+                }],
+            }),
+            ExternalDecl::FunctionDef(FunctionDef {
+                return_type: Type::Int,
+                name_span: span(),
+                name: "helper".to_string(),
+                params: vec![param_with_span(int_pointer, "p", span())],
+                body: vec![Statement::Return(Expr::IntLiteral {
+                    value: 0,
+                    suffix: IntLiteralSuffix::None,
+                    base: IntLiteralBase::Decimal,
+                    span: span(),
+                })],
+            }),
+            ExternalDecl::FunctionDef(function(
+                "main",
+                vec![Statement::Return(Expr::IntLiteral {
+                    value: 0,
+                    suffix: IntLiteralSuffix::None,
+                    base: IntLiteralBase::Decimal,
+                    span: span(),
+                })],
+            )),
+        ],
+        eof_span: span(),
+    };
+
+    check(&program).expect("semantic check should succeed");
+}
+
+#[test]
 fn accepts_call_to_prototyped_function_without_definition() {
     let program = Program {
         declarations: vec![
@@ -359,6 +402,57 @@ fn rejects_function_definition_with_conflicting_prototype_parameter_type() {
     assert_eq!(
         err.message,
         "function declaration and definition must have same parameter types, got '[Int]' and '[Char]'"
+    );
+}
+
+#[test]
+fn rejects_function_definition_with_conflicting_pointer_prototype_parameter_type() {
+    let program = Program {
+        declarations: vec![
+            ExternalDecl::FunctionDecl(FunctionDecl {
+                return_type: Type::Int,
+                name_span: span(),
+                name: "helper".to_string(),
+                params: vec![rivet::ast::ParamDecl {
+                    ty: Type::Pointer(Box::new(Type::Int)),
+                    name: None,
+                    name_span: None,
+                }],
+            }),
+            ExternalDecl::FunctionDef(FunctionDef {
+                return_type: Type::Int,
+                name_span: span(),
+                name: "helper".to_string(),
+                params: vec![param_with_span(
+                    Type::Pointer(Box::new(Type::Char)),
+                    "p",
+                    span(),
+                )],
+                body: vec![Statement::Return(Expr::IntLiteral {
+                    value: 0,
+                    suffix: IntLiteralSuffix::None,
+                    base: IntLiteralBase::Decimal,
+                    span: span(),
+                })],
+            }),
+            ExternalDecl::FunctionDef(function(
+                "main",
+                vec![Statement::Return(Expr::IntLiteral {
+                    value: 0,
+                    suffix: IntLiteralSuffix::None,
+                    base: IntLiteralBase::Decimal,
+                    span: span(),
+                })],
+            )),
+        ],
+        eof_span: span(),
+    };
+
+    let err = check(&program).expect_err("semantic check should fail");
+
+    assert_eq!(
+        err.message,
+        "function declaration and definition must have same parameter types, got '[Pointer(Int)]' and '[Pointer(Char)]'"
     );
 }
 
