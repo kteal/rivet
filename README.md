@@ -6,7 +6,7 @@
 
 `rivet` is a C compiler written in Rust that targets RV32IM assembly. It is working toward C23 by growing a small, tested C subset.
 
-It currently handles common integer and character types, basic pointers, fixed-size local arrays, array indexing, functions, simple function prototypes, block scope, common control flow, and C-like expression precedence. It emits RV32IM assembly and reports lexer, parser, and semantic errors with source-map-backed file, line, and column locations.
+It currently handles common integer and character types, basic pointers, fixed-size local and file-scope arrays, file-scope globals, array indexing, functions, simple function prototypes, block scope, common control flow, and C-like expression precedence. It emits RV32IM assembly and reports lexer, parser, and semantic errors with source-map-backed file, line, and column locations.
 
 The current language subset supports programs shaped like:
 
@@ -111,7 +111,7 @@ cargo run -- tests/programs/adler/full_harness.c
 Lex, parse, and semantic errors are reported with file, line, and column information:
 
 ```text
-path/to/program.c:2:12: error: undeclared local variable 'x'
+path/to/program.c:2:12: error: undeclared variable 'x'
 ```
 
 ## Run Tests
@@ -186,8 +186,9 @@ Program structure and declarations:
 - [x] declarations without initializers
 - [x] multiple local declarators in one declaration
 - [ ] declaration lists mixed with statements
-- [ ] multiple translation-unit-level declarations
-- [ ] globals
+- [x] multiple translation-unit-level declarations
+- [x] file-scope globals
+- [x] scalar and fixed-size array global initializers with zero-fill
 - [x] top-level typedef aliases with comma-separated declarators
 - [ ] full typedef behavior: arbitrary declaration-specifier ordering, alias-preserving diagnostics, and scope shadowing
 - [ ] storage classes: `extern`, `static`, `auto`, `register`, `thread_local`
@@ -221,7 +222,7 @@ Expressions and operators:
 - [ ] `sizeof`
 - [ ] `_Alignof` / `alignof`
 - [ ] address-of: `&`
-- [x] array-to-pointer decay for local array expressions
+- [x] array-to-pointer decay for local and global array expressions
 - [ ] function-to-pointer decay
 
 Types and semantic analysis:
@@ -276,6 +277,8 @@ Objects, aggregate types, and declarators:
 - [x] pointer arithmetic scaled by pointee size
 - [x] fixed-size local array declarations and stack allocation
 - [x] scalar initializer lists with zero-fill for local arrays
+- [x] fixed-size global array declarations and data emission
+- [x] scalar initializer lists with zero-fill for global arrays
 - [x] trailing commas in initializer lists
 - [x] array indexing
 - [ ] full C declarator grammar

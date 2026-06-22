@@ -2,8 +2,8 @@ mod common;
 
 use common::{param, param_with_span, program_with_functions, span};
 use rivet::ast::{
-    BinaryOp, Expr, FunctionDef, Initializer, IntLiteralBase, IntLiteralSuffix, Program, Statement,
-    Type, UnaryOp,
+    BinaryOp, Expr, ExternalDecl, FunctionDef, GlobalDecl, Initializer, IntLiteralBase,
+    IntLiteralSuffix, Program, Statement, Type, UnaryOp,
 };
 use rivet::codegen::{CodegenTarget, generate};
 use rivet::sema::check;
@@ -33,6 +33,24 @@ fn empty_main_function() -> FunctionDef {
             base: IntLiteralBase::Decimal,
             span: span(),
         })],
+    }
+}
+
+fn global_decl(name: &str, ty: Type, init: Option<Initializer>) -> GlobalDecl {
+    GlobalDecl {
+        ty,
+        name: name.to_string(),
+        name_span: span(),
+        init,
+    }
+}
+
+const fn int_literal(value: u64) -> Expr {
+    Expr::IntLiteral {
+        value,
+        suffix: IntLiteralSuffix::None,
+        base: IntLiteralBase::Decimal,
+        span: span(),
     }
 }
 
@@ -681,6 +699,205 @@ fn generates_local_variable_without_initializer() {
         asm,
         ".globl main\nmain:\n    addi sp, sp, -16\n    sw ra, 12(sp)\n    sw s0, 8(sp)\n    addi s0, sp, 16\n    addi a0, s0, -12\n    addi sp, sp, -4\n    sw a0, 0(sp)\n    li a0, 3\n    lw t0, 0(sp)\n    addi sp, sp, 4\n    sw a0, 0(t0)\n    addi a0, s0, -12\n    lw a0, 0(a0)\n    lw ra, 12(sp)\n    lw s0, 8(sp)\n    addi sp, sp, 16\n    ret\n"
     );
+}
+
+#[test]
+fn generates_initialized_int_global() {
+    let program = Program {
+        declarations: vec![
+            ExternalDecl::Global(global_decl(
+                "g",
+                Type::Int,
+                Some(Initializer::Expr(int_literal(3))),
+            )),
+            ExternalDecl::FunctionDef(empty_main_function()),
+        ],
+        eof_span: span(),
+    };
+
+    let asm = generate_raw_with_codegen(&program);
+
+    assert!(asm.starts_with(".data\n"));
+    assert!(asm.contains(".globl g\n"));
+    assert!(asm.contains("g:\n"));
+    assert!(asm.contains(".word 3\n"));
+    assert!(asm.contains(".text\n"));
+    assert!(asm.find(".word 3\n").unwrap() < asm.find(".text\n").unwrap());
+    assert!(asm.find(".text\n").unwrap() < asm.find(".globl main\n").unwrap());
+}
+
+#[test]
+fn generates_zero_initialized_int_global() {
+    let program = Program {
+        declarations: vec![
+            ExternalDecl::Global(global_decl("g", Type::Int, None)),
+            ExternalDecl::FunctionDef(empty_main_function()),
+        ],
+        eof_span: span(),
+    };
+
+    let asm = generate_raw_with_codegen(&program);
+
+    assert!(asm.contains(".globl g\n"));
+    assert!(asm.contains("g:\n"));
+    assert!(asm.contains(".word 0\n"));
+}
+
+#[test]
+fn generates_char_global() {
+    let program = Program {
+        declarations: vec![
+            ExternalDecl::Global(global_decl(
+                "c",
+                Type::Char,
+                Some(Initializer::Expr(int_literal(7))),
+            )),
+            ExternalDecl::FunctionDef(empty_main_function()),
+        ],
+        eof_span: span(),
+    };
+
+    let asm = generate_raw_with_codegen(&program);
+
+    assert!(asm.contains(".globl c\n"));
+    assert!(asm.contains("c:\n"));
+    assert!(asm.contains(".byte 7\n"));
+}
+
+#[test]
+fn generates_load_from_int_global() {
+    let program = Program {
+        declarations: vec![
+            ExternalDecl::Global(global_decl(
+                "g",
+                Type::Int,
+                Some(Initializer::Expr(int_literal(3))),
+            )),
+            ExternalDecl::FunctionDef(FunctionDef {
+                return_type: Type::Int,
+                name_span: span(),
+                name: "main".to_string(),
+                params: vec![],
+                body: vec![Statement::Return(Expr::Variable {
+                    name: "g".to_string(),
+                    span: span(),
+                })],
+            }),
+        ],
+        eof_span: span(),
+    };
+
+    let asm = generate_raw_with_codegen(&program);
+
+    assert!(asm.contains("    la a0, g\n    lw a0, 0(a0)\n"));
+}
+
+#[test]
+fn generates_store_to_int_global() {
+    let program = Program {
+        declarations: vec![
+            ExternalDecl::Global(global_decl("g", Type::Int, None)),
+            ExternalDecl::FunctionDef(FunctionDef {
+                return_type: Type::Int,
+                name_span: span(),
+                name: "main".to_string(),
+                params: vec![],
+                body: vec![
+                    Statement::ExprStatement(Expr::Assign {
+                        op_span: span(),
+                        target: Box::new(Expr::Variable {
+                            name: "g".to_string(),
+                            span: span(),
+                        }),
+                        value: Box::new(int_literal(9)),
+                    }),
+                    Statement::Return(Expr::Variable {
+                        name: "g".to_string(),
+                        span: span(),
+                    }),
+                ],
+            }),
+        ],
+        eof_span: span(),
+    };
+
+    let asm = generate_raw_with_codegen(&program);
+
+    assert!(asm.contains("    la a0, g\n    addi sp, sp, -4\n    sw a0, 0(sp)\n"));
+    assert!(asm.contains("    li a0, 9\n    lw t0, 0(sp)\n    addi sp, sp, 4\n    sw a0, 0(t0)\n"));
+    assert_eq!(asm.matches("    la a0, g\n").count(), 2);
+}
+
+#[test]
+fn generates_zero_initialized_int_global_array() {
+    let program = Program {
+        declarations: vec![
+            ExternalDecl::Global(global_decl(
+                "nums",
+                Type::Array {
+                    element: Box::new(Type::Int),
+                    len: 3,
+                },
+                None,
+            )),
+            ExternalDecl::FunctionDef(empty_main_function()),
+        ],
+        eof_span: span(),
+    };
+
+    let asm = generate_raw_with_codegen(&program);
+
+    assert!(asm.contains(".globl nums\n"));
+    assert!(asm.contains("nums:\n"));
+    assert_eq!(asm.matches("  .word 0\n").count(), 3);
+}
+
+#[test]
+fn generates_partially_initialized_int_global_array() {
+    let program = Program {
+        declarations: vec![
+            ExternalDecl::Global(global_decl(
+                "nums",
+                Type::Array {
+                    element: Box::new(Type::Int),
+                    len: 3,
+                },
+                Some(Initializer::List(vec![int_literal(1), int_literal(2)])),
+            )),
+            ExternalDecl::FunctionDef(empty_main_function()),
+        ],
+        eof_span: span(),
+    };
+
+    let asm = generate_raw_with_codegen(&program);
+
+    assert!(asm.contains("nums:\n      .word 1\n      .word 2\n      .word 0\n"));
+}
+
+#[test]
+fn generates_char_global_array() {
+    let program = Program {
+        declarations: vec![
+            ExternalDecl::Global(global_decl(
+                "buf",
+                Type::Array {
+                    element: Box::new(Type::Char),
+                    len: 3,
+                },
+                Some(Initializer::List(vec![
+                    int_literal(65),
+                    int_literal(66),
+                    int_literal(67),
+                ])),
+            )),
+            ExternalDecl::FunctionDef(empty_main_function()),
+        ],
+        eof_span: span(),
+    };
+
+    let asm = generate_raw_with_codegen(&program);
+
+    assert!(asm.contains("buf:\n      .byte 65\n      .byte 66\n      .byte 67\n"));
 }
 
 #[test]

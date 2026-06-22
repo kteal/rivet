@@ -185,6 +185,74 @@ fn rejects_function_definition_with_unnamed_parameter() {
 }
 
 #[test]
+fn parses_global_declaration_without_initializer() {
+    let program = parse_source("int g; int main() { return 0; }");
+
+    assert_eq!(program.declarations.len(), 2);
+    let ExternalDecl::Global(global) = &program.declarations[0] else {
+        panic!("expected global declaration");
+    };
+
+    assert_eq!(global.ty, Type::Int);
+    assert_eq!(global.name, "g");
+    assert_eq!(global.init, None);
+}
+
+#[test]
+fn parses_global_declaration_with_scalar_initializer() {
+    let program = parse_source("int g = 3; int main() { return 0; }");
+
+    assert_eq!(program.declarations.len(), 2);
+    let ExternalDecl::Global(global) = &program.declarations[0] else {
+        panic!("expected global declaration");
+    };
+
+    assert_eq!(global.ty, Type::Int);
+    assert_eq!(global.name, "g");
+    assert!(matches!(
+        global.init,
+        Some(Initializer::Expr(Expr::IntLiteral { value: 3, .. }))
+    ));
+}
+
+#[test]
+fn parses_pointer_global_declaration() {
+    let program = parse_source("int *p; int main() { return 0; }");
+
+    assert_eq!(program.declarations.len(), 2);
+    let ExternalDecl::Global(global) = &program.declarations[0] else {
+        panic!("expected global declaration");
+    };
+
+    assert_eq!(global.ty, Type::Pointer(Box::new(Type::Int)));
+    assert_eq!(global.name, "p");
+    assert_eq!(global.init, None);
+}
+
+#[test]
+fn parses_array_global_declaration_with_initializer_list() {
+    let program = parse_source("int arr[3] = {1, 2, 3}; int main() { return 0; }");
+
+    assert_eq!(program.declarations.len(), 2);
+    let ExternalDecl::Global(global) = &program.declarations[0] else {
+        panic!("expected global declaration");
+    };
+
+    assert_eq!(
+        global.ty,
+        Type::Array {
+            element: Box::new(Type::Int),
+            len: 3,
+        }
+    );
+    assert_eq!(global.name, "arr");
+    let Some(Initializer::List(elements)) = &global.init else {
+        panic!("expected initializer list");
+    };
+    assert_eq!(elements.len(), 3);
+}
+
+#[test]
 fn parses_integer_literal_suffixes() {
     let body = main_body("int main() { 1U; 2u; 3L; 4l; 5UL; 6ul; 7LU; 8lu; return 0; }");
 

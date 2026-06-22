@@ -7,18 +7,11 @@ pub struct Program {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct FunctionDecl {
-    pub return_type: Type,
-    pub name: String,
-    pub name_span: Span,
-    pub params: Vec<ParamDecl>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ExternalDecl {
     FunctionDecl(FunctionDecl),
     FunctionDef(FunctionDef),
     Typedef(Typedef),
+    Global(GlobalDecl),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -35,6 +28,22 @@ pub struct FunctionDef {
     pub name_span: Span,
     pub params: Vec<Param>,
     pub body: Vec<Statement>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FunctionDecl {
+    pub return_type: Type,
+    pub name: String,
+    pub name_span: Span,
+    pub params: Vec<ParamDecl>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GlobalDecl {
+    pub ty: Type,
+    pub name: String,
+    pub name_span: Span,
+    pub init: Option<Initializer>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

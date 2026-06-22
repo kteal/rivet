@@ -72,7 +72,7 @@ fn semantic_errors_include_filename_line_and_column() {
         "stderr should point at the undeclared identifier, got {stderr:?}"
     );
     assert!(
-        stderr.contains("undeclared local variable 'x'"),
+        stderr.contains("undeclared variable 'x'"),
         "stderr should explain the semantic problem, got {stderr:?}"
     );
 }
@@ -99,12 +99,12 @@ fn semantic_errors_are_reported_before_codegen() {
     assert_diagnostic_contains(
         "semantic-undeclared-return",
         "int main() {\n    return x;\n}\n",
-        "error: undeclared local variable 'x'",
+        "error: undeclared variable 'x'",
     );
     assert_diagnostic_contains(
         "semantic-undeclared-assignment",
         "int main() {\n    x = 1;\n    return 0;\n}\n",
-        "error: undeclared local variable 'x'",
+        "error: undeclared variable 'x'",
     );
     assert_diagnostic_contains(
         "semantic-duplicate-local",
@@ -114,12 +114,12 @@ fn semantic_errors_are_reported_before_codegen() {
     assert_diagnostic_contains(
         "semantic-later-local",
         "int main() {\n    int y = x;\n    int x = 1;\n    return y;\n}\n",
-        "error: undeclared local variable 'x'",
+        "error: undeclared variable 'x'",
     );
     assert_diagnostic_contains(
         "semantic-block-local-after-scope",
         "int main() {\n    {\n        int x = 1;\n    }\n    return x;\n}\n",
-        "error: undeclared local variable 'x'",
+        "error: undeclared variable 'x'",
     );
     assert_diagnostic_contains(
         "semantic-undeclared-function-call",

@@ -1,8 +1,9 @@
 use std::collections::HashMap;
 
 use crate::ast::{
-    BinaryOp, Expr, ExternalDecl, FunctionDecl, FunctionDef, Initializer, IntLiteralBase,
-    IntLiteralSuffix, LocalDecl, Param, ParamDecl, Program, Statement, Type, Typedef, UnaryOp,
+    BinaryOp, Expr, ExternalDecl, FunctionDecl, FunctionDef, GlobalDecl, Initializer,
+    IntLiteralBase, IntLiteralSuffix, LocalDecl, Param, ParamDecl, Program, Statement, Type,
+    Typedef, UnaryOp,
 };
 use crate::lexer::{Token, TokenKind};
 use crate::source::Span;
@@ -340,14 +341,37 @@ impl Parser {
                     })
                 }
             },
-            LoweredDeclarator::Object { name_span, .. } => match self.peek() {
+            LoweredDeclarator::Object {
+                ty,
+                name,
+                name_span,
+            } => match self.peek() {
                 Token {
                     kind: TokenKind::Semicolon,
                     ..
-                } => Err(ParseError {
-                    message: "unsupported global object declaration".to_string(),
-                    span: name_span,
-                }),
+                } => {
+                    self.expect(&TokenKind::Semicolon)?;
+                    Ok(vec![ExternalDecl::Global(GlobalDecl {
+                        ty,
+                        name,
+                        name_span,
+                        init: None,
+                    })])
+                }
+                Token {
+                    kind: TokenKind::Equal,
+                    ..
+                } => {
+                    self.expect(&TokenKind::Equal)?;
+                    let init = Some(self.parse_initializer()?);
+                    self.expect(&TokenKind::Semicolon)?;
+                    Ok(vec![ExternalDecl::Global(GlobalDecl {
+                        ty,
+                        name,
+                        name_span,
+                        init,
+                    })])
+                }
                 token => Err(ParseError {
                     message: format!("unexpected token in object declaration, '{:?}'", token.kind),
                     span: token.span,

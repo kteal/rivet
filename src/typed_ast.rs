@@ -11,6 +11,7 @@ pub struct TypedProgram {
 pub enum TypedExternalDecl {
     Function(TypedFunction),
     Typedef,
+    Global(TypedGlobalDecl),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -21,7 +22,14 @@ pub struct TypedFunction {
     pub params: Vec<TypedParam>,
     pub body: Vec<TypedStatement>,
 }
-
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TypedGlobalDecl {
+    pub id: GlobalId,
+    pub ty: Type,
+    pub name: String,
+    pub name_span: Span,
+    pub init: Option<TypedInitializer>,
+}
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TypedParam {
     pub id: LocalId,
@@ -157,7 +165,7 @@ pub enum TypedExprKind {
         span: Span,
     },
     Variable {
-        id: LocalId,
+        id: ObjectId,
         name: String,
         span: Span,
     },
@@ -220,3 +228,12 @@ pub enum TypedExprKind {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct LocalId(pub usize);
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct GlobalId(pub usize);
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum ObjectId {
+    Local(LocalId),
+    Global(GlobalId),
+}

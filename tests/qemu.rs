@@ -1135,6 +1135,18 @@ fn qemu_array_indexing_programs_return_expected_values() {
     );
 
     run_qemu_case(
+        "global-int-array-index-zero-filled-tail",
+        "int nums[4] = {7, 8};\n\nint main() {\n    return nums[0] + nums[1] + nums[2] + nums[3];\n}\n",
+        15,
+    );
+
+    run_qemu_case(
+        "global-char-array-index-rvalue",
+        "char buf[3] = {'a', 'b', 'c'};\n\nint main() {\n    return buf[1];\n}\n",
+        98,
+    );
+
+    run_qemu_case(
         "array-initializer-allows-trailing-comma",
         "int main() {\n    unsigned char buf[3] = {1, 2, 3,};\n    return buf[0] + buf[1] + buf[2];\n}\n",
         6,

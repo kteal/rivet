@@ -1,7 +1,7 @@
 use crate::ast::{BinaryOp, Type, UnaryOp};
 use crate::typed_ast::{
-    LocalId, TypedExpr, TypedExprKind, TypedExternalDecl, TypedFunction, TypedInitializer,
-    TypedProgram, TypedStatement,
+    GlobalId, LocalId, ObjectId, TypedExpr, TypedExprKind, TypedExternalDecl, TypedFunction,
+    TypedGlobalDecl, TypedInitializer, TypedProgram, TypedStatement,
 };
 use std::collections::HashMap;
 use std::fmt::{self, Write};
@@ -29,6 +29,12 @@ struct FrameSlot {
 struct FrameLayout {
     size: i32,
     locals: HashMap<LocalId, FrameSlot>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct GlobalSlot {
+    label: String,
+    ty: Type,
 }
 
 impl FrameLayout {
@@ -125,6 +131,7 @@ struct Codegen {
     return_label: Option<String>,
     loop_stack: Vec<LoopLabels>,
     current_function_return_type: Option<Type>,
+    globals: HashMap<GlobalId, GlobalSlot>,
     #[allow(dead_code)]
     target: CodegenTarget,
 }
@@ -138,6 +145,7 @@ impl Codegen {
             return_label: None,
             loop_stack: vec![],
             current_function_return_type: None,
+            globals: HashMap::new(),
             target,
         }
     }
@@ -180,6 +188,10 @@ impl Codegen {
         self.frame.local(id)
     }
 
+    fn resolve_global(&self, id: GlobalId) -> &GlobalSlot {
+        self.globals.get(&id).expect("global id should have slot")
+    }
+
     fn emit(&mut self, args: fmt::Arguments) {
         self.out.write_fmt(args).unwrap();
     }
@@ -190,6 +202,55 @@ impl Codegen {
 
     fn emit_label(&mut self, label: &str) {
         self.emit(format_args!("{label}:\n"));
+    }
+
+    fn emit_global_scalar_value(&mut self, ty: &Type, value: u64) {
+        match ty {
+            Type::Int | Type::UnsignedInt => {
+                self.emit_line(format_args!("  .word {value}"));
+            }
+            Type::Char | Type::UnsignedChar => {
+                self.emit_line(format_args!("  .byte {value}"));
+            }
+            _ => unimplemented!("global scalar codegen for {:?}", ty),
+        }
+    }
+
+    fn emit_global_array(&mut self, element: &Type, len: usize, init: Option<&TypedInitializer>) {
+        let values = match init {
+            None => vec![],
+            Some(TypedInitializer::List(values)) => values.clone(),
+            Some(TypedInitializer::Expr(_)) => {
+                unreachable!("array global initializer cannot be scalar after sema")
+            }
+        };
+
+        for expr in &values {
+            let value = expr
+                .eval_int_constant_expr()
+                .expect("global array initializer should be integer constant");
+            self.emit_global_scalar_value(element, value);
+        }
+
+        for _ in values.len()..len {
+            self.emit_global_scalar_value(element, 0);
+        }
+    }
+
+    fn emit_global(&mut self, global: &TypedGlobalDecl) {
+        self.emit_line(format_args!(".globl {}", global.name));
+        self.emit_line(format_args!("{}:", global.name));
+
+        match &global.ty {
+            Type::Int | Type::UnsignedInt | Type::Char | Type::UnsignedChar => {
+                let value = global_init_int_value(global.init.as_ref());
+                self.emit_global_scalar_value(&global.ty, value);
+            }
+            Type::Array { element, len } => {
+                self.emit_global_array(element, *len, global.init.as_ref());
+            }
+            _ => unimplemented!("global codegen for {:?}", global.ty),
+        }
     }
 
     fn push_a0(&mut self) {
@@ -252,10 +313,16 @@ impl Codegen {
 
     fn emit_addr(&mut self, expr: &TypedExpr) {
         match &expr.kind {
-            TypedExprKind::Variable { id, .. } => {
-                let slot = self.resolve_local(*id).clone();
-                self.emit_line(format_args!("addi a0, s0, {}", slot.offset));
-            }
+            TypedExprKind::Variable { id, .. } => match id {
+                ObjectId::Global(id) => {
+                    let label = self.resolve_global(*id).label.clone();
+                    self.emit_line(format_args!("la a0, {label}"));
+                }
+                ObjectId::Local(id) => {
+                    let slot = self.resolve_local(*id).clone();
+                    self.emit_line(format_args!("addi a0, s0, {}", slot.offset));
+                }
+            },
             TypedExprKind::Unary {
                 op: UnaryOp::Dereference,
                 expr,
@@ -602,8 +669,13 @@ impl Codegen {
             } => self.emit_binary(*op, operand_ty, left, right),
             TypedExprKind::Variable { id, .. } => {
                 self.emit_addr(expr);
-                let slot = self.resolve_local(*id);
-                if !matches!(slot.ty, Type::Array { .. }) {
+
+                let storage_ty = match id {
+                    ObjectId::Local(id) => &self.resolve_local(*id).ty,
+                    ObjectId::Global(id) => &self.resolve_global(*id).ty,
+                };
+
+                if !matches!(storage_ty, Type::Array { .. }) {
                     self.emit_load_from_addr(&expr.ty);
                 }
             }
@@ -899,7 +971,42 @@ impl Codegen {
         self.emit_epilogue();
     }
 
+    fn collect_globals(&mut self, program: &TypedProgram) {
+        for decl in &program.declarations {
+            if let TypedExternalDecl::Global(global) = decl {
+                self.globals.insert(
+                    global.id,
+                    GlobalSlot {
+                        label: global.name.clone(),
+                        ty: global.ty.clone(),
+                    },
+                );
+            }
+        }
+    }
+
+    fn emit_globals(&mut self, program: &TypedProgram) {
+        let mut emitted_section = false;
+
+        for decl in &program.declarations {
+            if let TypedExternalDecl::Global(global) = decl {
+                if !emitted_section {
+                    self.emit(format_args!(".data\n"));
+                    emitted_section = true;
+                }
+                self.emit_global(global);
+            }
+        }
+
+        if emitted_section {
+            self.emit(format_args!(".text\n"));
+        }
+    }
+
     fn emit_program(&mut self, program: &TypedProgram) -> String {
+        self.collect_globals(program);
+        self.emit_globals(program);
+
         for decl in &program.declarations {
             if let TypedExternalDecl::Function(function) = decl {
                 self.emit_function(function);
@@ -914,4 +1021,16 @@ impl Codegen {
 pub fn generate(program: &TypedProgram, target: CodegenTarget) -> String {
     let mut codegen = Codegen::new(target);
     codegen.emit_program(program)
+}
+
+fn global_init_int_value(init: Option<&TypedInitializer>) -> u64 {
+    match init {
+        None => 0,
+        Some(TypedInitializer::Expr(expr)) => expr
+            .eval_int_constant_expr()
+            .expect("global initializer should be integer constant"),
+        Some(TypedInitializer::List(_)) => {
+            unreachable!("scalar global initializer cannot be list after sema")
+        }
+    }
 }

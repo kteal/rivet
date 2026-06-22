@@ -1,14 +1,14 @@
 use std::collections::HashMap;
 
 use crate::ast::{
-    BinaryOp, Expr, ExternalDecl, FunctionDef, Initializer, IntLiteralBase, IntLiteralSuffix,
-    Program, Statement, Type, UnaryOp,
+    BinaryOp, Expr, ExternalDecl, FunctionDef, GlobalDecl, Initializer, IntLiteralBase,
+    IntLiteralSuffix, Program, Statement, Type, UnaryOp,
 };
 use crate::source::Span;
 
 use crate::typed_ast::{
-    LocalId, TypedExpr, TypedExprKind, TypedExternalDecl, TypedFunction, TypedInitializer,
-    TypedLocalDecl, TypedParam, TypedProgram, TypedStatement,
+    GlobalId, LocalId, ObjectId, TypedExpr, TypedExprKind, TypedExternalDecl, TypedFunction,
+    TypedGlobalDecl, TypedInitializer, TypedLocalDecl, TypedParam, TypedProgram, TypedStatement,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -35,28 +35,66 @@ struct LocalSymbol {
     ty: Type,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct GlobalSymbol {
+    id: GlobalId,
+    ty: Type,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum ObjectSymbol {
+    Local(LocalSymbol),
+    Global(GlobalSymbol),
+}
+
+impl ObjectSymbol {
+    const fn ty(&self) -> &Type {
+        match self {
+            Self::Local(symbol) => &symbol.ty,
+            Self::Global(symbol) => &symbol.ty,
+        }
+    }
+
+    const fn id(&self) -> ObjectId {
+        match self {
+            Self::Local(symbol) => ObjectId::Local(symbol.id),
+            Self::Global(symbol) => ObjectId::Global(symbol.id),
+        }
+    }
+}
+
 struct Checker {
     scopes: Vec<HashMap<String, LocalSymbol>>,
+    next_local_id: usize,
     functions: HashMap<String, FunctionInfo>,
     loop_depth: usize,
     current_function_return_type: Option<Type>,
-    next_local_id: usize,
+    globals: HashMap<String, GlobalSymbol>,
+    next_global_id: usize,
 }
 
 impl Checker {
     fn new() -> Self {
         Self {
             scopes: vec![HashMap::new()],
+            next_local_id: 0,
             functions: HashMap::new(),
             loop_depth: 0,
             current_function_return_type: None,
-            next_local_id: 0,
+            globals: HashMap::new(),
+            next_global_id: 0,
         }
     }
 
     const fn new_local_id(&mut self) -> LocalId {
         let id = LocalId(self.next_local_id);
         self.next_local_id += 1;
+        id
+    }
+
+    const fn new_global_id(&mut self) -> GlobalId {
+        let id = GlobalId(self.next_global_id);
+        self.next_global_id += 1;
         id
     }
 
@@ -114,14 +152,27 @@ impl Checker {
         Ok(symbol)
     }
 
-    fn resolve_local(&self, name: &str, span: Span) -> Result<LocalSymbol, SemanticError> {
+    fn resolve_object(&self, name: &str, span: Span) -> Result<ObjectSymbol, SemanticError> {
         for scope in self.scopes.iter().rev() {
             if let Some(local) = scope.get(name) {
-                return Ok(local.clone());
+                return Ok(ObjectSymbol::Local(local.clone()));
             }
         }
+        if let Some(global) = self.globals.get(name) {
+            return Ok(ObjectSymbol::Global(global.clone()));
+        }
         Err(SemanticError {
-            message: format!("undeclared local variable '{name}'"),
+            message: format!("undeclared variable '{name}'"),
+            span,
+        })
+    }
+
+    fn resolve_global(&self, name: &str, span: Span) -> Result<GlobalSymbol, SemanticError> {
+        if let Some(global) = self.globals.get(name) {
+            return Ok(global.clone());
+        }
+        Err(SemanticError {
+            message: format!("undeclared global variable '{name}'"),
             span,
         })
     }
@@ -134,6 +185,15 @@ impl Checker {
         param_types: Vec<Type>,
         has_body: bool,
     ) -> Result<(), SemanticError> {
+        if self.globals.contains_key(name) {
+            return Err(SemanticError {
+                message: format!(
+                    "function '{name}' conflicts with existing global variable declaration"
+                ),
+                span: name_span,
+            });
+        }
+
         if self.functions.contains_key(name) {
             let existing = self.functions.get_mut(name).unwrap();
             if existing.return_type != *return_type {
@@ -187,6 +247,28 @@ impl Checker {
                 },
             );
         }
+        Ok(())
+    }
+
+    fn declare_global(&mut self, name: &str, span: Span, ty: &Type) -> Result<(), SemanticError> {
+        if self.globals.contains_key(name) {
+            return Err(SemanticError {
+                message: format!("duplicate global definition '{name}'"),
+                span,
+            });
+        }
+        if self.functions.contains_key(name) {
+            return Err(SemanticError {
+                message: format!(
+                    "global variable '{name}' conflicts with existing function declaration"
+                ),
+                span,
+            });
+        }
+
+        let id = self.new_global_id();
+        self.globals
+            .insert(name.to_string(), GlobalSymbol { id, ty: ty.clone() });
         Ok(())
     }
 
@@ -313,9 +395,9 @@ impl Checker {
     fn check_lvalue(&self, expr: &Expr, op_span: Span) -> Result<TypedExpr, SemanticError> {
         match expr {
             Expr::Variable { name, span } => {
-                let symbol = self.resolve_local(name, *span)?;
+                let symbol = self.resolve_object(name, *span)?;
 
-                if matches!(symbol.ty, Type::Array { .. }) {
+                if matches!(symbol.ty(), Type::Array { .. }) {
                     return Err(SemanticError {
                         message: "cannot assign to array expression".to_string(),
                         span: *span,
@@ -324,11 +406,11 @@ impl Checker {
 
                 Ok(TypedExpr {
                     kind: TypedExprKind::Variable {
-                        id: symbol.id,
+                        id: symbol.id(),
                         name: name.clone(),
                         span: *span,
                     },
-                    ty: symbol.ty,
+                    ty: symbol.ty().clone(),
                 })
             }
             Expr::Unary {
@@ -645,12 +727,12 @@ impl Checker {
                 })
             }
             Expr::Variable { name, span } => {
-                let symbol = self.resolve_local(name, *span)?;
+                let symbol = self.resolve_object(name, *span)?;
 
-                if let Type::Array { element, .. } = &symbol.ty {
+                if let Type::Array { element, .. } = symbol.ty() {
                     return Ok(TypedExpr {
                         kind: TypedExprKind::Variable {
-                            id: symbol.id,
+                            id: symbol.id(),
                             name: name.clone(),
                             span: *span,
                         },
@@ -660,11 +742,11 @@ impl Checker {
 
                 Ok(TypedExpr {
                     kind: TypedExprKind::Variable {
-                        id: symbol.id,
+                        id: symbol.id(),
                         name: name.clone(),
                         span: *span,
                     },
-                    ty: symbol.ty,
+                    ty: symbol.ty().clone(),
                 })
             }
             Expr::Unary { op, op_span, expr } => self.check_unary_expr(*op, *op_span, expr),
@@ -1116,6 +1198,22 @@ impl Checker {
         res
     }
 
+    fn check_global_decl(&self, global: &GlobalDecl) -> Result<TypedGlobalDecl, SemanticError> {
+        let typed_init = global
+            .init
+            .as_ref()
+            .map(|init| self.check_initializer(&global.ty, global.name_span, init))
+            .transpose()?;
+        let global_symbol = self.resolve_global(&global.name, global.name_span)?;
+        Ok(TypedGlobalDecl {
+            id: global_symbol.id,
+            ty: global_symbol.ty,
+            name: global.name.clone(),
+            name_span: global.name_span,
+            init: typed_init,
+        })
+    }
+
     fn check_main_function(&self, span: Span) -> Result<(), SemanticError> {
         if !self.functions.contains_key("main") {
             return Err(SemanticError {
@@ -1157,6 +1255,9 @@ pub fn check(program: &Program) -> Result<TypedProgram, SemanticError> {
                     true,
                 )?;
             }
+            ExternalDecl::Global(global) => {
+                checker.declare_global(&global.name, global.name_span, &global.ty)?;
+            }
             ExternalDecl::Typedef(_) => (),
         }
     }
@@ -1165,10 +1266,18 @@ pub fn check(program: &Program) -> Result<TypedProgram, SemanticError> {
 
     let mut declarations = vec![];
     for decl in &program.declarations {
-        if let ExternalDecl::FunctionDef(function) = decl {
-            declarations.push(TypedExternalDecl::Function(
-                checker.check_function_def(function)?,
-            ));
+        match decl {
+            ExternalDecl::FunctionDef(function) => {
+                declarations.push(TypedExternalDecl::Function(
+                    checker.check_function_def(function)?,
+                ));
+            }
+            ExternalDecl::Global(global) => {
+                declarations.push(TypedExternalDecl::Global(
+                    checker.check_global_decl(global)?,
+                ));
+            }
+            _ => (),
         }
     }
 

@@ -73,7 +73,9 @@ pub fn functions(program: &Program) -> Vec<&FunctionDef> {
         .iter()
         .filter_map(|decl| match decl {
             ExternalDecl::FunctionDef(function) => Some(function),
-            ExternalDecl::Typedef(_) | ExternalDecl::FunctionDecl(_) => None,
+            ExternalDecl::Typedef(_) | ExternalDecl::FunctionDecl(_) | ExternalDecl::Global(_) => {
+                None
+            }
         })
         .collect()
 }
@@ -95,7 +97,7 @@ pub fn typed_functions(program: &TypedProgram) -> Vec<&TypedFunction> {
         .iter()
         .filter_map(|decl| match decl {
             TypedExternalDecl::Function(function) => Some(function),
-            TypedExternalDecl::Typedef => None,
+            TypedExternalDecl::Typedef | TypedExternalDecl::Global(_) => None,
         })
         .collect()
 }

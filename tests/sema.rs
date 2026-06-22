@@ -1,15 +1,17 @@
 mod common;
 
 use common::{
-    first_typed_function, param, param_with_span, program_with_functions, span, span_from,
-    typed_function_at,
+    first_typed_function, local_decl, param, param_with_span, program_with_functions, span,
+    span_from, typed_function_at,
 };
 use rivet::ast::{
-    BinaryOp, Expr, ExternalDecl, FunctionDecl, FunctionDef, Initializer, IntLiteralBase,
-    IntLiteralSuffix, Program, Statement, Type, UnaryOp,
+    BinaryOp, Expr, ExternalDecl, FunctionDecl, FunctionDef, GlobalDecl, Initializer,
+    IntLiteralBase, IntLiteralSuffix, Program, Statement, Type, UnaryOp,
 };
 use rivet::sema::check;
-use rivet::typed_ast::{TypedExprKind, TypedStatement};
+use rivet::typed_ast::{
+    GlobalId, LocalId, ObjectId, TypedExprKind, TypedExternalDecl, TypedInitializer, TypedStatement,
+};
 
 use crate::common::param_decl;
 
@@ -49,6 +51,24 @@ fn function_decl(name: &str, params: &[&str]) -> FunctionDecl {
         name_span: span(),
         name: name.to_string(),
         params: params.iter().map(|name| param_decl(name)).collect(),
+    }
+}
+
+fn global_decl(name: &str, ty: Type, init: Option<Initializer>) -> GlobalDecl {
+    GlobalDecl {
+        ty,
+        name: name.to_string(),
+        name_span: span(),
+        init,
+    }
+}
+
+const fn int_literal(value: u64) -> Expr {
+    Expr::IntLiteral {
+        value,
+        suffix: IntLiteralSuffix::None,
+        base: IntLiteralBase::Decimal,
+        span: span(),
     }
 }
 
@@ -178,6 +198,210 @@ fn rejects_program_without_main_function() {
     let err = check(&program).expect_err("semantic check should fail");
 
     assert_eq!(err.message, "no 'main' function found");
+}
+
+#[test]
+fn accepts_global_declaration_without_initializer() {
+    let program = Program {
+        declarations: vec![
+            ExternalDecl::Global(global_decl("g", Type::Int, None)),
+            ExternalDecl::FunctionDef(function("main", vec![Statement::Return(int_literal(0))])),
+        ],
+        eof_span: span(),
+    };
+
+    let typed_program = check(&program).expect("semantic check should succeed");
+
+    let TypedExternalDecl::Global(global) = &typed_program.declarations[0] else {
+        panic!("expected typed global declaration");
+    };
+    assert_eq!(global.id, GlobalId(0));
+    assert_eq!(global.ty, Type::Int);
+    assert_eq!(global.name, "g");
+    assert_eq!(global.init, None);
+}
+
+#[test]
+fn accepts_global_declaration_with_scalar_initializer() {
+    let program = Program {
+        declarations: vec![
+            ExternalDecl::Global(global_decl(
+                "g",
+                Type::Int,
+                Some(Initializer::Expr(int_literal(3))),
+            )),
+            ExternalDecl::FunctionDef(function("main", vec![Statement::Return(int_literal(0))])),
+        ],
+        eof_span: span(),
+    };
+
+    let typed_program = check(&program).expect("semantic check should succeed");
+
+    let TypedExternalDecl::Global(global) = &typed_program.declarations[0] else {
+        panic!("expected typed global declaration");
+    };
+    assert_eq!(global.id, GlobalId(0));
+    assert_eq!(global.ty, Type::Int);
+    assert_eq!(global.name, "g");
+    let Some(TypedInitializer::Expr(init)) = &global.init else {
+        panic!("expected scalar initializer");
+    };
+    assert!(matches!(
+        init.kind,
+        TypedExprKind::IntLiteral { value: 3, .. }
+    ));
+}
+
+#[test]
+fn accepts_global_array_initializer_list() {
+    let program = Program {
+        declarations: vec![
+            ExternalDecl::Global(global_decl(
+                "values",
+                Type::Array {
+                    element: Box::new(Type::Int),
+                    len: 2,
+                },
+                Some(Initializer::List(vec![int_literal(1), int_literal(2)])),
+            )),
+            ExternalDecl::FunctionDef(function("main", vec![Statement::Return(int_literal(0))])),
+        ],
+        eof_span: span(),
+    };
+
+    let typed_program = check(&program).expect("semantic check should succeed");
+
+    let TypedExternalDecl::Global(global) = &typed_program.declarations[0] else {
+        panic!("expected typed global declaration");
+    };
+    assert_eq!(
+        global.ty,
+        Type::Array {
+            element: Box::new(Type::Int),
+            len: 2,
+        }
+    );
+    let Some(TypedInitializer::List(values)) = &global.init else {
+        panic!("expected array initializer");
+    };
+    assert_eq!(values.len(), 2);
+}
+
+#[test]
+fn resolves_global_variable_expression() {
+    let program = Program {
+        declarations: vec![
+            ExternalDecl::Global(global_decl("g", Type::Int, None)),
+            ExternalDecl::FunctionDef(function(
+                "main",
+                vec![Statement::Return(Expr::Variable {
+                    name: "g".to_string(),
+                    span: span(),
+                })],
+            )),
+        ],
+        eof_span: span(),
+    };
+
+    let typed_program = check(&program).expect("semantic check should succeed");
+    let main = first_typed_function(&typed_program);
+
+    let TypedStatement::Return(expr) = &main.body[0] else {
+        panic!("expected return statement");
+    };
+    let TypedExprKind::Variable { id, name, .. } = &expr.kind else {
+        panic!("expected variable expression");
+    };
+    assert_eq!(*id, ObjectId::Global(GlobalId(0)));
+    assert_eq!(name, "g");
+    assert_eq!(expr.ty, Type::Int);
+}
+
+#[test]
+fn local_variable_shadows_global_variable_expression() {
+    let program = Program {
+        declarations: vec![
+            ExternalDecl::Global(global_decl("x", Type::Int, None)),
+            ExternalDecl::FunctionDef(function(
+                "main",
+                vec![
+                    Statement::Decl(vec![local_decl(Type::Int, "x", None)]),
+                    Statement::Return(Expr::Variable {
+                        name: "x".to_string(),
+                        span: span(),
+                    }),
+                ],
+            )),
+        ],
+        eof_span: span(),
+    };
+
+    let typed_program = check(&program).expect("semantic check should succeed");
+    let main = first_typed_function(&typed_program);
+
+    let TypedStatement::Return(expr) = &main.body[1] else {
+        panic!("expected return statement");
+    };
+    let TypedExprKind::Variable { id, name, .. } = &expr.kind else {
+        panic!("expected variable expression");
+    };
+    assert_eq!(*id, ObjectId::Local(LocalId(0)));
+    assert_eq!(name, "x");
+    assert_eq!(expr.ty, Type::Int);
+}
+
+#[test]
+fn rejects_duplicate_global_declarations() {
+    let program = Program {
+        declarations: vec![
+            ExternalDecl::Global(global_decl("g", Type::Int, None)),
+            ExternalDecl::Global(global_decl("g", Type::Char, None)),
+            ExternalDecl::FunctionDef(function("main", vec![Statement::Return(int_literal(0))])),
+        ],
+        eof_span: span(),
+    };
+
+    let err = check(&program).expect_err("semantic check should fail");
+
+    assert_eq!(err.message, "duplicate global definition 'g'");
+}
+
+#[test]
+fn rejects_function_conflicting_with_global_declaration() {
+    let program = Program {
+        declarations: vec![
+            ExternalDecl::Global(global_decl("helper", Type::Int, None)),
+            ExternalDecl::FunctionDecl(function_decl("helper", &[])),
+            ExternalDecl::FunctionDef(function("main", vec![Statement::Return(int_literal(0))])),
+        ],
+        eof_span: span(),
+    };
+
+    let err = check(&program).expect_err("semantic check should fail");
+
+    assert_eq!(
+        err.message,
+        "function 'helper' conflicts with existing global variable declaration"
+    );
+}
+
+#[test]
+fn rejects_global_conflicting_with_function_declaration() {
+    let program = Program {
+        declarations: vec![
+            ExternalDecl::FunctionDecl(function_decl("helper", &[])),
+            ExternalDecl::Global(global_decl("helper", Type::Int, None)),
+            ExternalDecl::FunctionDef(function("main", vec![Statement::Return(int_literal(0))])),
+        ],
+        eof_span: span(),
+    };
+
+    let err = check(&program).expect_err("semantic check should fail");
+
+    assert_eq!(
+        err.message,
+        "global variable 'helper' conflicts with existing function declaration"
+    );
 }
 
 #[test]
@@ -534,7 +758,7 @@ fn rejects_expression_statement_with_undeclared_variable() {
 
     let err = check(&program).expect_err("semantic check should fail");
 
-    assert_eq!(err.message, "undeclared local variable 'x'");
+    assert_eq!(err.message, "undeclared variable 'x'");
 }
 
 #[test]
@@ -1880,7 +2104,7 @@ fn rejects_assignment_expression_to_undeclared_local() {
 
     let err = check(&program).expect_err("semantic check should fail");
 
-    assert_eq!(err.message, "undeclared local variable 'x'");
+    assert_eq!(err.message, "undeclared variable 'x'");
 }
 
 #[test]
@@ -2491,7 +2715,7 @@ fn rejects_assignment_to_undeclared_local() {
 
     let err = check(&program).expect_err("semantic check should fail");
 
-    assert_eq!(err.message, "undeclared local variable 'x'");
+    assert_eq!(err.message, "undeclared variable 'x'");
 }
 
 #[test]
@@ -2503,7 +2727,7 @@ fn rejects_returning_undeclared_local() {
 
     let err = check(&program).expect_err("semantic check should fail");
 
-    assert_eq!(err.message, "undeclared local variable 'x'");
+    assert_eq!(err.message, "undeclared variable 'x'");
 }
 
 #[test]
@@ -2537,7 +2761,7 @@ fn rejects_initializer_using_later_local() {
 
     let err = check(&program).expect_err("semantic check should fail");
 
-    assert_eq!(err.message, "undeclared local variable 'x'");
+    assert_eq!(err.message, "undeclared variable 'x'");
 }
 
 #[test]
@@ -2573,7 +2797,7 @@ fn rejects_multiple_local_declarator_initializer_using_later_name() {
 
     let err = check(&program).expect_err("semantic check should fail");
 
-    assert_eq!(err.message, "undeclared local variable 'b'");
+    assert_eq!(err.message, "undeclared variable 'b'");
 }
 
 #[test]
@@ -2606,7 +2830,7 @@ fn rejects_undeclared_local_inside_nested_expression() {
 
     let err = check(&program).expect_err("semantic check should fail");
 
-    assert_eq!(err.message, "undeclared local variable 'y'");
+    assert_eq!(err.message, "undeclared variable 'y'");
 }
 
 #[test]
@@ -2991,7 +3215,7 @@ fn rejects_use_of_local_after_block_scope_ends() {
 
     let err = check(&program).expect_err("semantic check should fail");
 
-    assert_eq!(err.message, "undeclared local variable 'x'");
+    assert_eq!(err.message, "undeclared variable 'x'");
 }
 
 #[test]
@@ -3314,7 +3538,7 @@ fn rejects_while_condition_using_undeclared_local() {
 
     let err = check(&program).expect_err("semantic check should fail");
 
-    assert_eq!(err.message, "undeclared local variable 'x'");
+    assert_eq!(err.message, "undeclared variable 'x'");
 }
 
 #[test]
@@ -3337,7 +3561,7 @@ fn rejects_do_while_condition_using_undeclared_local() {
 
     let err = check(&program).expect_err("semantic check should fail");
 
-    assert_eq!(err.message, "undeclared local variable 'x'");
+    assert_eq!(err.message, "undeclared variable 'x'");
 }
 
 #[test]
