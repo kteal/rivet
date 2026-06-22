@@ -2,8 +2,8 @@ mod common;
 
 use common::{first_function, functions};
 use rivet::ast::{
-    BinaryOp, Expr, ExternalDecl, Initializer, IntLiteralBase, IntLiteralSuffix, LocalDecl,
-    Statement, Type, UnaryOp,
+    BinaryOp, Expr, ExternalDecl, FunctionType, Initializer, IntLiteralBase, IntLiteralSuffix,
+    LocalDecl, Statement, Type, UnaryOp,
 };
 use rivet::lexer::lex;
 use rivet::parser::parse;
@@ -950,6 +950,21 @@ fn parenthesized_pointer_to_array_differs_from_array_of_pointers() {
 }
 
 #[test]
+fn parses_parenthesized_function_pointer_declaration() {
+    let program = parse_source("int main() { int (*fp)(int, char *); return 0; }");
+    let decl = single_decl(&first_function(&program).body[0]);
+
+    assert_eq!(decl.name, "fp");
+    assert_eq!(
+        decl.ty,
+        Type::Pointer(Box::new(Type::Function(Box::new(FunctionType {
+            return_type: Box::new(Type::Int),
+            params: vec![Type::Int, Type::Pointer(Box::new(Type::Char))],
+        }))))
+    );
+}
+
+#[test]
 fn parses_array_initializer_list() {
     let program = parse_source("int main() { char buf[3] = {1, 2, 3}; return 0; }");
 
@@ -1138,6 +1153,28 @@ fn parses_multiple_typedef_declarators() {
     };
     assert_eq!(second.name, "uLongp");
     assert_eq!(second.ty, Type::Pointer(Box::new(Type::UnsignedLong)));
+
+    let function = first_function(&program);
+    assert_eq!(function.name, "main");
+}
+
+#[test]
+fn parses_function_pointer_typedef() {
+    let program = parse_source("typedef int (*handler)(int, char *);\nint main() { return 0; }");
+
+    assert_eq!(program.declarations.len(), 2);
+
+    let ExternalDecl::Typedef(typedef) = &program.declarations[0] else {
+        panic!("expected typedef declaration");
+    };
+    assert_eq!(typedef.name, "handler");
+    assert_eq!(
+        typedef.ty,
+        Type::Pointer(Box::new(Type::Function(Box::new(FunctionType {
+            return_type: Box::new(Type::Int),
+            params: vec![Type::Int, Type::Pointer(Box::new(Type::Char))],
+        }))))
+    );
 
     let function = first_function(&program);
     assert_eq!(function.name, "main");

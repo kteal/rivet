@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use crate::ast::{
-    BinaryOp, Expr, ExternalDecl, FunctionDecl, FunctionDef, GlobalDecl, Initializer,
+    BinaryOp, Expr, ExternalDecl, FunctionDecl, FunctionDef, FunctionType, GlobalDecl, Initializer,
     IntLiteralBase, IntLiteralSuffix, LocalDecl, Param, ParamDecl, Program, Statement, Type,
     Typedef, UnaryOp,
 };
@@ -788,8 +788,17 @@ impl Parser {
                     }),
                 },
             },
-            DeclaratorKind::Function { inner, params } => {
-                match Self::lower_declarator(base_type, inner)? {
+            DeclaratorKind::Function { inner, params } => match inner.as_ref() {
+                Declarator {
+                    kind: DeclaratorKind::Grouped(grouped_inner),
+                } => {
+                    let function_ty = Type::Function(Box::new(FunctionType {
+                        return_type: Box::new(base_type.clone()),
+                        params: params.iter().map(|param| param.ty.clone()).collect(),
+                    }));
+                    Self::lower_declarator(&function_ty, grouped_inner)
+                }
+                _ => match Self::lower_declarator(base_type, inner)? {
                     LoweredDeclarator::Object {
                         ty,
                         name,
@@ -804,8 +813,8 @@ impl Parser {
                         message: "function returning function is unsupported".to_string(),
                         span: name_span,
                     }),
-                }
-            }
+                },
+            },
             DeclaratorKind::Grouped(inner) => Self::lower_declarator(base_type, inner),
         }
     }

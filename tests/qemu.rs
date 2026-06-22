@@ -1191,6 +1191,12 @@ fn qemu_postfix_pointer_dereference_programs_return_expected_values() {
     );
 
     run_qemu_case(
+        "function-pointer-local-declaration",
+        "int main() {\n    int (*fp)(int, char *);\n    return 0;\n}\n",
+        0,
+    );
+
+    run_qemu_case(
         "postfix-pointer-dereference",
         "int main() {\n    char buf[3] = {'a', 'b', 'c'};\n    char *p = buf;\n    return *p++;\n}\n",
         97,

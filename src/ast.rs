@@ -22,6 +22,12 @@ pub struct Typedef {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FunctionType {
+    pub return_type: Box<Type>,
+    pub params: Vec<Type>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FunctionDef {
     pub return_type: Type,
     pub name: String,
@@ -262,6 +268,7 @@ pub enum Type {
     UnsignedLong,
     Pointer(Box<Self>),
     Array { element: Box<Self>, len: usize },
+    Function(Box<FunctionType>),
 }
 
 impl Type {
@@ -285,15 +292,26 @@ impl Type {
     }
 
     #[must_use]
+    /// Returns the size of values of this type in bytes.
+    ///
+    /// # Panics
+    ///
+    /// Panics for function types because functions are not object values.
     pub fn size(&self) -> usize {
         match self {
             Self::Char | Self::SignedChar | Self::UnsignedChar => 1,
             Self::Int | Self::UnsignedInt | Self::Pointer(_) | Self::Long | Self::UnsignedLong => 4,
             Self::Array { element, len } => element.size() * len,
+            Self::Function(_) => panic!("cannot calculate size of function type"),
         }
     }
 
     #[must_use]
+    /// Returns the required alignment of objects of this type in bytes.
+    ///
+    /// # Panics
+    ///
+    /// Panics for function types because functions are not object values.
     pub fn align(&self) -> usize {
         match self {
             Self::Char
@@ -305,6 +323,7 @@ impl Type {
             | Self::Long
             | Self::UnsignedLong => self.size(),
             Self::Array { element, .. } => element.align(),
+            Self::Function(_) => panic!("cannot calculate alignment of function type"),
         }
     }
 
@@ -320,7 +339,7 @@ impl Type {
             Self::UnsignedInt => Some(Self::UnsignedInt),
             Self::Long => Some(Self::Long),
             Self::UnsignedLong => Some(Self::UnsignedLong),
-            Self::Pointer(_) | Self::Array { .. } => None,
+            Self::Pointer(_) | Self::Array { .. } | Self::Function(_) => None,
         }
     }
 

@@ -18,6 +18,7 @@ use rivet::typed_ast::{
 };
 
 use crate::common::param_decl;
+use rivet::ast::FunctionType;
 
 fn main_program(body: Vec<Statement>) -> Program {
     program_with_functions(vec![FunctionDef {
@@ -1821,6 +1822,42 @@ fn typed_address_of_array_has_pointer_to_array_type() {
 #[test]
 fn accepts_parenthesized_pointer_to_array_initialized_from_address_of_array() {
     check_source("int main() { int arr[3]; int (*p)[3] = &arr; return 0; }");
+}
+
+#[test]
+fn accepts_function_pointer_local_declaration() {
+    check_source("int main() { int (*fp)(int, char *); return 0; }");
+}
+
+#[test]
+fn accepts_function_pointer_typedef_local_declaration() {
+    check_source("typedef int (*handler)(int, char *); int main() { handler h; return 0; }");
+}
+
+#[test]
+fn rejects_raw_function_type_local_declaration() {
+    let function_ty = Type::Function(Box::new(FunctionType {
+        return_type: Box::new(Type::Int),
+        params: vec![Type::Int],
+    }));
+    let program = main_program(vec![
+        Statement::Decl(vec![rivet::ast::LocalDecl {
+            ty: function_ty,
+            name_span: span(),
+            name: "f".to_string(),
+            init: None,
+        }]),
+        Statement::Return(Expr::IntLiteral {
+            value: 0,
+            suffix: IntLiteralSuffix::None,
+            base: IntLiteralBase::Decimal,
+            span: span(),
+        }),
+    ]);
+
+    let err = check(&program).expect_err("semantic check should fail");
+
+    assert_eq!(err.message, "function type is not an object type");
 }
 
 #[test]

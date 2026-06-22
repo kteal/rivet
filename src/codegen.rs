@@ -290,7 +290,8 @@ impl Codegen {
             Type::Char | Type::UnsignedChar | Type::SignedChar => {
                 self.emit_line(format_args!("andi a0, a0, 255"));
             }
-            Type::Array { .. } => unreachable!("array values are not supported in codegen yet"),
+            Type::Array { .. } => unreachable!("array rvalues should have decayed before codegen"),
+            Type::Function(_) => unreachable!("function values should have decayed before codegen"),
         }
     }
 
@@ -307,7 +308,8 @@ impl Codegen {
                 self.emit_line(format_args!("andi a{reg}, a{reg}, 255"));
                 self.emit_line(format_args!("sb a{reg}, {}(s0)", local.offset));
             }
-            Type::Array { .. } => unreachable!("array values are not supported in codegen yet"),
+            Type::Array { .. } => unreachable!("array rvalues should have decayed before codegen"),
+            Type::Function(_) => unreachable!("function values should have decayed before codegen"),
         }
     }
 
@@ -364,7 +366,8 @@ impl Codegen {
             Type::Int | Type::UnsignedInt | Type::Pointer(_) | Type::Long | Type::UnsignedLong => {
                 self.emit_line(format_args!("lw a0, 0(a0)"));
             }
-            Type::Array { .. } => unreachable!("array values are not supported in codegen yet"),
+            Type::Array { .. } => unreachable!("array rvalues should have decayed before codegen"),
+            Type::Function(_) => unreachable!("function values should have decayed before codegen"),
         }
     }
 
@@ -381,7 +384,8 @@ impl Codegen {
             Type::Int | Type::UnsignedInt | Type::Pointer(_) | Type::Long | Type::UnsignedLong => {
                 self.emit_line(format_args!("sw a0, {offset}({base})"));
             }
-            Type::Array { .. } => unreachable!("array values are not supported in codegen yet"),
+            Type::Array { .. } => unreachable!("array rvalues should have decayed before codegen"),
+            Type::Function(_) => unreachable!("function values should have decayed before codegen"),
         }
     }
 
@@ -435,7 +439,12 @@ impl Codegen {
                 Type::Pointer(_) => {
                     unreachable!("pointer arithmetic should be handled before emit_binary_op")
                 }
-                Type::Array { .. } => unreachable!("array values are not supported in codegen yet"),
+                Type::Array { .. } => {
+                    unreachable!("array rvalues should have decayed before codegen")
+                }
+                Type::Function(_) => {
+                    unreachable!("function values should have decayed before codegen")
+                }
             },
             BinaryOp::Remainder => match ty {
                 Type::Int | Type::Char | Type::Long | Type::SignedChar => {
@@ -447,7 +456,12 @@ impl Codegen {
                 Type::Pointer(_) => {
                     unreachable!("pointer arithmetic should be handled before emit_binary_op")
                 }
-                Type::Array { .. } => unreachable!("array values are not supported in codegen yet"),
+                Type::Array { .. } => {
+                    unreachable!("array rvalues should have decayed before codegen")
+                }
+                Type::Function(_) => {
+                    unreachable!("function values should have decayed before codegen")
+                }
             },
             BinaryOp::Equal => {
                 self.emit_line(format_args!("xor a0, t0, a0"));
@@ -467,7 +481,12 @@ impl Codegen {
                 Type::Pointer(_) => {
                     unreachable!("pointer arithmetic should be handled before emit_binary_op")
                 }
-                Type::Array { .. } => unreachable!("array values are not supported in codegen yet"),
+                Type::Array { .. } => {
+                    unreachable!("array rvalues should have decayed before codegen")
+                }
+                Type::Function(_) => {
+                    unreachable!("function values should have decayed before codegen")
+                }
             },
             BinaryOp::LessEqual => match ty {
                 Type::Int | Type::Char | Type::Long | Type::SignedChar => {
@@ -481,7 +500,12 @@ impl Codegen {
                 Type::Pointer(_) => {
                     unreachable!("pointer arithmetic should be handled before emit_binary_op")
                 }
-                Type::Array { .. } => unreachable!("array values are not supported in codegen yet"),
+                Type::Array { .. } => {
+                    unreachable!("array rvalues should have decayed before codegen")
+                }
+                Type::Function(_) => {
+                    unreachable!("function values should have decayed before codegen")
+                }
             },
             BinaryOp::Greater => match ty {
                 Type::Int | Type::Char | Type::Long | Type::SignedChar => {
@@ -493,7 +517,12 @@ impl Codegen {
                 Type::Pointer(_) => {
                     unreachable!("pointer arithmetic should be handled before emit_binary_op")
                 }
-                Type::Array { .. } => unreachable!("array values are not supported in codegen yet"),
+                Type::Array { .. } => {
+                    unreachable!("array rvalues should have decayed before codegen")
+                }
+                Type::Function(_) => {
+                    unreachable!("function values should have decayed before codegen")
+                }
             },
             BinaryOp::GreaterEqual => match ty {
                 Type::Int | Type::Char | Type::Long | Type::SignedChar => {
@@ -507,7 +536,12 @@ impl Codegen {
                 Type::Pointer(_) => {
                     unreachable!("pointer arithmetic should be handled before emit_binary_op")
                 }
-                Type::Array { .. } => unreachable!("array values are not supported in codegen yet"),
+                Type::Array { .. } => {
+                    unreachable!("array rvalues should have decayed before codegen")
+                }
+                Type::Function(_) => {
+                    unreachable!("function values should have decayed before codegen")
+                }
             },
             BinaryOp::BitAnd => self.emit_line(format_args!("and a0, a0, t0")),
             BinaryOp::BitXor => self.emit_line(format_args!("xor a0, a0, t0")),
@@ -523,7 +557,12 @@ impl Codegen {
                 Type::Pointer(_) => {
                     unreachable!("pointer arithmetic should be handled before emit_binary_op")
                 }
-                Type::Array { .. } => unreachable!("array values are not supported in codegen yet"),
+                Type::Array { .. } => {
+                    unreachable!("array rvalues should have decayed before codegen")
+                }
+                Type::Function(_) => {
+                    unreachable!("function values should have decayed before codegen")
+                }
             },
             BinaryOp::LogicalAnd | BinaryOp::LogicalOr => unreachable!(),
         }

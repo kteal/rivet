@@ -137,6 +137,12 @@ impl Checker {
         name: &str,
         span: Span,
     ) -> Result<LocalSymbol, SemanticError> {
+        if matches!(ty, Type::Function(_)) {
+            return Err(SemanticError {
+                message: "function type is not an object type".to_string(),
+                span,
+            });
+        }
         if self.current_scope().contains_key(name) {
             return Err(SemanticError {
                 message: format!("duplicate local variable '{name}'"),
@@ -251,6 +257,12 @@ impl Checker {
     }
 
     fn declare_global(&mut self, name: &str, span: Span, ty: &Type) -> Result<(), SemanticError> {
+        if matches!(ty, Type::Function(_)) {
+            return Err(SemanticError {
+                message: "function type is not an object type".to_string(),
+                span,
+            });
+        }
         if self.globals.contains_key(name) {
             return Err(SemanticError {
                 message: format!("duplicate global definition '{name}'"),
@@ -1001,6 +1013,10 @@ impl Checker {
                 Initializer::List(_),
             ) => Err(SemanticError {
                 message: format!("cannot initialize scalar type '{target_ty:?}' with list"),
+                span: name_span,
+            }),
+            (Type::Function(_), _) => Err(SemanticError {
+                message: "function type is not an object type".to_string(),
                 span: name_span,
             }),
         }
