@@ -226,6 +226,7 @@ Expressions and operators:
 - [x] address-of: `&`
 - [x] array-to-pointer decay for local and global array expressions
 - [x] function-to-pointer decay for function designators
+- [x] explicit typed AST conversion nodes for lvalue-to-rvalue, array-to-pointer, and function-to-pointer conversions
 
 Types and semantic analysis:
 
