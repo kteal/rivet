@@ -1,7 +1,8 @@
 #![allow(dead_code)]
 
 use rivet::ast::{
-    ExternalDecl, FunctionDef, Initializer, LocalDecl, Param, ParamDecl, Program, Statement, Type,
+    Expr, ExternalDecl, FunctionDef, Initializer, LocalDecl, Param, ParamDecl, Program, Statement,
+    Type,
 };
 use rivet::source::{DUMMY_FILE_ID, Span};
 
@@ -55,6 +56,21 @@ pub fn local_decl(ty: Type, name: &str, init: Option<Initializer>) -> LocalDecl 
 
 pub fn decl(ty: Type, name: &str, init: Option<Initializer>) -> Statement {
     Statement::Decl(vec![local_decl(ty, name, init)])
+}
+
+pub fn variable_expr(name: &str) -> Expr {
+    Expr::Variable {
+        name: name.to_string(),
+        span: span(),
+    }
+}
+
+pub fn call_expr(name: &str, args: Vec<Expr>) -> Expr {
+    Expr::Call {
+        callee: Box::new(variable_expr(name)),
+        args,
+        span: span(),
+    }
 }
 
 pub fn program_with_functions(functions: Vec<FunctionDef>) -> Program {

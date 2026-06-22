@@ -1041,6 +1041,30 @@ fn qemu_function_calls_return_expected_values() {
 }
 
 #[test]
+fn qemu_function_pointer_programs_return_expected_values() {
+    run_qemu_case(
+        "function-pointer-indirect-call",
+        "int id(int x) {\n    return x + 1;\n}\n\nint main() {\n    int (*fp)(int) = id;\n    return fp(3);\n}\n",
+        4,
+    );
+    run_qemu_case(
+        "explicitly-dereferenced-function-pointer-indirect-call",
+        "int id(int x) {\n    return x + 1;\n}\n\nint main() {\n    int (*fp)(int) = id;\n    return (*fp)(3);\n}\n",
+        4,
+    );
+    run_qemu_case(
+        "function-pointer-call-with-two-arguments",
+        "int add(int x, int y) {\n    return x + y;\n}\n\nint main() {\n    int (*fp)(int, int) = add;\n    return fp(2, 5);\n}\n",
+        7,
+    );
+    run_qemu_case(
+        "typedef-function-pointer-indirect-call",
+        "typedef int (*handler)(int);\n\nint twice(int x) {\n    return x * 2;\n}\n\nint main() {\n    handler fp = twice;\n    return fp(6);\n}\n",
+        12,
+    );
+}
+
+#[test]
 fn qemu_expression_and_empty_statements_return_expected_values() {
     run_qemu_case(
         "empty-statement",
@@ -1193,6 +1217,12 @@ fn qemu_postfix_pointer_dereference_programs_return_expected_values() {
     run_qemu_case(
         "function-pointer-local-declaration",
         "int main() {\n    int (*fp)(int, char *);\n    return 0;\n}\n",
+        0,
+    );
+
+    run_qemu_case(
+        "function-pointer-initialized-from-function-designator",
+        "int id(int x) {\n    return x;\n}\n\nint main() {\n    int (*fp)(int) = id;\n    return 0;\n}\n",
         0,
     );
 

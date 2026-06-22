@@ -946,27 +946,10 @@ impl Parser {
                 base: IntLiteralBase::Decimal,
                 span: token.span,
             }),
-            TokenKind::Ident(name) => {
-                if self.peek_kind() == &TokenKind::LParen {
-                    self.expect(&TokenKind::LParen)?;
-                    let args = self.parse_comma_separated_until_terminator(
-                        Self::parse_call_arg,
-                        &TokenKind::RParen,
-                        false,
-                    )?;
-                    self.expect(&TokenKind::RParen)?;
-                    Ok(Expr::Call {
-                        name,
-                        name_span: token.span,
-                        args,
-                    })
-                } else {
-                    Ok(Expr::Variable {
-                        name,
-                        span: token.span,
-                    })
-                }
-            }
+            TokenKind::Ident(name) => Ok(Expr::Variable {
+                name,
+                span: token.span,
+            }),
             TokenKind::LParen => {
                 let expr = self.parse_expr()?;
                 self.expect(&TokenKind::RParen)?;
@@ -984,6 +967,20 @@ impl Parser {
 
         loop {
             match self.peek_kind() {
+                TokenKind::LParen => {
+                    self.expect(&TokenKind::LParen)?;
+                    let args = self.parse_comma_separated_until_terminator(
+                        Self::parse_call_arg,
+                        &TokenKind::RParen,
+                        false,
+                    )?;
+                    self.expect(&TokenKind::RParen)?;
+                    expr = Expr::Call {
+                        span: expr.diagnostic_span(),
+                        callee: Box::new(expr),
+                        args,
+                    }
+                }
                 TokenKind::LBracket => {
                     let token = self.expect(&TokenKind::LBracket)?;
                     let index = self.parse_expr()?;

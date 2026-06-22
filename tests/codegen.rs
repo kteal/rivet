@@ -1,16 +1,27 @@
 mod common;
 
-use common::{param, param_with_span, program_with_functions, span};
+use common::{call_expr, param, param_with_span, program_with_functions, span};
 use rivet::ast::{
     BinaryOp, Expr, ExternalDecl, FunctionDef, GlobalDecl, Initializer, IntLiteralBase,
     IntLiteralSuffix, Program, Statement, Type, UnaryOp,
 };
 use rivet::codegen::{CodegenTarget, generate};
+use rivet::lexer::lex;
+use rivet::parser::parse;
+use rivet::preprocess::preprocess;
 use rivet::sema::check;
+use rivet::source::DUMMY_FILE_ID;
 
 fn generate_checked(program: &Program) -> String {
     let typed_program = check(program).expect("semantic check should succeed");
     generate(&typed_program, CodegenTarget::Rv32)
+}
+
+fn generate_source(source: &str) -> String {
+    let tokens = lex(source, DUMMY_FILE_ID).expect("lexing should succeed");
+    let tokens = preprocess(tokens).expect("preprocessing should succeed");
+    let program = parse(tokens).expect("parsing should succeed");
+    generate_checked(&program)
 }
 
 fn generate_raw_with_codegen(program: &Program) -> String {
@@ -273,11 +284,7 @@ fn generates_zero_argument_function_call() {
             name_span: span(),
             name: "main".to_string(),
             params: vec![],
-            body: vec![Statement::Return(Expr::Call {
-                name_span: span(),
-                name: "helper".to_string(),
-                args: vec![],
-            })],
+            body: vec![Statement::Return(call_expr("helper", vec![]))],
         },
     ]);
 
@@ -310,11 +317,7 @@ fn uses_call_result_as_expression_operand() {
             body: vec![Statement::Return(Expr::Binary {
                 op: BinaryOp::Add,
                 op_span: span(),
-                left: Box::new(Expr::Call {
-                    name_span: span(),
-                    name: "helper".to_string(),
-                    args: vec![],
-                }),
+                left: Box::new(call_expr("helper", vec![])),
                 right: Box::new(Expr::IntLiteral {
                     value: 2,
                     suffix: IntLiteralSuffix::None,
@@ -375,10 +378,9 @@ fn generates_function_call_with_arguments() {
             name_span: span(),
             name: "main".to_string(),
             params: vec![],
-            body: vec![Statement::Return(Expr::Call {
-                name_span: span(),
-                name: "add".to_string(),
-                args: vec![
+            body: vec![Statement::Return(call_expr(
+                "add",
+                vec![
                     Expr::IntLiteral {
                         value: 1,
                         suffix: IntLiteralSuffix::None,
@@ -392,7 +394,7 @@ fn generates_function_call_with_arguments() {
                         span: span(),
                     },
                 ],
-            })],
+            ))],
         },
     ]);
 
@@ -412,10 +414,9 @@ fn generates_function_call_with_expression_arguments() {
             name_span: span(),
             name: "main".to_string(),
             params: vec![],
-            body: vec![Statement::Return(Expr::Call {
-                name_span: span(),
-                name: "add".to_string(),
-                args: vec![
+            body: vec![Statement::Return(call_expr(
+                "add",
+                vec![
                     Expr::Binary {
                         op: BinaryOp::Add,
                         op_span: span(),
@@ -449,7 +450,7 @@ fn generates_function_call_with_expression_arguments() {
                         }),
                     },
                 ],
-            })],
+            ))],
         },
     ]);
 
@@ -457,6 +458,36 @@ fn generates_function_call_with_expression_arguments() {
 
     assert!(asm.contains("    lw a1, 0(sp)\n    addi sp, sp, 4\n    lw a0, 0(sp)\n"));
     assert!(asm.contains("    call add\n"));
+}
+
+#[test]
+fn generates_direct_call_for_function_designator_call() {
+    let asm = generate_source("int id(int x) { return x; } int main() { return id(3); }");
+
+    assert!(asm.contains("    call id\n"));
+    assert!(!asm.contains("    jalr ra, 0(t0)\n"));
+}
+
+#[test]
+fn generates_indirect_call_for_function_pointer_call() {
+    let asm = generate_source(
+        "int id(int x) { return x; } int main() { int (*fp)(int) = id; return fp(3); }",
+    );
+
+    assert!(asm.contains("    la a0, id\n"));
+    assert!(asm.contains("    jalr ra, 0(t0)\n"));
+    assert!(!asm.contains("    call fp\n"));
+}
+
+#[test]
+fn generates_indirect_call_for_explicitly_dereferenced_function_pointer_call() {
+    let asm = generate_source(
+        "int id(int x) { return x; } int main() { int (*fp)(int) = id; return (*fp)(3); }",
+    );
+
+    assert!(asm.contains("    la a0, id\n"));
+    assert!(asm.contains("    jalr ra, 0(t0)\n"));
+    assert!(!asm.contains("    call fp\n"));
 }
 
 #[test]
@@ -506,11 +537,7 @@ fn emits_expression_statement_and_discards_result() {
             name: "main".to_string(),
             params: vec![],
             body: vec![
-                Statement::ExprStatement(Expr::Call {
-                    name_span: span(),
-                    name: "helper".to_string(),
-                    args: vec![],
-                }),
+                Statement::ExprStatement(call_expr("helper", vec![])),
                 Statement::Return(Expr::IntLiteral {
                     value: 7,
                     suffix: IntLiteralSuffix::None,
@@ -565,11 +592,7 @@ fn generates_logical_and_with_short_circuit_branch() {
                     base: IntLiteralBase::Decimal,
                     span: span(),
                 }),
-                right: Box::new(Expr::Call {
-                    name_span: span(),
-                    name: "right".to_string(),
-                    args: vec![],
-                }),
+                right: Box::new(call_expr("right", vec![])),
             })],
         },
     ]);
@@ -604,11 +627,7 @@ fn generates_logical_or_with_short_circuit_branch() {
                     base: IntLiteralBase::Decimal,
                     span: span(),
                 }),
-                right: Box::new(Expr::Call {
-                    name_span: span(),
-                    name: "right".to_string(),
-                    args: vec![],
-                }),
+                right: Box::new(call_expr("right", vec![])),
             })],
         },
     ]);
@@ -1339,16 +1358,15 @@ fn narrows_char_parameter_on_function_entry() {
             name_span: span(),
             name: "main".to_string(),
             params: vec![],
-            body: vec![Statement::Return(Expr::Call {
-                name_span: span(),
-                name: "id".to_string(),
-                args: vec![Expr::IntLiteral {
+            body: vec![Statement::Return(call_expr(
+                "id",
+                vec![Expr::IntLiteral {
                     value: 300,
                     suffix: IntLiteralSuffix::None,
                     base: IntLiteralBase::Decimal,
                     span: span(),
                 }],
-            })],
+            ))],
         },
     ]);
 

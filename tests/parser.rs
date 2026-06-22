@@ -357,9 +357,47 @@ fn parses_function_calls() {
 
     assert!(matches!(
         left.as_ref(),
-        Expr::Call { name, args, .. } if name == "helper" && args.is_empty()
+        Expr::Call { callee, args, .. }
+            if matches!(callee.as_ref(), Expr::Variable { name, .. } if name == "helper")
+                && args.is_empty()
     ));
     assert!(matches!(right.as_ref(), Expr::IntLiteral { value: 2, .. }));
+}
+
+#[test]
+fn parses_function_pointer_calls_as_postfix_calls() {
+    let expr = only_return_expr("int main() { return fp(3); }");
+
+    let Expr::Call { callee, args, .. } = expr else {
+        panic!("expected call expression");
+    };
+
+    assert!(matches!(
+        callee.as_ref(),
+        Expr::Variable { name, .. } if name == "fp"
+    ));
+    assert_eq!(args.len(), 1);
+    assert!(matches!(args[0], Expr::IntLiteral { value: 3, .. }));
+}
+
+#[test]
+fn parses_explicitly_dereferenced_function_pointer_calls() {
+    let expr = only_return_expr("int main() { return (*fp)(3); }");
+
+    let Expr::Call { callee, args, .. } = expr else {
+        panic!("expected call expression");
+    };
+
+    assert!(matches!(
+        callee.as_ref(),
+        Expr::Unary {
+            op: UnaryOp::Dereference,
+            expr,
+            ..
+        } if matches!(expr.as_ref(), Expr::Variable { name, .. } if name == "fp")
+    ));
+    assert_eq!(args.len(), 1);
+    assert!(matches!(args[0], Expr::IntLiteral { value: 3, .. }));
 }
 
 #[test]
@@ -369,8 +407,9 @@ fn parses_expression_and_empty_statements() {
     assert!(matches!(body[0], Statement::Empty));
     assert!(matches!(
         &body[1],
-        Statement::ExprStatement(Expr::Call { name, args, .. })
-            if name == "helper" && args.is_empty()
+        Statement::ExprStatement(Expr::Call { callee, args, .. })
+            if matches!(callee.as_ref(), Expr::Variable { name, .. } if name == "helper")
+                && args.is_empty()
     ));
     assert!(matches!(
         body[2],
@@ -411,11 +450,14 @@ fn parses_function_parameters_and_argument_lists() {
     assert_eq!(function.params[1].ty, Type::Char);
     assert_eq!(function.params[1].name, "y");
 
-    let Statement::Return(Expr::Call { name, args, .. }) = &function.body[0] else {
+    let Statement::Return(Expr::Call { callee, args, .. }) = &function.body[0] else {
         panic!("expected call return");
     };
 
-    assert_eq!(name, "add");
+    assert!(matches!(
+        callee.as_ref(),
+        Expr::Variable { name, .. } if name == "add"
+    ));
     assert_eq!(args.len(), 2);
 }
 

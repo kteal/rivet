@@ -100,7 +100,8 @@ impl TypedExpr {
             TypedExprKind::IntLiteral { span, .. }
             | TypedExprKind::Variable { span, .. }
             | TypedExprKind::Index { span, .. }
-            | TypedExprKind::Cast { span, .. } => *span,
+            | TypedExprKind::Cast { span, .. }
+            | TypedExprKind::Call { span, .. } => *span,
             TypedExprKind::Unary { op_span, .. }
             | TypedExprKind::Binary { op_span, .. }
             | TypedExprKind::Assign { op_span, .. }
@@ -109,7 +110,7 @@ impl TypedExpr {
             | TypedExprKind::PrefixDec { op_span, .. }
             | TypedExprKind::PostfixInc { op_span, .. }
             | TypedExprKind::PostfixDec { op_span, .. } => *op_span,
-            TypedExprKind::Call { name_span, .. } => *name_span,
+            TypedExprKind::FunctionDesignator { name_span, .. } => *name_span,
         }
     }
 
@@ -182,9 +183,9 @@ pub enum TypedExprKind {
         expr: Box<TypedExpr>,
     },
     Call {
-        name: String,
-        name_span: Span,
+        callee: Box<TypedExpr>,
         args: Vec<TypedExpr>,
+        span: Span,
     },
     Assign {
         target: Box<TypedExpr>,
@@ -223,6 +224,10 @@ pub enum TypedExprKind {
         target_ty: Type,
         expr: Box<TypedExpr>,
         span: Span,
+    },
+    FunctionDesignator {
+        name: String,
+        name_span: Span,
     },
 }
 

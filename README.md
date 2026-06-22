@@ -6,7 +6,7 @@
 
 `rivet` is a C compiler written in Rust that targets RV32IM assembly. It is working toward C23 by growing a small, tested C subset.
 
-It currently handles common integer and character types, basic pointers, address-of and dereference, fixed-size local and file-scope arrays, file-scope globals, array indexing, functions, simple function prototypes, block scope, common control flow, and C-like expression precedence. It emits RV32IM assembly and reports lexer, parser, and semantic errors with source-map-backed file, line, and column locations.
+It currently handles common integer and character types, basic pointers, function pointers, address-of and dereference, fixed-size local and file-scope arrays, file-scope globals, array indexing, functions, simple function prototypes, block scope, common control flow, and C-like expression precedence. It emits RV32IM assembly and reports lexer, parser, and semantic errors with source-map-backed file, line, and column locations.
 
 The current language subset supports programs shaped like:
 
@@ -195,6 +195,7 @@ Program structure and declarations:
 - [x] ignored `const` qualifier parsing
 - [ ] remaining qualifiers: `volatile`, `restrict`, `_Atomic`
 - [x] parenthesized pointer-to-array declarators: `int (*p)[3]`
+- [x] parenthesized function pointer declarators: `int (*fp)(int)`
 - [ ] full C declarator grammar
 
 Expressions and operators:
@@ -224,7 +225,7 @@ Expressions and operators:
 - [ ] `_Alignof` / `alignof`
 - [x] address-of: `&`
 - [x] array-to-pointer decay for local and global array expressions
-- [ ] function-to-pointer decay
+- [x] function-to-pointer decay for function designators
 
 Types and semantic analysis:
 
@@ -268,6 +269,7 @@ Functions:
 - [x] function parameters
 - [x] function calls with up to 8 register arguments
 - [x] register argument passing with `a0`-`a7`
+- [x] function pointer calls, including `fp(args)` and `(*fp)(args)`
 - [ ] stack-passed function arguments beyond 8
 - [ ] full call ABI handling
 
@@ -284,6 +286,7 @@ Objects, aggregate types, and declarators:
 - [x] array indexing
 - [x] address-of arrays in semantic analysis: `&arr` has pointer-to-array type
 - [x] parenthesized pointer-to-array declarators and indexing through them: `(*p)[i]`
+- [x] function pointer declarators, typedefs, initialization from function designators, and indirect calls
 - [ ] full C declarator grammar
 - [ ] structs and unions
 - [ ] member access: `.` and `->`

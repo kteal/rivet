@@ -138,9 +138,9 @@ pub enum Expr {
         expr: Box<Self>,
     },
     Call {
-        name: String,
-        name_span: Span,
+        callee: Box<Self>,
         args: Vec<Self>,
+        span: Span,
     },
     Assign {
         target: Box<Self>,
@@ -188,7 +188,8 @@ impl Expr {
             Self::IntLiteral { span, .. }
             | Self::Variable { span, .. }
             | Self::Index { span, .. }
-            | Self::Cast { span, .. } => *span,
+            | Self::Cast { span, .. }
+            | Self::Call { span, .. } => *span,
             Self::Unary { op_span, .. }
             | Self::Binary { op_span, .. }
             | Self::Assign { op_span, .. }
@@ -197,7 +198,6 @@ impl Expr {
             | Self::PrefixDec { op_span, .. }
             | Self::PostfixInc { op_span, .. }
             | Self::PostfixDec { op_span, .. } => *op_span,
-            Self::Call { name_span, .. } => *name_span,
         }
     }
 }

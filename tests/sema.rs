@@ -1,8 +1,8 @@
 mod common;
 
 use common::{
-    first_typed_function, local_decl, param, param_with_span, program_with_functions, span,
-    span_from, typed_function_at,
+    call_expr, first_typed_function, local_decl, param, param_with_span, program_with_functions,
+    span, span_from, typed_function_at,
 };
 use rivet::ast::{
     BinaryOp, Expr, ExternalDecl, FunctionDecl, FunctionDef, GlobalDecl, Initializer,
@@ -428,14 +428,7 @@ fn accepts_call_to_declared_function() {
                 span: span(),
             })],
         ),
-        function(
-            "main",
-            vec![Statement::Return(Expr::Call {
-                name_span: span(),
-                name: "helper".to_string(),
-                args: vec![],
-            })],
-        ),
+        function("main", vec![Statement::Return(call_expr("helper", vec![]))]),
     ]);
 
     check(&program).expect("semantic check should succeed");
@@ -444,14 +437,7 @@ fn accepts_call_to_declared_function() {
 #[test]
 fn accepts_forward_call_to_later_function() {
     let program = program_with_functions(vec![
-        function(
-            "main",
-            vec![Statement::Return(Expr::Call {
-                name_span: span(),
-                name: "helper".to_string(),
-                args: vec![],
-            })],
-        ),
+        function("main", vec![Statement::Return(call_expr("helper", vec![]))]),
         function(
             "helper",
             vec![Statement::Return(Expr::IntLiteral {
@@ -481,16 +467,15 @@ fn accepts_function_prototype_before_definition() {
             )),
             ExternalDecl::FunctionDef(function(
                 "main",
-                vec![Statement::Return(Expr::Call {
-                    name_span: span(),
-                    name: "helper".to_string(),
-                    args: vec![Expr::IntLiteral {
+                vec![Statement::Return(call_expr(
+                    "helper",
+                    vec![Expr::IntLiteral {
                         value: 3,
                         suffix: IntLiteralSuffix::None,
                         base: IntLiteralBase::Decimal,
                         span: span(),
                     }],
-                })],
+                ))],
             )),
         ],
         eof_span: span(),
@@ -549,16 +534,15 @@ fn accepts_call_to_prototyped_function_without_definition() {
             ExternalDecl::FunctionDecl(function_decl("helper", &["x"])),
             ExternalDecl::FunctionDef(function(
                 "main",
-                vec![Statement::Return(Expr::Call {
-                    name_span: span(),
-                    name: "helper".to_string(),
-                    args: vec![Expr::IntLiteral {
+                vec![Statement::Return(call_expr(
+                    "helper",
+                    vec![Expr::IntLiteral {
                         value: 3,
                         suffix: IntLiteralSuffix::None,
                         base: IntLiteralBase::Decimal,
                         span: span(),
                     }],
-                })],
+                ))],
             )),
         ],
         eof_span: span(),
@@ -694,15 +678,11 @@ fn rejects_function_definition_with_conflicting_pointer_prototype_parameter_type
 
 #[test]
 fn rejects_call_to_undeclared_function() {
-    let program = main_program(vec![Statement::Return(Expr::Call {
-        name_span: span(),
-        name: "helper".to_string(),
-        args: vec![],
-    })]);
+    let program = main_program(vec![Statement::Return(call_expr("helper", vec![]))]);
 
     let err = check(&program).expect_err("semantic check should fail");
 
-    assert_eq!(err.message, "undeclared function 'helper'");
+    assert_eq!(err.message, "undeclared identifier 'helper'");
 }
 
 #[test]
@@ -735,11 +715,7 @@ fn accepts_expression_statement() {
         function(
             "main",
             vec![
-                Statement::ExprStatement(Expr::Call {
-                    name_span: span(),
-                    name: "helper".to_string(),
-                    args: vec![],
-                }),
+                Statement::ExprStatement(call_expr("helper", vec![])),
                 Statement::Return(Expr::IntLiteral {
                     value: 0,
                     suffix: IntLiteralSuffix::None,
@@ -770,7 +746,7 @@ fn rejects_expression_statement_with_undeclared_variable() {
 
     let err = check(&program).expect_err("semantic check should fail");
 
-    assert_eq!(err.message, "undeclared variable 'x'");
+    assert_eq!(err.message, "undeclared identifier 'x'");
 }
 
 #[test]
@@ -911,10 +887,9 @@ fn accepts_call_with_matching_argument_count() {
         ),
         function(
             "main",
-            vec![Statement::Return(Expr::Call {
-                name_span: span(),
-                name: "add".to_string(),
-                args: vec![
+            vec![Statement::Return(call_expr(
+                "add",
+                vec![
                     Expr::IntLiteral {
                         value: 1,
                         suffix: IntLiteralSuffix::None,
@@ -928,7 +903,7 @@ fn accepts_call_with_matching_argument_count() {
                         span: span(),
                     },
                 ],
-            })],
+            ))],
         ),
     ]);
 
@@ -948,16 +923,15 @@ fn rejects_call_with_too_few_arguments() {
         ),
         function(
             "main",
-            vec![Statement::Return(Expr::Call {
-                name_span: span(),
-                name: "add".to_string(),
-                args: vec![Expr::IntLiteral {
+            vec![Statement::Return(call_expr(
+                "add",
+                vec![Expr::IntLiteral {
                     value: 1,
                     suffix: IntLiteralSuffix::None,
                     base: IntLiteralBase::Decimal,
                     span: span(),
                 }],
-            })],
+            ))],
         ),
     ]);
 
@@ -965,7 +939,7 @@ fn rejects_call_with_too_few_arguments() {
 
     assert_eq!(
         err.message,
-        "function call of 'add' has 1 arguments, declaration has 2"
+        "call to function 'add' has 1 arguments, declaration has 2"
     );
 }
 
@@ -982,10 +956,9 @@ fn rejects_call_with_too_many_arguments_for_signature() {
         ),
         function(
             "main",
-            vec![Statement::Return(Expr::Call {
-                name_span: span(),
-                name: "id".to_string(),
-                args: vec![
+            vec![Statement::Return(call_expr(
+                "id",
+                vec![
                     Expr::IntLiteral {
                         value: 1,
                         suffix: IntLiteralSuffix::None,
@@ -999,7 +972,7 @@ fn rejects_call_with_too_many_arguments_for_signature() {
                         span: span(),
                     },
                 ],
-            })],
+            ))],
         ),
     ]);
 
@@ -1007,7 +980,7 @@ fn rejects_call_with_too_many_arguments_for_signature() {
 
     assert_eq!(
         err.message,
-        "function call of 'id' has 2 arguments, declaration has 1"
+        "call to function 'id' has 2 arguments, declaration has 1"
     );
 }
 
@@ -1081,10 +1054,9 @@ fn rejects_call_with_more_than_eight_arguments() {
         ),
         function(
             "main",
-            vec![Statement::Return(Expr::Call {
-                name_span: span(),
-                name: "helper".to_string(),
-                args: vec![
+            vec![Statement::Return(call_expr(
+                "helper",
+                vec![
                     Expr::IntLiteral {
                         value: 1,
                         suffix: IntLiteralSuffix::None,
@@ -1140,7 +1112,7 @@ fn rejects_call_with_more_than_eight_arguments() {
                         span: span(),
                     },
                 ],
-            })],
+            ))],
         ),
     ]);
 
@@ -1148,7 +1120,7 @@ fn rejects_call_with_more_than_eight_arguments() {
 
     assert_eq!(
         err.message,
-        "too many arguments in call to function helper, got 9, max 8"
+        "too many arguments in call to function 'helper', got 9, max 8"
     );
 }
 
@@ -1835,6 +1807,126 @@ fn accepts_function_pointer_typedef_local_declaration() {
 }
 
 #[test]
+fn accepts_function_pointer_initialized_from_function_designator() {
+    let typed_program =
+        check_source("int id(int x) { return x; } int main() { int (*fp)(int) = id; return 0; }");
+
+    let main = typed_function_at(&typed_program, 1);
+    let TypedStatement::Decl(decls) = &main.body[0] else {
+        panic!("expected declaration statement");
+    };
+    let Some(TypedInitializer::Expr(init)) = &decls[0].init else {
+        panic!("expected function pointer initializer");
+    };
+
+    assert_eq!(
+        init.ty,
+        Type::Pointer(Box::new(Type::Function(Box::new(FunctionType {
+            return_type: Box::new(Type::Int),
+            params: vec![Type::Int],
+        }))))
+    );
+    assert!(matches!(
+        init.kind,
+        TypedExprKind::FunctionDesignator { ref name, .. } if name == "id"
+    ));
+}
+
+#[test]
+fn accepts_call_through_function_pointer() {
+    let typed_program = check_source(
+        "int id(int x) { return x; } int main() { int (*fp)(int) = id; return fp(3); }",
+    );
+
+    let main = typed_function_at(&typed_program, 1);
+    let TypedStatement::Return(expr) = &main.body[1] else {
+        panic!("expected return statement");
+    };
+
+    assert_eq!(expr.ty, Type::Int);
+
+    let TypedExprKind::Call { callee, args, .. } = &expr.kind else {
+        panic!("expected call expression");
+    };
+
+    assert_eq!(
+        callee.ty,
+        Type::Pointer(Box::new(Type::Function(Box::new(FunctionType {
+            return_type: Box::new(Type::Int),
+            params: vec![Type::Int],
+        }))))
+    );
+    assert!(matches!(callee.kind, TypedExprKind::Variable { ref name, .. } if name == "fp"));
+    assert_eq!(args.len(), 1);
+    assert_eq!(args[0].ty, Type::Int);
+}
+
+#[test]
+fn accepts_call_through_explicitly_dereferenced_function_pointer() {
+    let typed_program = check_source(
+        "int id(int x) { return x; } int main() { int (*fp)(int) = id; return (*fp)(3); }",
+    );
+
+    let main = typed_function_at(&typed_program, 1);
+    let TypedStatement::Return(expr) = &main.body[1] else {
+        panic!("expected return statement");
+    };
+
+    assert_eq!(expr.ty, Type::Int);
+
+    let TypedExprKind::Call { callee, args, .. } = &expr.kind else {
+        panic!("expected call expression");
+    };
+
+    assert_eq!(
+        callee.ty,
+        Type::Function(Box::new(FunctionType {
+            return_type: Box::new(Type::Int),
+            params: vec![Type::Int],
+        }))
+    );
+    assert!(matches!(
+        callee.kind,
+        TypedExprKind::Unary {
+            op: UnaryOp::Dereference,
+            ..
+        }
+    ));
+    assert_eq!(args.len(), 1);
+    assert_eq!(args[0].ty, Type::Int);
+}
+
+#[test]
+fn rejects_function_pointer_initialized_from_incompatible_function_designator() {
+    let tokens = lex(
+        "int id(char x) { return x; } int main() { int (*fp)(int) = id; return 0; }",
+        DUMMY_FILE_ID,
+    )
+    .expect("lexing should succeed");
+    let tokens = preprocess(tokens).expect("preprocessing should succeed");
+    let program = parse(tokens).expect("parsing should succeed");
+
+    let err = check(&program).expect_err("semantic check should fail");
+
+    assert_eq!(
+        err.message,
+        "cannot assign value of type 'Pointer(Function(FunctionType { return_type: Int, params: [Char] }))' to variable of type 'Pointer(Function(FunctionType { return_type: Int, params: [Int] }))'"
+    );
+}
+
+#[test]
+fn rejects_call_through_non_callable_expression() {
+    let tokens = lex("int main() { int x = 1; return x(3); }", DUMMY_FILE_ID)
+        .expect("lexing should succeed");
+    let tokens = preprocess(tokens).expect("preprocessing should succeed");
+    let program = parse(tokens).expect("parsing should succeed");
+
+    let err = check(&program).expect_err("semantic check should fail");
+
+    assert_eq!(err.message, "type 'Int' is not callable");
+}
+
+#[test]
 fn rejects_raw_function_type_local_declaration() {
     let function_ty = Type::Function(Box::new(FunctionType {
         return_type: Box::new(Type::Int),
@@ -2354,16 +2446,15 @@ fn typed_call_preserves_typed_arguments() {
             name_span: span(),
             name: "main".to_string(),
             params: vec![],
-            body: vec![Statement::Return(Expr::Call {
-                name_span: span(),
-                name: "id".to_string(),
-                args: vec![Expr::IntLiteral {
+            body: vec![Statement::Return(call_expr(
+                "id",
+                vec![Expr::IntLiteral {
                     value: 65,
                     suffix: IntLiteralSuffix::None,
                     base: IntLiteralBase::Decimal,
                     span: span(),
                 }],
-            })],
+            ))],
         },
     ]);
 
@@ -2716,14 +2807,13 @@ fn typed_array_variable_expression_decays_to_pointer_argument() {
                     name: "buf".to_string(),
                     init: None,
                 }]),
-                Statement::Return(Expr::Call {
-                    name_span: span(),
-                    name: "takes_char_pointer".to_string(),
-                    args: vec![Expr::Variable {
+                Statement::Return(call_expr(
+                    "takes_char_pointer",
+                    vec![Expr::Variable {
                         name: "buf".to_string(),
                         span: span(),
                     }],
-                }),
+                )),
             ],
         },
     ]);
@@ -3024,7 +3114,7 @@ fn rejects_returning_undeclared_local() {
 
     let err = check(&program).expect_err("semantic check should fail");
 
-    assert_eq!(err.message, "undeclared variable 'x'");
+    assert_eq!(err.message, "undeclared identifier 'x'");
 }
 
 #[test]
@@ -3058,7 +3148,7 @@ fn rejects_initializer_using_later_local() {
 
     let err = check(&program).expect_err("semantic check should fail");
 
-    assert_eq!(err.message, "undeclared variable 'x'");
+    assert_eq!(err.message, "undeclared identifier 'x'");
 }
 
 #[test]
@@ -3124,7 +3214,7 @@ fn rejects_mixed_declaration_initializer_using_later_local() {
 
     let err = check(&program).expect_err("semantic check should fail");
 
-    assert_eq!(err.message, "undeclared variable 'z'");
+    assert_eq!(err.message, "undeclared identifier 'z'");
 }
 
 #[test]
@@ -3160,7 +3250,7 @@ fn rejects_multiple_local_declarator_initializer_using_later_name() {
 
     let err = check(&program).expect_err("semantic check should fail");
 
-    assert_eq!(err.message, "undeclared variable 'b'");
+    assert_eq!(err.message, "undeclared identifier 'b'");
 }
 
 #[test]
@@ -3193,7 +3283,7 @@ fn rejects_undeclared_local_inside_nested_expression() {
 
     let err = check(&program).expect_err("semantic check should fail");
 
-    assert_eq!(err.message, "undeclared variable 'y'");
+    assert_eq!(err.message, "undeclared identifier 'y'");
 }
 
 #[test]
@@ -3219,14 +3309,13 @@ fn accepts_char_function_return_used_as_char_initializer() {
                     ty: Type::Char,
                     name_span: span(),
                     name: "result".to_string(),
-                    init: Some(Initializer::Expr(Expr::Call {
-                        name_span: span(),
-                        name: "id".to_string(),
-                        args: vec![Expr::Variable {
+                    init: Some(Initializer::Expr(call_expr(
+                        "id",
+                        vec![Expr::Variable {
                             name: "c".to_string(),
                             span: span(),
                         }],
-                    })),
+                    ))),
                 }]),
                 Statement::Return(Expr::IntLiteral {
                     value: 0,
@@ -3397,14 +3486,13 @@ fn accepts_char_argument_from_int_expression() {
                     name: "i".to_string(),
                     init: None,
                 }]),
-                Statement::Return(Expr::Call {
-                    name_span: span(),
-                    name: "takes_char".to_string(),
-                    args: vec![Expr::Variable {
+                Statement::Return(call_expr(
+                    "takes_char",
+                    vec![Expr::Variable {
                         name: "i".to_string(),
                         span: span(),
                     }],
-                }),
+                )),
             ],
         },
     ]);
@@ -3442,14 +3530,13 @@ fn accepts_int_argument_from_char_expression() {
                         span: span(),
                     })),
                 }]),
-                Statement::Return(Expr::Call {
-                    name_span: span(),
-                    name: "takes_int".to_string(),
-                    args: vec![Expr::Variable {
+                Statement::Return(call_expr(
+                    "takes_int",
+                    vec![Expr::Variable {
                         name: "c".to_string(),
                         span: span(),
                     }],
-                }),
+                )),
             ],
         },
     ]);
@@ -3578,7 +3665,7 @@ fn rejects_use_of_local_after_block_scope_ends() {
 
     let err = check(&program).expect_err("semantic check should fail");
 
-    assert_eq!(err.message, "undeclared variable 'x'");
+    assert_eq!(err.message, "undeclared identifier 'x'");
 }
 
 #[test]
@@ -3901,7 +3988,7 @@ fn rejects_while_condition_using_undeclared_local() {
 
     let err = check(&program).expect_err("semantic check should fail");
 
-    assert_eq!(err.message, "undeclared variable 'x'");
+    assert_eq!(err.message, "undeclared identifier 'x'");
 }
 
 #[test]
@@ -3924,7 +4011,7 @@ fn rejects_do_while_condition_using_undeclared_local() {
 
     let err = check(&program).expect_err("semantic check should fail");
 
-    assert_eq!(err.message, "undeclared variable 'x'");
+    assert_eq!(err.message, "undeclared identifier 'x'");
 }
 
 #[test]

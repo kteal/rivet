@@ -313,6 +313,18 @@ impl Codegen {
         }
     }
 
+    fn emit_call_args(&mut self, args: &[TypedExpr]) {
+        for arg in args {
+            self.emit_expr(arg);
+            self.push_a0();
+        }
+        // Pop off arguments in reverse order
+        for arg_num in (0..args.len()).rev() {
+            self.emit_line(format_args!("lw a{arg_num}, 0(sp)"));
+            self.emit_line(format_args!("addi sp, sp, 4"));
+        }
+    }
+
     fn emit_addr(&mut self, expr: &TypedExpr) {
         match &expr.kind {
             TypedExprKind::Variable { id, .. } => match id {
@@ -694,6 +706,19 @@ impl Codegen {
         }
     }
 
+    fn emit_call_target(&mut self, callee: &TypedExpr) {
+        match &callee.kind {
+            TypedExprKind::Unary {
+                op: UnaryOp::Dereference,
+                expr,
+                ..
+            } if matches!(callee.ty, Type::Function(_)) => {
+                self.emit_expr(expr);
+            }
+            _ => self.emit_expr(callee),
+        }
+    }
+
     fn emit_expr(&mut self, expr: &TypedExpr) {
         match &expr.kind {
             TypedExprKind::IntLiteral { value, .. } => {
@@ -737,19 +762,19 @@ impl Codegen {
                     UnaryOp::AddressOf => unreachable!("handled above"),
                 }
             }
-            TypedExprKind::Call { name, args, .. } => {
-                for arg in args {
-                    self.emit_expr(arg);
-                    // Push a0 onto the stack
-                    self.emit_line(format_args!("addi sp, sp, -4"));
-                    self.emit_line(format_args!("sw a0, 0(sp)"));
+            TypedExprKind::Call { callee, args, .. } => {
+                if let TypedExprKind::FunctionDesignator { name, .. } = &callee.kind {
+                    self.emit_call_args(args);
+                    self.emit_line(format_args!("call {name}"));
+                } else {
+                    self.emit_call_target(callee);
+                    self.push_a0();
+
+                    self.emit_call_args(args);
+
+                    self.pop_t0();
+                    self.emit_line(format_args!("jalr ra, 0(t0)"));
                 }
-                // Pop off arguments in reverse order
-                for arg_num in (0..args.len()).rev() {
-                    self.emit_line(format_args!("lw a{arg_num}, 0(sp)"));
-                    self.emit_line(format_args!("addi sp, sp, 4"));
-                }
-                self.emit_line(format_args!("call {name}"));
             }
             TypedExprKind::Assign { target, value, .. } => {
                 self.emit_addr(target);
@@ -782,6 +807,9 @@ impl Codegen {
             } => {
                 self.emit_expr(expr);
                 self.emit_cast_to(target_ty);
+            }
+            TypedExprKind::FunctionDesignator { name, .. } => {
+                self.emit_line(format_args!("la a0, {name}"));
             }
         }
     }

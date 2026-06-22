@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 
 use crate::ast::{
-    BinaryOp, Expr, ExternalDecl, FunctionDef, GlobalDecl, Initializer, IntLiteralBase,
-    IntLiteralSuffix, Program, Statement, Type, UnaryOp,
+    BinaryOp, Expr, ExternalDecl, FunctionDef, FunctionType, GlobalDecl, Initializer,
+    IntLiteralBase, IntLiteralSuffix, Program, Statement, Type, UnaryOp,
 };
 use crate::source::Span;
 
@@ -19,7 +19,6 @@ pub struct SemanticError {
 
 pub struct FunctionInfo {
     return_type: Type,
-    name: String,
     param_types: Vec<Type>,
     defined: bool,
 }
@@ -183,6 +182,13 @@ impl Checker {
         })
     }
 
+    fn resolve_function(&self, name: &str, span: Span) -> Result<&FunctionInfo, SemanticError> {
+        self.functions.get(name).ok_or_else(|| SemanticError {
+            message: format!("undeclared function '{name}'"),
+            span,
+        })
+    }
+
     fn declare_function_signature(
         &mut self,
         name: &str,
@@ -247,7 +253,6 @@ impl Checker {
                 name.to_string(),
                 FunctionInfo {
                     return_type: return_type.clone(),
-                    name: name.to_string(),
                     param_types,
                     defined: has_body,
                 },
@@ -282,17 +287,6 @@ impl Checker {
         self.globals
             .insert(name.to_string(), GlobalSymbol { id, ty: ty.clone() });
         Ok(())
-    }
-
-    fn check_function_declared(
-        &self,
-        name: &str,
-        span: Span,
-    ) -> Result<&FunctionInfo, SemanticError> {
-        self.functions.get(name).ok_or_else(|| SemanticError {
-            message: format!("undeclared function '{name}'"),
-            span,
-        })
     }
 
     fn check_binary_op_types(
@@ -473,7 +467,130 @@ impl Checker {
         Ok(typed)
     }
 
-    fn check_inc_dec(
+    fn check_int_literal_expr(
+        value: u64,
+        suffix: IntLiteralSuffix,
+        base: IntLiteralBase,
+        span: Span,
+    ) -> Result<TypedExpr, SemanticError> {
+        let ty = match (suffix, base) {
+            (IntLiteralSuffix::None, IntLiteralBase::Decimal) => {
+                if i32::try_from(value).is_ok() {
+                    Type::Int
+                } else {
+                    return Err(SemanticError {
+                        message: format!(
+                            "integer literal '{value}' is too large for type '{:?}'",
+                            Type::Int
+                        ),
+                        span,
+                    });
+                }
+            }
+            (IntLiteralSuffix::None, IntLiteralBase::Hex) => {
+                if i32::try_from(value).is_ok() {
+                    Type::Int
+                } else if u32::try_from(value).is_ok() {
+                    Type::UnsignedInt
+                } else {
+                    return Err(SemanticError {
+                        message: format!(
+                            "integer literal '{value}' is too large for type '{:?}'",
+                            Type::Int
+                        ),
+                        span,
+                    });
+                }
+            }
+            (IntLiteralSuffix::Unsigned, _) => {
+                if u32::try_from(value).is_ok() {
+                    Type::UnsignedInt
+                } else {
+                    return Err(SemanticError {
+                        message: format!(
+                            "integer literal '{value}' is too large for type '{:?}'",
+                            Type::UnsignedInt
+                        ),
+                        span,
+                    });
+                }
+            }
+            (IntLiteralSuffix::Long, _) => {
+                if i32::try_from(value).is_ok() {
+                    Type::Long
+                } else {
+                    return Err(SemanticError {
+                        message: format!(
+                            "integer literal '{value}' is too large for type '{:?}'",
+                            Type::Long
+                        ),
+                        span,
+                    });
+                }
+            }
+            (IntLiteralSuffix::UnsignedLong, _) => {
+                if u32::try_from(value).is_ok() {
+                    Type::UnsignedLong
+                } else {
+                    return Err(SemanticError {
+                        message: format!(
+                            "integer literal '{value}' is too large for type '{:?}'",
+                            Type::UnsignedLong
+                        ),
+                        span,
+                    });
+                }
+            }
+        };
+
+        Ok(TypedExpr {
+            kind: TypedExprKind::IntLiteral { value, span },
+            ty,
+        })
+    }
+
+    fn check_variable_expr(&self, name: &str, span: Span) -> Result<TypedExpr, SemanticError> {
+        if let Ok(symbol) = self.resolve_object(name, span) {
+            if let Type::Array { element, .. } = symbol.ty() {
+                return Ok(TypedExpr {
+                    kind: TypedExprKind::Variable {
+                        id: symbol.id(),
+                        name: name.to_string(),
+                        span,
+                    },
+                    ty: Type::Pointer(element.clone()),
+                });
+            }
+
+            return Ok(TypedExpr {
+                kind: TypedExprKind::Variable {
+                    id: symbol.id(),
+                    name: name.to_string(),
+                    span,
+                },
+                ty: symbol.ty().clone(),
+            });
+        }
+        if let Ok(symbol) = self.resolve_function(name, span) {
+            return Ok(TypedExpr {
+                kind: TypedExprKind::FunctionDesignator {
+                    name: name.to_string(),
+                    name_span: span,
+                },
+                ty: Type::Pointer(Box::new(Type::Function(Box::new(FunctionType {
+                    return_type: Box::new(symbol.return_type.clone()),
+                    params: symbol.param_types.clone(),
+                })))),
+            });
+        }
+
+        Err(SemanticError {
+            message: format!("undeclared identifier '{name}'"),
+            span,
+        })
+    }
+
+    fn check_inc_dec_expr(
         &self,
         expr: &Expr,
         op_span: Span,
@@ -557,32 +674,56 @@ impl Checker {
 
     fn check_call_expr(
         &self,
-        name: &str,
-        name_span: &Span,
+        callee: &Expr,
         args: &[Expr],
+        span: Span,
     ) -> Result<TypedExpr, SemanticError> {
-        let function_info = self.check_function_declared(name, *name_span)?;
+        let typed_callee = self.check_expr(callee)?;
+        let function_ty = match &typed_callee.ty {
+            Type::Function(function_ty) => function_ty,
+            Type::Pointer(inner) => match inner.as_ref() {
+                Type::Function(function_ty) => function_ty,
+                _ => {
+                    return Err(SemanticError {
+                        message: format!("type '{:?}' is not callable", typed_callee.ty),
+                        span,
+                    });
+                }
+            },
+            _ => {
+                return Err(SemanticError {
+                    message: format!("type '{:?}' is not callable", typed_callee.ty),
+                    span,
+                });
+            }
+        };
+        let callee_label = match callee {
+            Expr::Variable { name, span } => Some((name.as_str(), *span)),
+            _ => None,
+        }
+        .map_or_else(
+            || "function pointer".to_string(),
+            |(name, _)| format!("function '{name}'"),
+        );
 
         if args.len() > 8 {
             return Err(SemanticError {
                 message: format!(
-                    "too many arguments in call to function {}, got {}, max 8",
-                    name,
+                    "too many arguments in call to {callee_label}, got {}, max 8",
                     args.len()
                 ),
-                span: *name_span,
+                span: typed_callee.diagnostic_span(),
             });
         }
 
-        if function_info.param_types.len() != args.len() {
+        if function_ty.params.len() != args.len() {
             return Err(SemanticError {
                 message: format!(
-                    "function call of '{}' has {} arguments, declaration has {}",
-                    function_info.name,
+                    "call to {callee_label} has {} arguments, declaration has {}",
                     args.len(),
-                    function_info.param_types.len()
+                    function_ty.params.len()
                 ),
-                span: *name_span,
+                span: typed_callee.diagnostic_span(),
             });
         }
 
@@ -591,7 +732,7 @@ impl Checker {
             .map(|arg| self.check_expr(arg))
             .collect::<Result<Vec<_>, _>>()?;
 
-        for (ty, typed_arg) in function_info.param_types.iter().zip(&typed_args) {
+        for (ty, typed_arg) in function_ty.params.iter().zip(&typed_args) {
             if !Self::is_assignable_expr(ty, typed_arg) {
                 return Err(SemanticError {
                     message: format!(
@@ -604,11 +745,11 @@ impl Checker {
         }
 
         Ok(TypedExpr {
-            ty: function_info.return_type.clone(),
+            ty: *function_ty.return_type.clone(),
             kind: TypedExprKind::Call {
-                name: name.to_string(),
-                name_span: *name_span,
+                callee: Box::new(typed_callee),
                 args: typed_args,
+                span,
             },
         })
     }
@@ -685,108 +826,8 @@ impl Checker {
                 suffix,
                 base,
                 span,
-            } => {
-                let ty = match (suffix, base) {
-                    (IntLiteralSuffix::None, IntLiteralBase::Decimal) => {
-                        if value <= &(i32::MAX as u64) {
-                            Type::Int
-                        } else {
-                            return Err(SemanticError {
-                                message: format!(
-                                    "integer literal '{value}' is too large for type '{:?}'",
-                                    Type::Int
-                                ),
-                                span: *span,
-                            });
-                        }
-                    }
-                    (IntLiteralSuffix::None, IntLiteralBase::Hex) => {
-                        if value <= &(i32::MAX as u64) {
-                            Type::Int
-                        } else if value <= &u64::from(u32::MAX) {
-                            Type::UnsignedInt
-                        } else {
-                            return Err(SemanticError {
-                                message: format!(
-                                    "integer literal '{value}' is too large for type '{:?}'",
-                                    Type::Int
-                                ),
-                                span: *span,
-                            });
-                        }
-                    }
-                    (IntLiteralSuffix::Unsigned, _) => {
-                        if value <= &u64::from(u32::MAX) {
-                            Type::UnsignedInt
-                        } else {
-                            return Err(SemanticError {
-                                message: format!(
-                                    "integer literal '{value}' is too large for type '{:?}'",
-                                    Type::UnsignedInt
-                                ),
-                                span: *span,
-                            });
-                        }
-                    }
-                    (IntLiteralSuffix::Long, _) => {
-                        if value <= &(i32::MAX as u64) {
-                            Type::Long
-                        } else {
-                            return Err(SemanticError {
-                                message: format!(
-                                    "integer literal '{value}' is too large for type '{:?}'",
-                                    Type::Long
-                                ),
-                                span: *span,
-                            });
-                        }
-                    }
-                    (IntLiteralSuffix::UnsignedLong, _) => {
-                        if value <= &u64::from(u32::MAX) {
-                            Type::UnsignedLong
-                        } else {
-                            return Err(SemanticError {
-                                message: format!(
-                                    "integer literal '{value}' is too large for type '{:?}'",
-                                    Type::UnsignedLong
-                                ),
-                                span: *span,
-                            });
-                        }
-                    }
-                };
-
-                Ok(TypedExpr {
-                    kind: TypedExprKind::IntLiteral {
-                        value: *value,
-                        span: *span,
-                    },
-                    ty,
-                })
-            }
-            Expr::Variable { name, span } => {
-                let symbol = self.resolve_object(name, *span)?;
-
-                if let Type::Array { element, .. } = symbol.ty() {
-                    return Ok(TypedExpr {
-                        kind: TypedExprKind::Variable {
-                            id: symbol.id(),
-                            name: name.clone(),
-                            span: *span,
-                        },
-                        ty: Type::Pointer(element.clone()),
-                    });
-                }
-
-                Ok(TypedExpr {
-                    kind: TypedExprKind::Variable {
-                        id: symbol.id(),
-                        name: name.clone(),
-                        span: *span,
-                    },
-                    ty: symbol.ty().clone(),
-                })
-            }
+            } => Self::check_int_literal_expr(*value, *suffix, *base, *span),
+            Expr::Variable { name, span } => self.check_variable_expr(name, *span),
             Expr::Unary { op, op_span, expr } => self.check_unary_expr(*op, *op_span, expr),
             Expr::Binary {
                 op,
@@ -833,11 +874,7 @@ impl Checker {
                     ty: type_info.result_ty,
                 })
             }
-            Expr::Call {
-                name,
-                name_span,
-                args,
-            } => self.check_call_expr(name, name_span, args),
+            Expr::Call { callee, args, span } => self.check_call_expr(callee, args, *span),
             Expr::Assign {
                 target,
                 op_span,
@@ -901,25 +938,25 @@ impl Checker {
                 })
             }
             Expr::PrefixInc { expr, op_span } => {
-                self.check_inc_dec(expr, *op_span, |expr, op_span| TypedExprKind::PrefixInc {
+                self.check_inc_dec_expr(expr, *op_span, |expr, op_span| TypedExprKind::PrefixInc {
                     expr,
                     op_span,
                 })
             }
             Expr::PrefixDec { expr, op_span } => {
-                self.check_inc_dec(expr, *op_span, |expr, op_span| TypedExprKind::PrefixDec {
+                self.check_inc_dec_expr(expr, *op_span, |expr, op_span| TypedExprKind::PrefixDec {
                     expr,
                     op_span,
                 })
             }
             Expr::PostfixInc { expr, op_span } => {
-                self.check_inc_dec(expr, *op_span, |expr, op_span| TypedExprKind::PostfixInc {
+                self.check_inc_dec_expr(expr, *op_span, |expr, op_span| TypedExprKind::PostfixInc {
                     expr,
                     op_span,
                 })
             }
             Expr::PostfixDec { expr, op_span } => {
-                self.check_inc_dec(expr, *op_span, |expr, op_span| TypedExprKind::PostfixDec {
+                self.check_inc_dec_expr(expr, *op_span, |expr, op_span| TypedExprKind::PostfixDec {
                     expr,
                     op_span,
                 })
