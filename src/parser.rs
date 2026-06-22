@@ -996,6 +996,10 @@ impl Parser {
                 let token = self.advance();
                 Some((UnaryOp::Dereference, token.span))
             }
+            TokenKind::Ampersand => {
+                let token = self.advance();
+                Some((UnaryOp::AddressOf, token.span))
+            }
             _ => None,
         }
     }

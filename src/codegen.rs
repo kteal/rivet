@@ -680,6 +680,13 @@ impl Codegen {
                 }
             }
             TypedExprKind::Unary {
+                op: UnaryOp::AddressOf,
+                expr: operand,
+                ..
+            } => {
+                self.emit_addr(operand);
+            }
+            TypedExprKind::Unary {
                 op, expr: operand, ..
             } => {
                 self.emit_expr(operand);
@@ -688,6 +695,7 @@ impl Codegen {
                     UnaryOp::LogicalNot => self.emit_line(format_args!("seqz a0, a0")),
                     UnaryOp::BitwiseNot => self.emit_line(format_args!("not a0, a0")),
                     UnaryOp::Dereference => self.emit_load_from_addr(&expr.ty),
+                    UnaryOp::AddressOf => unreachable!("handled above"),
                 }
             }
             TypedExprKind::Call { name, args, .. } => {

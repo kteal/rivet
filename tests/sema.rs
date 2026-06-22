@@ -1582,6 +1582,250 @@ fn typed_pointer_dereference_has_pointee_type() {
 }
 
 #[test]
+fn typed_address_of_local_has_pointer_type() {
+    let pointer_ty = Type::Pointer(Box::new(Type::Int));
+    let program = main_program(vec![
+        Statement::Decl(vec![rivet::ast::LocalDecl {
+            ty: Type::Int,
+            name_span: span(),
+            name: "x".to_string(),
+            init: Some(Initializer::Expr(Expr::IntLiteral {
+                value: 1,
+                suffix: IntLiteralSuffix::None,
+                base: IntLiteralBase::Decimal,
+                span: span(),
+            })),
+        }]),
+        Statement::Decl(vec![rivet::ast::LocalDecl {
+            ty: pointer_ty.clone(),
+            name_span: span(),
+            name: "p".to_string(),
+            init: Some(Initializer::Expr(Expr::Unary {
+                op: UnaryOp::AddressOf,
+                op_span: span(),
+                expr: Box::new(Expr::Variable {
+                    name: "x".to_string(),
+                    span: span(),
+                }),
+            })),
+        }]),
+        Statement::Return(Expr::IntLiteral {
+            value: 0,
+            suffix: IntLiteralSuffix::None,
+            base: IntLiteralBase::Decimal,
+            span: span(),
+        }),
+    ]);
+
+    let typed_program = check(&program).expect("semantic check should succeed");
+
+    let TypedStatement::Decl(decls) = &first_typed_function(&typed_program).body[1] else {
+        panic!("expected declaration statement");
+    };
+    let Some(TypedInitializer::Expr(expr)) = &decls[0].init else {
+        panic!("expected pointer initializer");
+    };
+
+    assert_eq!(expr.ty, pointer_ty);
+    assert!(matches!(
+        expr.kind,
+        TypedExprKind::Unary {
+            op: UnaryOp::AddressOf,
+            ..
+        }
+    ));
+}
+
+#[test]
+fn typed_address_of_global_has_pointer_type() {
+    let pointer_ty = Type::Pointer(Box::new(Type::Int));
+    let program = Program {
+        declarations: vec![
+            ExternalDecl::Global(global_decl("g", Type::Int, None)),
+            ExternalDecl::FunctionDef(function(
+                "main",
+                vec![
+                    Statement::Decl(vec![rivet::ast::LocalDecl {
+                        ty: pointer_ty.clone(),
+                        name_span: span(),
+                        name: "p".to_string(),
+                        init: Some(Initializer::Expr(Expr::Unary {
+                            op: UnaryOp::AddressOf,
+                            op_span: span(),
+                            expr: Box::new(Expr::Variable {
+                                name: "g".to_string(),
+                                span: span(),
+                            }),
+                        })),
+                    }]),
+                    Statement::Return(Expr::IntLiteral {
+                        value: 0,
+                        suffix: IntLiteralSuffix::None,
+                        base: IntLiteralBase::Decimal,
+                        span: span(),
+                    }),
+                ],
+            )),
+        ],
+        eof_span: span(),
+    };
+
+    let typed_program = check(&program).expect("semantic check should succeed");
+
+    let TypedStatement::Decl(decls) = &first_typed_function(&typed_program).body[0] else {
+        panic!("expected declaration statement");
+    };
+    let Some(TypedInitializer::Expr(expr)) = &decls[0].init else {
+        panic!("expected pointer initializer");
+    };
+
+    assert_eq!(expr.ty, pointer_ty);
+    assert!(matches!(
+        expr.kind,
+        TypedExprKind::Unary {
+            op: UnaryOp::AddressOf,
+            ..
+        }
+    ));
+}
+
+#[test]
+fn typed_address_of_index_expression_has_element_pointer_type() {
+    let pointer_ty = Type::Pointer(Box::new(Type::Int));
+    let program = main_program(vec![
+        Statement::Decl(vec![rivet::ast::LocalDecl {
+            ty: Type::Array {
+                element: Box::new(Type::Int),
+                len: 3,
+            },
+            name_span: span(),
+            name: "arr".to_string(),
+            init: None,
+        }]),
+        Statement::Decl(vec![rivet::ast::LocalDecl {
+            ty: pointer_ty.clone(),
+            name_span: span(),
+            name: "p".to_string(),
+            init: Some(Initializer::Expr(Expr::Unary {
+                op: UnaryOp::AddressOf,
+                op_span: span(),
+                expr: Box::new(Expr::Index {
+                    base: Box::new(Expr::Variable {
+                        name: "arr".to_string(),
+                        span: span(),
+                    }),
+                    index: Box::new(Expr::IntLiteral {
+                        value: 1,
+                        suffix: IntLiteralSuffix::None,
+                        base: IntLiteralBase::Decimal,
+                        span: span(),
+                    }),
+                    span: span(),
+                }),
+            })),
+        }]),
+        Statement::Return(Expr::IntLiteral {
+            value: 0,
+            suffix: IntLiteralSuffix::None,
+            base: IntLiteralBase::Decimal,
+            span: span(),
+        }),
+    ]);
+
+    let typed_program = check(&program).expect("semantic check should succeed");
+
+    let TypedStatement::Decl(decls) = &first_typed_function(&typed_program).body[1] else {
+        panic!("expected declaration statement");
+    };
+    let Some(TypedInitializer::Expr(expr)) = &decls[0].init else {
+        panic!("expected pointer initializer");
+    };
+
+    assert_eq!(expr.ty, pointer_ty);
+    assert!(matches!(
+        expr.kind,
+        TypedExprKind::Unary {
+            op: UnaryOp::AddressOf,
+            ..
+        }
+    ));
+}
+
+#[test]
+fn typed_address_of_array_has_pointer_to_array_type() {
+    let array_ty = Type::Array {
+        element: Box::new(Type::Int),
+        len: 3,
+    };
+    let pointer_to_array_ty = Type::Pointer(Box::new(array_ty.clone()));
+    let program = main_program(vec![
+        Statement::Decl(vec![rivet::ast::LocalDecl {
+            ty: array_ty.clone(),
+            name_span: span(),
+            name: "arr".to_string(),
+            init: None,
+        }]),
+        Statement::Decl(vec![rivet::ast::LocalDecl {
+            ty: pointer_to_array_ty.clone(),
+            name_span: span(),
+            name: "p".to_string(),
+            init: Some(Initializer::Expr(Expr::Unary {
+                op: UnaryOp::AddressOf,
+                op_span: span(),
+                expr: Box::new(Expr::Variable {
+                    name: "arr".to_string(),
+                    span: span(),
+                }),
+            })),
+        }]),
+        Statement::Return(Expr::IntLiteral {
+            value: 0,
+            suffix: IntLiteralSuffix::None,
+            base: IntLiteralBase::Decimal,
+            span: span(),
+        }),
+    ]);
+
+    let typed_program = check(&program).expect("semantic check should succeed");
+
+    let TypedStatement::Decl(decls) = &first_typed_function(&typed_program).body[1] else {
+        panic!("expected declaration statement");
+    };
+    let Some(TypedInitializer::Expr(expr)) = &decls[0].init else {
+        panic!("expected pointer initializer");
+    };
+
+    assert_eq!(expr.ty, pointer_to_array_ty);
+    let TypedExprKind::Unary {
+        op: UnaryOp::AddressOf,
+        expr: operand,
+        ..
+    } = &expr.kind
+    else {
+        panic!("expected address-of expression");
+    };
+    assert_eq!(operand.ty, array_ty);
+}
+
+#[test]
+fn rejects_address_of_non_lvalue() {
+    let program = main_program(vec![Statement::Return(Expr::Unary {
+        op: UnaryOp::AddressOf,
+        op_span: span(),
+        expr: Box::new(Expr::IntLiteral {
+            value: 1,
+            suffix: IntLiteralSuffix::None,
+            base: IntLiteralBase::Decimal,
+            span: span(),
+        }),
+    })]);
+
+    let err = check(&program).expect_err("semantic check should fail");
+
+    assert_eq!(err.message, "cannot assign to non-lvalue expression");
+}
+
+#[test]
 fn accepts_assignment_through_pointer_dereference() {
     let program = program_with_functions(vec![
         FunctionDef {
@@ -2762,6 +3006,72 @@ fn rejects_initializer_using_later_local() {
     let err = check(&program).expect_err("semantic check should fail");
 
     assert_eq!(err.message, "undeclared variable 'x'");
+}
+
+#[test]
+fn rejects_mixed_declaration_initializer_using_later_local() {
+    let program = main_program(vec![
+        Statement::Decl(vec![rivet::ast::LocalDecl {
+            ty: Type::Int,
+            name_span: span(),
+            name: "x".to_string(),
+            init: Some(Initializer::Expr(Expr::IntLiteral {
+                value: 1,
+                suffix: IntLiteralSuffix::None,
+                base: IntLiteralBase::Decimal,
+                span: span(),
+            })),
+        }]),
+        Statement::ExprStatement(Expr::Assign {
+            op_span: span(),
+            target: Box::new(Expr::Variable {
+                name: "x".to_string(),
+                span: span(),
+            }),
+            value: Box::new(Expr::Binary {
+                op: BinaryOp::Add,
+                op_span: span(),
+                left: Box::new(Expr::Variable {
+                    name: "x".to_string(),
+                    span: span(),
+                }),
+                right: Box::new(Expr::IntLiteral {
+                    value: 1,
+                    suffix: IntLiteralSuffix::None,
+                    base: IntLiteralBase::Decimal,
+                    span: span(),
+                }),
+            }),
+        }),
+        Statement::Decl(vec![rivet::ast::LocalDecl {
+            ty: Type::Int,
+            name_span: span(),
+            name: "y".to_string(),
+            init: Some(Initializer::Expr(Expr::Variable {
+                name: "z".to_string(),
+                span: span(),
+            })),
+        }]),
+        Statement::Decl(vec![rivet::ast::LocalDecl {
+            ty: Type::Int,
+            name_span: span(),
+            name: "z".to_string(),
+            init: Some(Initializer::Expr(Expr::IntLiteral {
+                value: 3,
+                suffix: IntLiteralSuffix::None,
+                base: IntLiteralBase::Decimal,
+                span: span(),
+            })),
+        }]),
+        Statement::Return(Expr::Variable {
+            name: "y".to_string(),
+            span: span(),
+        }),
+    ]);
+
+    let err = check(&program).expect_err("semantic check should fail");
+
+    assert_eq!(err.message, "undeclared variable 'z'");
 }
 
 #[test]

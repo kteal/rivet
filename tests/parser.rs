@@ -502,6 +502,13 @@ fn parses_prefix_postfix_and_unary_expressions() {
             ..
         }
     ));
+    assert!(matches!(
+        only_return_expr("int main() { return &x; }"),
+        Expr::Unary {
+            op: UnaryOp::AddressOf,
+            ..
+        }
+    ));
 }
 
 #[test]
@@ -763,6 +770,27 @@ fn parses_block_statements() {
 
     assert!(matches!(body[0], Statement::Block(_)));
     assert!(matches!(body[1], Statement::Return(_)));
+}
+
+#[test]
+fn parses_declarations_mixed_with_statements() {
+    let body = main_body("int main() { int x = 1; x = x + 1; int y = x + 2; return y; }");
+
+    assert_eq!(body.len(), 4);
+    assert!(matches!(body[0], Statement::Decl(_)));
+    assert!(matches!(body[1], Statement::ExprStatement(_)));
+    assert!(matches!(body[2], Statement::Decl(_)));
+    assert!(matches!(body[3], Statement::Return(_)));
+
+    let y_decl = single_decl(&body[2]);
+    assert_eq!(y_decl.name, "y");
+    assert!(matches!(
+        y_decl.init,
+        Some(Initializer::Expr(Expr::Binary {
+            op: BinaryOp::Add,
+            ..
+        }))
+    ));
 }
 
 #[test]

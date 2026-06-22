@@ -392,17 +392,14 @@ impl Checker {
         ty.is_integer() || matches!(ty, Type::Pointer(_))
     }
 
-    fn check_lvalue(&self, expr: &Expr, op_span: Span) -> Result<TypedExpr, SemanticError> {
+    fn check_addressable_lvalue(
+        &self,
+        expr: &Expr,
+        op_span: Span,
+    ) -> Result<TypedExpr, SemanticError> {
         match expr {
             Expr::Variable { name, span } => {
                 let symbol = self.resolve_object(name, *span)?;
-
-                if matches!(symbol.ty(), Type::Array { .. }) {
-                    return Err(SemanticError {
-                        message: "cannot assign to array expression".to_string(),
-                        span: *span,
-                    });
-                }
 
                 Ok(TypedExpr {
                     kind: TypedExprKind::Variable {
@@ -447,13 +444,30 @@ impl Checker {
         }
     }
 
+    fn check_assignable_lvalue(
+        &self,
+        expr: &Expr,
+        op_span: Span,
+    ) -> Result<TypedExpr, SemanticError> {
+        let typed = self.check_addressable_lvalue(expr, op_span)?;
+
+        if matches!(typed.ty, Type::Array { .. }) {
+            return Err(SemanticError {
+                message: "cannot assign to array expression".to_string(),
+                span: typed.diagnostic_span(),
+            });
+        }
+
+        Ok(typed)
+    }
+
     fn check_inc_dec(
         &self,
         expr: &Expr,
         op_span: Span,
         make_kind: impl FnOnce(Box<TypedExpr>, Span) -> TypedExprKind,
     ) -> Result<TypedExpr, SemanticError> {
-        let typed_lvalue = self.check_lvalue(expr, op_span)?;
+        let typed_lvalue = self.check_assignable_lvalue(expr, op_span)?;
         if !Self::is_inc_dec_type(&typed_lvalue.ty) {
             return Err(SemanticError {
                 message: format!(
@@ -476,6 +490,17 @@ impl Checker {
         op_span: Span,
         expr: &Expr,
     ) -> Result<TypedExpr, SemanticError> {
+        if matches!(op, UnaryOp::AddressOf) {
+            let typed_expr = self.check_addressable_lvalue(expr, op_span)?;
+            return Ok(TypedExpr {
+                ty: Type::Pointer(Box::new(typed_expr.ty.clone())),
+                kind: TypedExprKind::Unary {
+                    op,
+                    op_span,
+                    expr: Box::new(typed_expr),
+                },
+            });
+        }
         let typed_expr = self.check_expr(expr)?;
         let ty = match op {
             UnaryOp::LogicalNot => Type::Int,
@@ -506,6 +531,7 @@ impl Checker {
                     });
                 }
             },
+            UnaryOp::AddressOf => unreachable!("handled above"),
         };
         Ok(TypedExpr {
             kind: TypedExprKind::Unary {
@@ -805,7 +831,7 @@ impl Checker {
                 op_span,
                 value,
             } => {
-                let typed_target = self.check_lvalue(target, *op_span)?;
+                let typed_target = self.check_assignable_lvalue(target, *op_span)?;
                 let typed_value = self.check_expr(value)?;
 
                 if !Self::is_assignable_expr(&typed_target.ty, &typed_value) {
@@ -834,7 +860,7 @@ impl Checker {
                 op_span,
                 value,
             } => {
-                let typed_target = self.check_lvalue(target, *op_span)?;
+                let typed_target = self.check_assignable_lvalue(target, *op_span)?;
                 let typed_value = self.check_expr(value)?;
 
                 let type_info =

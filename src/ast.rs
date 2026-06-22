@@ -224,6 +224,7 @@ pub enum UnaryOp {
     LogicalNot,
     BitwiseNot,
     Dereference,
+    AddressOf,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -864,6 +864,11 @@ fn qemu_block_scope_programs_return_expected_values() {
         1,
     );
     run_qemu_case(
+        "mixed-declarations-and-statements",
+        "int main() {\n    int x = 1;\n    x = x + 1;\n    int y = x + 2;\n    return y;\n}\n",
+        4,
+    );
+    run_qemu_case(
         "nested-blocks",
         "int main() {\n    int x = 1;\n    {\n        int y = 2;\n        {\n            int z = 3;\n            return x + y + z;\n        }\n    }\n}\n",
         6,
@@ -1167,6 +1172,18 @@ fn qemu_array_indexing_programs_return_expected_values() {
 
 #[test]
 fn qemu_postfix_pointer_dereference_programs_return_expected_values() {
+    run_qemu_case(
+        "address-of-local-through-pointer",
+        "int main() {\n    int x = 0;\n    int *p = &x;\n    *p = 7;\n    return x;\n}\n",
+        7,
+    );
+
+    run_qemu_case(
+        "address-of-global-through-pointer",
+        "int g;\n\nint main() {\n    int *p = &g;\n    *p = 5;\n    return g;\n}\n",
+        5,
+    );
+
     run_qemu_case(
         "postfix-pointer-dereference",
         "int main() {\n    char buf[3] = {'a', 'b', 'c'};\n    char *p = buf;\n    return *p++;\n}\n",
