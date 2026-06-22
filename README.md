@@ -190,7 +190,8 @@ Program structure and declarations:
 - [x] file-scope globals
 - [x] scalar and fixed-size array global initializers with zero-fill
 - [x] top-level typedef aliases with comma-separated declarators
-- [ ] full typedef behavior: arbitrary declaration-specifier ordering, alias-preserving diagnostics, and scope shadowing
+- [x] scoped typedef names with block, parameter, and `for`-scope object-name shadowing
+- [ ] full typedef behavior: alias-preserving diagnostics and complete C compatibility
 - [ ] storage classes: `extern`, `static`, `auto`, `register`, `thread_local`
 - [x] ignored `const` qualifier parsing
 - [ ] remaining qualifiers: `volatile`, `restrict`, `_Atomic`

@@ -17,7 +17,8 @@ pub struct SemanticError {
     pub span: Span,
 }
 
-pub struct FunctionInfo {
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct FunctionInfo {
     return_type: Type,
     param_types: Vec<Type>,
     defined: bool,
@@ -46,6 +47,17 @@ enum ObjectSymbol {
     Global(GlobalSymbol),
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum GlobalOrdinarySymbol {
+    GlobalObject(GlobalSymbol),
+    Function(FunctionInfo),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum LocalOrdinarySymbol {
+    Object(LocalSymbol),
+}
+
 impl ObjectSymbol {
     const fn ty(&self) -> &Type {
         match self {
@@ -63,13 +75,12 @@ impl ObjectSymbol {
 }
 
 struct Checker {
-    scopes: Vec<HashMap<String, LocalSymbol>>,
+    scopes: Vec<HashMap<String, LocalOrdinarySymbol>>,
     next_local_id: usize,
-    functions: HashMap<String, FunctionInfo>,
+    next_global_id: usize,
     loop_depth: usize,
     current_function_return_type: Option<Type>,
-    globals: HashMap<String, GlobalSymbol>,
-    next_global_id: usize,
+    global_symbols: HashMap<String, GlobalOrdinarySymbol>,
 }
 
 impl Checker {
@@ -77,11 +88,10 @@ impl Checker {
         Self {
             scopes: vec![HashMap::new()],
             next_local_id: 0,
-            functions: HashMap::new(),
+            next_global_id: 0,
             loop_depth: 0,
             current_function_return_type: None,
-            globals: HashMap::new(),
-            next_global_id: 0,
+            global_symbols: HashMap::new(),
         }
     }
 
@@ -118,13 +128,13 @@ impl Checker {
         self.scopes.pop();
     }
 
-    fn current_scope(&self) -> &HashMap<String, LocalSymbol> {
+    fn current_scope(&self) -> &HashMap<String, LocalOrdinarySymbol> {
         self.scopes
             .last()
             .expect("semantic checker should have an active scope")
     }
 
-    fn current_scope_mut(&mut self) -> &mut HashMap<String, LocalSymbol> {
+    fn current_scope_mut(&mut self) -> &mut HashMap<String, LocalOrdinarySymbol> {
         self.scopes
             .last_mut()
             .expect("semantic checker should have an active scope")
@@ -152,41 +162,48 @@ impl Checker {
             id: self.new_local_id(),
             ty: ty.clone(),
         };
-        self.current_scope_mut()
-            .insert(name.to_string(), symbol.clone());
+        self.current_scope_mut().insert(
+            name.to_string(),
+            LocalOrdinarySymbol::Object(symbol.clone()),
+        );
         Ok(symbol)
     }
 
     fn resolve_object(&self, name: &str, span: Span) -> Result<ObjectSymbol, SemanticError> {
         for scope in self.scopes.iter().rev() {
-            if let Some(local) = scope.get(name) {
+            if let Some(LocalOrdinarySymbol::Object(local)) = scope.get(name) {
                 return Ok(ObjectSymbol::Local(local.clone()));
             }
         }
-        if let Some(global) = self.globals.get(name) {
-            return Ok(ObjectSymbol::Global(global.clone()));
+        match self.global_symbols.get(name) {
+            Some(GlobalOrdinarySymbol::GlobalObject(global)) => {
+                Ok(ObjectSymbol::Global(global.clone()))
+            }
+            Some(GlobalOrdinarySymbol::Function(_)) | None => Err(SemanticError {
+                message: format!("undeclared variable '{name}'"),
+                span,
+            }),
         }
-        Err(SemanticError {
-            message: format!("undeclared variable '{name}'"),
-            span,
-        })
     }
 
-    fn resolve_global(&self, name: &str, span: Span) -> Result<GlobalSymbol, SemanticError> {
-        if let Some(global) = self.globals.get(name) {
-            return Ok(global.clone());
+    fn resolve_global_object(&self, name: &str, span: Span) -> Result<GlobalSymbol, SemanticError> {
+        match self.global_symbols.get(name) {
+            Some(GlobalOrdinarySymbol::GlobalObject(global)) => Ok(global.clone()),
+            Some(GlobalOrdinarySymbol::Function(_)) | None => Err(SemanticError {
+                message: format!("undeclared global variable '{name}'"),
+                span,
+            }),
         }
-        Err(SemanticError {
-            message: format!("undeclared global variable '{name}'"),
-            span,
-        })
     }
 
     fn resolve_function(&self, name: &str, span: Span) -> Result<&FunctionInfo, SemanticError> {
-        self.functions.get(name).ok_or_else(|| SemanticError {
-            message: format!("undeclared function '{name}'"),
-            span,
-        })
+        match self.global_symbols.get(name) {
+            Some(GlobalOrdinarySymbol::Function(function)) => Ok(function),
+            Some(GlobalOrdinarySymbol::GlobalObject(_)) | None => Err(SemanticError {
+                message: format!("undeclared function '{name}'"),
+                span,
+            }),
+        }
     }
 
     fn declare_function_signature(
@@ -197,66 +214,67 @@ impl Checker {
         param_types: Vec<Type>,
         has_body: bool,
     ) -> Result<(), SemanticError> {
-        if self.globals.contains_key(name) {
-            return Err(SemanticError {
-                message: format!(
-                    "function '{name}' conflicts with existing global variable declaration"
-                ),
-                span: name_span,
-            });
-        }
-
-        if self.functions.contains_key(name) {
-            let existing = self.functions.get_mut(name).unwrap();
-            if existing.return_type != *return_type {
+        match self.global_symbols.get_mut(name) {
+            Some(GlobalOrdinarySymbol::GlobalObject(_)) => {
                 return Err(SemanticError {
                     message: format!(
-                        "function declaration and definition must have same return type, got '{:?}' and '{return_type:?}'",
-                        existing.return_type
+                        "function '{name}' conflicts with existing global variable declaration"
                     ),
                     span: name_span,
                 });
             }
-            if existing.param_types != param_types {
-                return Err(SemanticError {
-                    message: format!(
-                        "function declaration and definition must have same parameter types, got '{:?}' and '{param_types:?}'",
-                        existing.param_types
-                    ),
-                    span: name_span,
-                });
-            }
+            Some(GlobalOrdinarySymbol::Function(function)) => {
+                if function.return_type != *return_type {
+                    return Err(SemanticError {
+                        message: format!(
+                            "function declaration and definition must have same return type, got '{:?}' and '{return_type:?}'",
+                            function.return_type
+                        ),
+                        span: name_span,
+                    });
+                }
+                if function.param_types != param_types {
+                    return Err(SemanticError {
+                        message: format!(
+                            "function declaration and definition must have same parameter types, got '{:?}' and '{param_types:?}'",
+                            function.param_types
+                        ),
+                        span: name_span,
+                    });
+                }
 
-            if has_body && existing.defined {
-                return Err(SemanticError {
-                    message: format!("duplicate function definition '{name}'"),
-                    span: name_span,
-                });
-            }
+                if has_body && function.defined {
+                    return Err(SemanticError {
+                        message: format!("duplicate function definition '{name}'"),
+                        span: name_span,
+                    });
+                }
 
-            if has_body {
-                existing.defined = true;
+                if has_body {
+                    function.defined = true;
+                }
             }
-        } else {
-            // For now, limit to 8 args (no stack-passed arguments)
-            if param_types.len() > 8 {
-                return Err(SemanticError {
-                    message: format!(
-                        "too many parameters in function {}, got {}, max 8",
-                        name,
-                        param_types.len()
-                    ),
-                    span: name_span,
-                });
+            None => {
+                // For now, limit to 8 args (no stack-passed arguments)
+                if param_types.len() > 8 {
+                    return Err(SemanticError {
+                        message: format!(
+                            "too many parameters in function {}, got {}, max 8",
+                            name,
+                            param_types.len()
+                        ),
+                        span: name_span,
+                    });
+                }
+                self.global_symbols.insert(
+                    name.to_string(),
+                    GlobalOrdinarySymbol::Function(FunctionInfo {
+                        return_type: return_type.clone(),
+                        param_types,
+                        defined: has_body,
+                    }),
+                );
             }
-            self.functions.insert(
-                name.to_string(),
-                FunctionInfo {
-                    return_type: return_type.clone(),
-                    param_types,
-                    defined: has_body,
-                },
-            );
         }
         Ok(())
     }
@@ -268,24 +286,30 @@ impl Checker {
                 span,
             });
         }
-        if self.globals.contains_key(name) {
-            return Err(SemanticError {
-                message: format!("duplicate global definition '{name}'"),
-                span,
-            });
-        }
-        if self.functions.contains_key(name) {
-            return Err(SemanticError {
-                message: format!(
-                    "global variable '{name}' conflicts with existing function declaration"
-                ),
-                span,
-            });
-        }
 
-        let id = self.new_global_id();
-        self.globals
-            .insert(name.to_string(), GlobalSymbol { id, ty: ty.clone() });
+        match self.global_symbols.get(name) {
+            Some(GlobalOrdinarySymbol::GlobalObject(_)) => {
+                return Err(SemanticError {
+                    message: format!("duplicate global definition '{name}'"),
+                    span,
+                });
+            }
+            Some(GlobalOrdinarySymbol::Function(_)) => {
+                return Err(SemanticError {
+                    message: format!(
+                        "global variable '{name}' conflicts with existing function declaration"
+                    ),
+                    span,
+                });
+            }
+            None => {
+                let id = self.new_global_id();
+                self.global_symbols.insert(
+                    name.to_string(),
+                    GlobalOrdinarySymbol::GlobalObject(GlobalSymbol { id, ty: ty.clone() }),
+                );
+            }
+        }
         Ok(())
     }
 
@@ -1351,7 +1375,7 @@ impl Checker {
             .as_ref()
             .map(|init| self.check_initializer(&global.ty, global.name_span, init))
             .transpose()?;
-        let global_symbol = self.resolve_global(&global.name, global.name_span)?;
+        let global_symbol = self.resolve_global_object(&global.name, global.name_span)?;
         Ok(TypedGlobalDecl {
             id: global_symbol.id,
             ty: global_symbol.ty,
@@ -1362,13 +1386,13 @@ impl Checker {
     }
 
     fn check_main_function(&self, span: Span) -> Result<(), SemanticError> {
-        if !self.functions.contains_key("main") {
-            return Err(SemanticError {
+        match self.global_symbols.get("main") {
+            Some(GlobalOrdinarySymbol::Function(_)) => Ok(()),
+            Some(GlobalOrdinarySymbol::GlobalObject(_)) | None => Err(SemanticError {
                 message: "no 'main' function found".to_string(),
                 span,
-            });
+            }),
         }
-        Ok(())
     }
 }
 

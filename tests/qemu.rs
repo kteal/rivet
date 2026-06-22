@@ -372,6 +372,36 @@ fn qemu_typedef_programs_return_expected_values() {
         "typedef unsigned int uInt;\n\nint main() {\n    uInt x = 42U;\n    return x;\n}\n",
         42,
     );
+
+    run_qemu_case(
+        "local-typedef-shadows-outer-typedef",
+        "typedef int T;\n\nint main() {\n    typedef char T;\n    T x = 250;\n    return x;\n}\n",
+        250,
+    );
+
+    run_qemu_case(
+        "typedef-scope-restored-after-block",
+        "typedef int T;\n\nint main() {\n    {\n        typedef char T;\n        T x = 250;\n    }\n    T y = 300;\n    return y;\n}\n",
+        44,
+    );
+
+    run_qemu_case(
+        "object-name-shadows-typedef-name",
+        "typedef int T;\n\nint main() {\n    int T = 3;\n    return T;\n}\n",
+        3,
+    );
+
+    run_qemu_case(
+        "parameter-name-shadows-typedef-name",
+        "typedef int T;\n\nint id(int T) {\n    return T;\n}\n\nint main() {\n    return id(7);\n}\n",
+        7,
+    );
+
+    run_qemu_case(
+        "for-init-object-name-scope-restores-typedef",
+        "typedef int T;\n\nint main() {\n    for (int T = 0; T < 1; T = T + 1) {\n    }\n    T y = 9;\n    return y;\n}\n",
+        9,
+    );
 }
 
 #[test]

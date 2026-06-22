@@ -1238,6 +1238,77 @@ fn parses_typedef_names_as_types() {
 }
 
 #[test]
+fn parses_local_typedef_declarations() {
+    let body = main_body("int main() { typedef char T; T x; return 0; }");
+
+    assert!(matches!(body[0], Statement::Empty));
+    let decl = single_decl(&body[1]);
+    assert_eq!(decl.name, "x");
+    assert_eq!(decl.ty, Type::Char);
+}
+
+#[test]
+fn local_typedef_shadows_outer_typedef() {
+    let body = main_body("typedef int T; int main() { typedef char T; T x; return 0; }");
+
+    assert!(matches!(body[0], Statement::Empty));
+    let decl = single_decl(&body[1]);
+    assert_eq!(decl.name, "x");
+    assert_eq!(decl.ty, Type::Char);
+}
+
+#[test]
+fn typedef_scope_is_restored_after_block() {
+    let body = main_body("typedef int T; int main() { { typedef char T; T x; } T y; return 0; }");
+
+    let Statement::Block(block) = &body[0] else {
+        panic!("expected block statement");
+    };
+    assert!(matches!(block[0], Statement::Empty));
+    let inner_decl = single_decl(&block[1]);
+    assert_eq!(inner_decl.name, "x");
+    assert_eq!(inner_decl.ty, Type::Char);
+
+    let outer_decl = single_decl(&body[1]);
+    assert_eq!(outer_decl.name, "y");
+    assert_eq!(outer_decl.ty, Type::Int);
+}
+
+#[test]
+fn object_declaration_shadows_typedef_name() {
+    let body = main_body("typedef int T; int main() { int T = 3; return T; }");
+
+    let decl = single_decl(&body[0]);
+    assert_eq!(decl.name, "T");
+    assert_eq!(decl.ty, Type::Int);
+    assert!(matches!(body[1], Statement::Return(Expr::Variable { ref name, .. }) if name == "T"));
+}
+
+#[test]
+fn parameter_name_shadows_typedef_name_in_function_body() {
+    let program = parse_source("typedef int T; int main(int T) { return T; }");
+    let function = first_function(&program);
+
+    assert_eq!(function.params[0].name, "T");
+    assert!(matches!(
+        function.body[0],
+        Statement::Return(Expr::Variable { ref name, .. }) if name == "T"
+    ));
+}
+
+#[test]
+fn for_init_object_name_scope_is_restored_after_loop() {
+    let body = main_body(
+        "typedef int T; int main() { for (int T = 0; T < 1; T = T + 1) { } T y; return 0; }",
+    );
+
+    assert!(matches!(body[0], Statement::For { .. }));
+    let decl = single_decl(&body[1]);
+    assert_eq!(decl.name, "y");
+    assert_eq!(decl.ty, Type::Int);
+}
+
+#[test]
 fn rejects_duplicate_typedef_names() {
     let err = parse_source_err("typedef unsigned long uLong;\ntypedef unsigned int *uLong;");
 

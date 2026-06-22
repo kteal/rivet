@@ -150,10 +150,16 @@ enum LoweredDeclarator {
     },
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum ParserOrdinarySymbol {
+    Typedef(Type),
+    ObjectName,
+}
+
 struct Parser {
     tokens: Vec<Token>,
     pos: usize,
-    typedefs: HashMap<String, Type>,
+    scopes: Vec<HashMap<String, ParserOrdinarySymbol>>,
 }
 
 impl Parser {
@@ -161,7 +167,7 @@ impl Parser {
         Self {
             tokens,
             pos: 0,
-            typedefs: HashMap::new(),
+            scopes: vec![HashMap::new()],
         }
     }
 
@@ -243,6 +249,78 @@ impl Parser {
         }
     }
 
+    fn enter_scope(&mut self) {
+        self.scopes.push(HashMap::new());
+    }
+
+    fn exit_scope(&mut self) {
+        self.scopes.pop();
+    }
+
+    fn current_scope(&self) -> &HashMap<String, ParserOrdinarySymbol> {
+        self.scopes
+            .last()
+            .expect("parser should have an active scope")
+    }
+
+    fn current_scope_mut(&mut self) -> &mut HashMap<String, ParserOrdinarySymbol> {
+        self.scopes
+            .last_mut()
+            .expect("parser should have an active scope")
+    }
+
+    fn lookup_ordinary(&self, name: &str) -> Option<&ParserOrdinarySymbol> {
+        for scope in self.scopes.iter().rev() {
+            if let Some(symbol) = scope.get(name) {
+                return Some(symbol);
+            }
+        }
+
+        None
+    }
+
+    fn is_typedef_name(&self, name: &str) -> bool {
+        matches!(
+            self.lookup_ordinary(name),
+            Some(ParserOrdinarySymbol::Typedef(_))
+        )
+    }
+
+    fn lookup_typedef(&self, name: &str) -> Option<&Type> {
+        match self.lookup_ordinary(name) {
+            Some(ParserOrdinarySymbol::Typedef(ty)) => Some(ty),
+            Some(ParserOrdinarySymbol::ObjectName) | None => None,
+        }
+    }
+
+    fn declare_typedef(&mut self, name: &str, ty: &Type, span: Span) -> Result<(), ParseError> {
+        if self.current_scope().get(name).is_some() {
+            Err(ParseError {
+                message: format!("duplicate typedef with name '{name}'"),
+                span,
+            })
+        } else {
+            self.current_scope_mut()
+                .insert(name.to_string(), ParserOrdinarySymbol::Typedef(ty.clone()));
+            Ok(())
+        }
+    }
+
+    fn declare_object_name(&mut self, name: &str, span: Span) -> Result<(), ParseError> {
+        match self.current_scope().get(name) {
+            Some(ParserOrdinarySymbol::Typedef(_)) => Err(ParseError {
+                message: format!("duplicate ordinary identifier '{name}'"),
+                span,
+            }),
+            Some(ParserOrdinarySymbol::ObjectName) => Ok(()),
+            None => {
+                self.current_scope_mut()
+                    .insert(name.to_string(), ParserOrdinarySymbol::ObjectName);
+                Ok(())
+            }
+        }
+    }
+
     fn parse_comma_separated_until_terminator<T>(
         &mut self,
         parse_item: fn(&mut Self) -> Result<T, ParseError>,
@@ -267,6 +345,16 @@ impl Parser {
         }
 
         Ok(items)
+    }
+
+    fn parse_in_scope<T>(
+        &mut self,
+        parse: impl FnOnce(&mut Self) -> Result<T, ParseError>,
+    ) -> Result<T, ParseError> {
+        self.enter_scope();
+        let result = parse(self);
+        self.exit_scope();
+        result
     }
 
     // Top level parsing
@@ -318,16 +406,24 @@ impl Parser {
                 }
                 TokenKind::LBrace => {
                     self.expect(&TokenKind::LBrace)?;
-                    let mut body = vec![];
-                    self.parse_through_rbrace(&mut body)?;
+                    let params = params
+                        .into_iter()
+                        .map(raw_param_to_def)
+                        .collect::<Result<Vec<_>, _>>()?;
+                    let body = self.parse_in_scope(|parser| {
+                        for param in &params {
+                            parser.declare_object_name(&param.name, param.name_span)?;
+                        }
+
+                        let mut body = vec![];
+                        parser.parse_through_rbrace(&mut body)?;
+                        Ok(body)
+                    })?;
                     Ok(vec![ExternalDecl::FunctionDef(FunctionDef {
                         return_type,
                         name,
                         name_span,
-                        params: params
-                            .into_iter()
-                            .map(raw_param_to_def)
-                            .collect::<Result<Vec<_>, _>>()?,
+                        params,
                         body,
                     })])
                 }
@@ -404,13 +500,13 @@ impl Parser {
                     name,
                     name_span,
                 } => {
-                    if self.typedefs.contains_key(&name) {
+                    if self.is_typedef_name(&name) {
                         return Err(ParseError {
                             message: format!("duplicate typedef with name '{name}'"),
                             span: name_span,
                         });
                     }
-                    self.typedefs.insert(name.clone(), ty.clone());
+                    self.declare_typedef(&name, &ty, name_span)?;
                     typedefs.push(Typedef {
                         name,
                         name_span,
@@ -430,15 +526,16 @@ impl Parser {
 
     // Declaration / Type parsing
 
-    fn is_type_decl(&self, token_kind: &TokenKind) -> bool {
+    fn is_decl_start(&self, token_kind: &TokenKind) -> bool {
         match token_kind {
             TokenKind::KwInt
             | TokenKind::KwChar
             | TokenKind::KwUnsigned
             | TokenKind::KwLong
             | TokenKind::KwSigned
-            | TokenKind::KwConst => true,
-            TokenKind::Ident(name) => self.typedefs.contains_key(name),
+            | TokenKind::KwConst
+            | TokenKind::KwTypedef => true,
+            TokenKind::Ident(name) => self.is_typedef_name(name),
             _ => false,
         }
     }
@@ -507,7 +604,7 @@ impl Parser {
                     saw_type = true;
                 }
 
-                TokenKind::Ident(name) if self.typedefs.contains_key(name) => {
+                TokenKind::Ident(name) if !saw_type && self.is_typedef_name(name) => {
                     let name = name.clone();
                     let span = self.advance().span;
                     spec.type_specifiers
@@ -569,10 +666,13 @@ impl Parser {
                 });
             }
 
-            return self.typedefs.get(name).cloned().ok_or_else(|| ParseError {
-                message: format!("unknown typedef name '{name}'"),
-                span: name_span,
-            });
+            return self
+                .lookup_typedef(name)
+                .cloned()
+                .ok_or_else(|| ParseError {
+                    message: format!("unknown typedef name '{name}'"),
+                    span: name_span,
+                });
         }
 
         Self::lower_type_spec(type_spec, span)
@@ -1040,7 +1140,7 @@ impl Parser {
     }
 
     fn parse_unary(&mut self) -> Result<Expr, ParseError> {
-        if self.peek_kind() == &TokenKind::LParen && self.is_type_decl(self.peek_nth_kind(1)) {
+        if self.peek_kind() == &TokenKind::LParen && self.is_decl_start(self.peek_nth_kind(1)) {
             let span = self.advance().span;
             let ty = self.parse_type()?;
             self.expect(&TokenKind::RParen)?;
@@ -1170,15 +1270,45 @@ impl Parser {
     // Statement parsing
 
     fn parse_decl_statement(&mut self) -> Result<Statement, ParseError> {
-        let mut declarators = vec![];
         let declaration = self.parse_declaration()?;
+        let base_ty = self.lower_decl_spec(&declaration.spec, declaration.spec_span)?;
+
+        if declaration.spec.storage_class == Some(StorageClass::Typedef) {
+            for init_declarator in declaration.declarators {
+                if init_declarator.initializer.is_some() {
+                    return Err(ParseError {
+                        message: "typedef declarator cannot have an initializer".to_string(),
+                        span: declaration.spec_span,
+                    });
+                }
+
+                match Self::lower_declarator(&base_ty, &init_declarator.declarator)? {
+                    LoweredDeclarator::Object {
+                        ty,
+                        name,
+                        name_span,
+                    } => {
+                        self.declare_typedef(&name, &ty, name_span)?;
+                    }
+                    LoweredDeclarator::Function { name_span, .. } => {
+                        return Err(ParseError {
+                            message: "function typedefs are not supported".to_string(),
+                            span: name_span,
+                        });
+                    }
+                }
+            }
+
+            return Ok(Statement::Empty);
+        }
+
         if declaration.spec.storage_class.is_some() {
             return Err(ParseError {
                 message: "storage class is not supported in local declarations".to_string(),
                 span: declaration.spec_span,
             });
         }
-        let base_ty = self.lower_decl_spec(&declaration.spec, declaration.spec_span)?;
+        let mut declarators = vec![];
         for init_declarator in declaration.declarators {
             match Self::lower_declarator(&base_ty, &init_declarator.declarator)? {
                 LoweredDeclarator::Object {
@@ -1186,6 +1316,7 @@ impl Parser {
                     name,
                     name_span,
                 } => {
+                    self.declare_object_name(&name, name_span)?;
                     declarators.push(LocalDecl {
                         ty,
                         name,
@@ -1202,7 +1333,6 @@ impl Parser {
                 }
             }
         }
-
         Ok(Statement::Decl(declarators))
     }
 
@@ -1271,7 +1401,7 @@ impl Parser {
     fn parse_for_statement_init(&mut self) -> Result<Statement, ParseError> {
         match self.peek_kind() {
             // Variable declaration
-            token_kind if self.is_type_decl(token_kind) => self.parse_decl_statement(),
+            token_kind if self.is_decl_start(token_kind) => self.parse_decl_statement(),
             // Empty
             TokenKind::Semicolon => {
                 self.expect(&TokenKind::Semicolon)?;
@@ -1288,35 +1418,37 @@ impl Parser {
 
     fn parse_for_statement(&mut self) -> Result<Statement, ParseError> {
         self.expect(&TokenKind::KwFor)?;
-        self.expect(&TokenKind::LParen)?;
+        self.parse_in_scope(|parser| {
+            parser.expect(&TokenKind::LParen)?;
 
-        let mut init = None;
-        let mut cond = None;
-        let mut post = None;
+            let mut init = None;
+            let mut cond = None;
+            let mut post = None;
 
-        if self.peek_kind() == &TokenKind::Semicolon {
-            self.expect(&TokenKind::Semicolon)?;
-        } else {
-            init = Some(self.parse_for_statement_init()?);
-        }
+            if parser.peek_kind() == &TokenKind::Semicolon {
+                parser.expect(&TokenKind::Semicolon)?;
+            } else {
+                init = Some(parser.parse_for_statement_init()?);
+            }
 
-        if self.peek_kind() != &TokenKind::Semicolon {
-            cond = Some(self.parse_expr()?);
-        }
-        self.expect(&TokenKind::Semicolon)?;
+            if parser.peek_kind() != &TokenKind::Semicolon {
+                cond = Some(parser.parse_expr()?);
+            }
+            parser.expect(&TokenKind::Semicolon)?;
 
-        if self.peek_kind() != &TokenKind::RParen {
-            post = Some(self.parse_expr()?);
-        }
-        self.expect(&TokenKind::RParen)?;
+            if parser.peek_kind() != &TokenKind::RParen {
+                post = Some(parser.parse_expr()?);
+            }
+            parser.expect(&TokenKind::RParen)?;
 
-        let body = self.parse_statement()?;
+            let body = parser.parse_statement()?;
 
-        Ok(Statement::For {
-            init: init.map(Box::new),
-            cond,
-            post,
-            body: Box::new(body),
+            Ok(Statement::For {
+                init: init.map(Box::new),
+                cond,
+                post,
+                body: Box::new(body),
+            })
         })
     }
 
@@ -1360,12 +1492,15 @@ impl Parser {
             }
             TokenKind::KwFor => self.parse_for_statement(),
             // Variable declaration
-            token_kind if self.is_type_decl(token_kind) => self.parse_decl_statement(),
+            token_kind if self.is_decl_start(token_kind) => self.parse_decl_statement(),
             // Block
             TokenKind::LBrace => {
                 self.expect(&TokenKind::LBrace)?;
-                let mut body = vec![];
-                self.parse_through_rbrace(&mut body)?;
+                let body = self.parse_in_scope(|parser| {
+                    let mut body = vec![];
+                    parser.parse_through_rbrace(&mut body)?;
+                    Ok(body)
+                })?;
                 Ok(Statement::Block(body))
             }
             // Empty
