@@ -731,17 +731,8 @@ impl Codegen {
                 right,
                 ..
             } => self.emit_binary(*op, operand_ty, left, right),
-            TypedExprKind::Variable { id, .. } => {
-                self.emit_addr(expr);
-
-                let storage_ty = match id {
-                    ObjectId::Local(id) => &self.resolve_local(*id).ty,
-                    ObjectId::Global(id) => &self.resolve_global(*id).ty,
-                };
-
-                if !matches!(storage_ty, Type::Array { .. }) {
-                    self.emit_load_from_addr(&expr.ty);
-                }
+            TypedExprKind::Variable { .. } => {
+                unreachable!("lvalue variable should be converted before value codegen")
             }
             TypedExprKind::Unary {
                 op: UnaryOp::AddressOf,
@@ -810,6 +801,19 @@ impl Codegen {
             }
             TypedExprKind::FunctionDesignator { name, .. } => {
                 self.emit_line(format_args!("la a0, {name}"));
+            }
+            TypedExprKind::FunctionToPointer { expr, .. } => match &expr.kind {
+                TypedExprKind::FunctionDesignator { name, .. } => {
+                    self.emit_line(format_args!("la a0, {name}"));
+                }
+                _ => self.emit_expr(expr),
+            },
+            TypedExprKind::ArrayToPointer { expr, .. } => {
+                self.emit_addr(expr);
+            }
+            TypedExprKind::LvalueToRvalue { expr, .. } => {
+                self.emit_addr(expr);
+                self.emit_load_from_addr(&expr.ty);
             }
         }
     }

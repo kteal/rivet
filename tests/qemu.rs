@@ -644,6 +644,16 @@ fn qemu_local_variable_programs_return_expected_values() {
         8,
     );
     run_qemu_case(
+        "lvalue-to-rvalue-local-loads",
+        "int main() {\n    int x = 4;\n    int y = 5;\n    return x * 10 + y;\n}\n",
+        45,
+    );
+    run_qemu_case(
+        "lvalue-to-rvalue-pointer-dereference-load",
+        "int main() {\n    int x = 6;\n    int *p = &x;\n    return *p + x;\n}\n",
+        12,
+    );
+    run_qemu_case(
         "multi-var-assignments",
         "int main() {\n    int x = 2;\n    int y = 3;\n    int z = x + y;\n    x = z * 2;\n    y = x - 1;\n    z = y % 4;\n    return z;\n}\n",
         1,
@@ -667,6 +677,16 @@ fn qemu_local_variable_programs_return_expected_values() {
         "int-array-decays-to-pointer-argument",
         "int write_first(int *p) {\n    return *p = 123;\n}\n\nint main() {\n    int nums[3];\n    return write_first(nums);\n}\n",
         123,
+    );
+    run_qemu_case(
+        "char-array-decays-to-pointer-initializer",
+        "int main() {\n    char buf[2] = {5, 0};\n    char *p = buf;\n    return *p;\n}\n",
+        5,
+    );
+    run_qemu_case(
+        "char-array-decays-to-pointer-comparison",
+        "int main() {\n    char buf[2];\n    char *p = buf;\n    return p == buf;\n}\n",
+        1,
     );
     run_qemu_case(
         "char-array-initializer-list",
@@ -1061,6 +1081,21 @@ fn qemu_function_pointer_programs_return_expected_values() {
         "typedef-function-pointer-indirect-call",
         "typedef int (*handler)(int);\n\nint twice(int x) {\n    return x * 2;\n}\n\nint main() {\n    handler fp = twice;\n    return fp(6);\n}\n",
         12,
+    );
+    run_qemu_case(
+        "function-designator-decays-in-call-argument",
+        "int id(int x) {\n    return x;\n}\n\nint apply(int (*f)(int), int x) {\n    return f(x);\n}\n\nint main() {\n    return apply(id, 3);\n}\n",
+        3,
+    );
+    run_qemu_case(
+        "function-designator-decays-in-pointer-comparison",
+        "int id(int x) {\n    return x;\n}\n\nint main() {\n    int (*fp)(int) = id;\n    return fp == id;\n}\n",
+        1,
+    );
+    run_qemu_case(
+        "explicitly-dereferenced-function-designator-call",
+        "int id(int x) {\n    return x + 1;\n}\n\nint main() {\n    return (*id)(3);\n}\n",
+        4,
     );
 }
 

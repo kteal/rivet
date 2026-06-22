@@ -289,6 +289,64 @@ impl Checker {
         Ok(())
     }
 
+    const fn is_lvalue_expr(expr: &TypedExpr) -> bool {
+        matches!(
+            expr.kind,
+            TypedExprKind::Variable { .. }
+                | TypedExprKind::Unary {
+                    op: UnaryOp::Dereference,
+                    ..
+                }
+                | TypedExprKind::Index { .. }
+        )
+    }
+
+    fn lvalue_to_rvalue(expr: TypedExpr) -> TypedExpr {
+        if Self::is_lvalue_expr(&expr) {
+            TypedExpr {
+                ty: expr.ty.clone(),
+                kind: TypedExprKind::LvalueToRvalue {
+                    span: expr.diagnostic_span(),
+                    expr: Box::new(expr),
+                },
+            }
+        } else {
+            expr
+        }
+    }
+
+    fn decay_function_to_pointer(expr: TypedExpr) -> TypedExpr {
+        match expr.ty {
+            Type::Function(_) => TypedExpr {
+                ty: Type::Pointer(Box::new(expr.ty.clone())),
+                kind: TypedExprKind::FunctionToPointer {
+                    span: expr.diagnostic_span(),
+                    expr: Box::new(expr),
+                },
+            },
+            _ => expr,
+        }
+    }
+
+    fn decay_array_to_pointer(expr: TypedExpr) -> TypedExpr {
+        match expr.ty {
+            Type::Array { ref element, .. } => TypedExpr {
+                ty: Type::Pointer(Box::new(*element.clone())),
+                kind: TypedExprKind::ArrayToPointer {
+                    span: expr.diagnostic_span(),
+                    expr: Box::new(expr),
+                },
+            },
+            _ => expr,
+        }
+    }
+
+    fn decay_expr(expr: TypedExpr) -> TypedExpr {
+        let expr = Self::decay_function_to_pointer(expr);
+        let expr = Self::decay_array_to_pointer(expr);
+        Self::lvalue_to_rvalue(expr)
+    }
+
     fn check_binary_op_types(
         op: BinaryOp,
         op_span: Span,
@@ -422,6 +480,7 @@ impl Checker {
                 expr,
             } => {
                 let typed_ptr = self.check_expr(expr)?;
+                let typed_ptr = Self::decay_expr(typed_ptr);
 
                 let Type::Pointer(inner) = &typed_ptr.ty.clone() else {
                     return Err(SemanticError {
@@ -551,17 +610,6 @@ impl Checker {
 
     fn check_variable_expr(&self, name: &str, span: Span) -> Result<TypedExpr, SemanticError> {
         if let Ok(symbol) = self.resolve_object(name, span) {
-            if let Type::Array { element, .. } = symbol.ty() {
-                return Ok(TypedExpr {
-                    kind: TypedExprKind::Variable {
-                        id: symbol.id(),
-                        name: name.to_string(),
-                        span,
-                    },
-                    ty: Type::Pointer(element.clone()),
-                });
-            }
-
             return Ok(TypedExpr {
                 kind: TypedExprKind::Variable {
                     id: symbol.id(),
@@ -577,10 +625,10 @@ impl Checker {
                     name: name.to_string(),
                     name_span: span,
                 },
-                ty: Type::Pointer(Box::new(Type::Function(Box::new(FunctionType {
+                ty: Type::Function(Box::new(FunctionType {
                     return_type: Box::new(symbol.return_type.clone()),
                     params: symbol.param_types.clone(),
-                })))),
+                })),
             });
         }
 
@@ -631,6 +679,7 @@ impl Checker {
             });
         }
         let typed_expr = self.check_expr(expr)?;
+        let typed_expr = Self::decay_expr(typed_expr);
         let ty = match op {
             UnaryOp::LogicalNot => Type::Int,
             UnaryOp::BitwiseNot | UnaryOp::Negate => {
@@ -679,6 +728,10 @@ impl Checker {
         span: Span,
     ) -> Result<TypedExpr, SemanticError> {
         let typed_callee = self.check_expr(callee)?;
+        let typed_callee = match typed_callee.ty {
+            Type::Function(_) => typed_callee,
+            _ => Self::lvalue_to_rvalue(typed_callee),
+        };
         let function_ty = match &typed_callee.ty {
             Type::Function(function_ty) => function_ty,
             Type::Pointer(inner) => match inner.as_ref() {
@@ -729,7 +782,10 @@ impl Checker {
 
         let typed_args = args
             .iter()
-            .map(|arg| self.check_expr(arg))
+            .map(|arg| {
+                let typed_arg = self.check_expr(arg)?;
+                Ok(Self::decay_expr(typed_arg))
+            })
             .collect::<Result<Vec<_>, _>>()?;
 
         for (ty, typed_arg) in function_ty.params.iter().zip(&typed_args) {
@@ -761,7 +817,9 @@ impl Checker {
         span: Span,
     ) -> Result<TypedExpr, SemanticError> {
         let typed_base = self.check_expr(base)?;
+        let typed_base = Self::decay_expr(typed_base);
         let typed_index = self.check_expr(index)?;
+        let typed_index = Self::decay_expr(typed_index);
 
         if !typed_index.ty.is_integer() {
             return Err(SemanticError {
@@ -800,6 +858,7 @@ impl Checker {
         span: Span,
     ) -> Result<TypedExpr, SemanticError> {
         let typed_expr = self.check_expr(expr)?;
+        let typed_expr = Self::decay_expr(typed_expr);
 
         if !ty.is_integer() || !typed_expr.ty.is_integer() {
             return Err(SemanticError {
@@ -835,8 +894,8 @@ impl Checker {
                 left,
                 right,
             } => {
-                let typed_left = self.check_expr(left)?;
-                let typed_right = self.check_expr(right)?;
+                let typed_left = Self::decay_expr(self.check_expr(left)?);
+                let typed_right = Self::decay_expr(self.check_expr(right)?);
 
                 if matches!(op, BinaryOp::Equal | BinaryOp::NotEqual)
                     && ((typed_left.ty.is_pointer() && typed_right.is_null_pointer_constant())
@@ -882,6 +941,7 @@ impl Checker {
             } => {
                 let typed_target = self.check_assignable_lvalue(target, *op_span)?;
                 let typed_value = self.check_expr(value)?;
+                let typed_value = Self::decay_expr(typed_value);
 
                 if !Self::is_assignable_expr(&typed_target.ty, &typed_value) {
                     return Err(SemanticError {
@@ -911,6 +971,7 @@ impl Checker {
             } => {
                 let typed_target = self.check_assignable_lvalue(target, *op_span)?;
                 let typed_value = self.check_expr(value)?;
+                let typed_value = Self::decay_expr(typed_value);
 
                 let type_info =
                     Self::check_binary_op_types(*op, *op_span, &typed_target.ty, &typed_value.ty)?;
@@ -995,6 +1056,7 @@ impl Checker {
 
                 for value in values {
                     let typed_value = self.check_expr(value)?;
+                    let typed_value = Self::decay_expr(typed_value);
                     if !Self::is_assignable_expr(element_ty, &typed_value) {
                         return Err(SemanticError {
                             message: format!(
@@ -1022,6 +1084,7 @@ impl Checker {
             ) => {
                 // Scalars must be initialized with an Expr
                 let typed_init = self.check_expr(init_expr)?;
+                let typed_init = Self::decay_expr(typed_init);
                 if !Self::is_assignable_expr(target_ty, &typed_init) {
                     return Err(SemanticError {
                         message: format!(
@@ -1064,6 +1127,7 @@ impl Checker {
         match statement {
             Statement::Return(expr) => {
                 let typed_expr = self.check_expr(expr)?;
+                let typed_expr = Self::decay_expr(typed_expr);
 
                 let return_type = self
                     .current_function_return_type
@@ -1118,6 +1182,7 @@ impl Checker {
                 else_branch,
             } => {
                 let typed_cond = self.check_expr(cond)?;
+                let typed_cond = Self::decay_expr(typed_cond);
                 let typed_then = self.check_statement(then_branch)?;
                 let typed_else = if let Some(else_statement) = else_branch {
                     Some(self.check_statement(else_statement)?)
@@ -1135,6 +1200,7 @@ impl Checker {
                 self.enter_loop();
                 let res = (|| -> Result<TypedStatement, SemanticError> {
                     let typed_cond = self.check_expr(cond)?;
+                    let typed_cond = Self::decay_expr(typed_cond);
                     let typed_body = self.check_statement(body)?;
 
                     Ok(TypedStatement::While {
@@ -1150,6 +1216,7 @@ impl Checker {
                 let res = (|| -> Result<TypedStatement, SemanticError> {
                     let typed_body = self.check_statement(body)?;
                     let typed_cond = self.check_expr(cond)?;
+                    let typed_cond = Self::decay_expr(typed_cond);
 
                     Ok(TypedStatement::DoWhile {
                         body: Box::new(typed_body),
@@ -1175,12 +1242,12 @@ impl Checker {
                         None
                     };
                     let typed_cond = if let Some(cond_expr) = cond {
-                        Some(self.check_expr(cond_expr)?)
+                        Some(Self::decay_expr(self.check_expr(cond_expr)?))
                     } else {
                         None
                     };
                     let typed_post = if let Some(post_expr) = post {
-                        Some(self.check_expr(post_expr)?)
+                        Some(Self::decay_expr(self.check_expr(post_expr)?))
                     } else {
                         None
                     };
@@ -1200,6 +1267,7 @@ impl Checker {
             Statement::Empty => Ok(TypedStatement::Empty),
             Statement::ExprStatement(expr) => {
                 let typed_expr = self.check_expr(expr)?;
+                let typed_expr = Self::decay_expr(typed_expr);
                 Ok(TypedStatement::ExprStatement(typed_expr))
             }
             Statement::Break { span } => {

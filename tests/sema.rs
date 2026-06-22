@@ -321,12 +321,16 @@ fn resolves_global_variable_expression() {
     let TypedStatement::Return(expr) = &main.body[0] else {
         panic!("expected return statement");
     };
-    let TypedExprKind::Variable { id, name, .. } = &expr.kind else {
-        panic!("expected variable expression");
+    let TypedExprKind::LvalueToRvalue { expr: inner, .. } = &expr.kind else {
+        panic!("expected lvalue-to-rvalue conversion");
+    };
+    let TypedExprKind::Variable { id, name, .. } = &inner.kind else {
+        panic!("expected variable inside lvalue-to-rvalue conversion");
     };
     assert_eq!(*id, ObjectId::Global(GlobalId(0)));
     assert_eq!(name, "g");
     assert_eq!(expr.ty, Type::Int);
+    assert_eq!(inner.ty, Type::Int);
 }
 
 #[test]
@@ -354,12 +358,16 @@ fn local_variable_shadows_global_variable_expression() {
     let TypedStatement::Return(expr) = &main.body[1] else {
         panic!("expected return statement");
     };
-    let TypedExprKind::Variable { id, name, .. } = &expr.kind else {
-        panic!("expected variable expression");
+    let TypedExprKind::LvalueToRvalue { expr: inner, .. } = &expr.kind else {
+        panic!("expected lvalue-to-rvalue conversion");
+    };
+    let TypedExprKind::Variable { id, name, .. } = &inner.kind else {
+        panic!("expected variable inside lvalue-to-rvalue conversion");
     };
     assert_eq!(*id, ObjectId::Local(LocalId(0)));
     assert_eq!(name, "x");
     assert_eq!(expr.ty, Type::Int);
+    assert_eq!(inner.ty, Type::Int);
 }
 
 #[test]
@@ -1556,13 +1564,17 @@ fn typed_pointer_dereference_has_pointee_type() {
     };
 
     assert_eq!(expr.ty, Type::Char);
+    let TypedExprKind::LvalueToRvalue { expr: inner, .. } = &expr.kind else {
+        panic!("expected lvalue-to-rvalue conversion");
+    };
     assert!(matches!(
-        expr.kind,
+        inner.kind,
         TypedExprKind::Unary {
             op: UnaryOp::Dereference,
             ..
         }
     ));
+    assert_eq!(inner.ty, Type::Char);
 }
 
 #[test]
@@ -1826,10 +1838,106 @@ fn accepts_function_pointer_initialized_from_function_designator() {
             params: vec![Type::Int],
         }))))
     );
+    let TypedExprKind::FunctionToPointer { expr, .. } = &init.kind else {
+        panic!("expected function-to-pointer conversion");
+    };
     assert!(matches!(
-        init.kind,
+        expr.kind,
         TypedExprKind::FunctionDesignator { ref name, .. } if name == "id"
     ));
+}
+
+#[test]
+fn accepts_function_designator_decay_in_call_argument() {
+    let typed_program = check_source(
+        "int id(int x) { return x; } int apply(int (*f)(int), int x) { return f(x); } int main() { return apply(id, 3); }",
+    );
+
+    let main = typed_function_at(&typed_program, 2);
+    let TypedStatement::Return(expr) = &main.body[0] else {
+        panic!("expected return statement");
+    };
+    let TypedExprKind::Call { args, .. } = &expr.kind else {
+        panic!("expected call expression");
+    };
+
+    assert_eq!(
+        args[0].ty,
+        Type::Pointer(Box::new(Type::Function(Box::new(FunctionType {
+            return_type: Box::new(Type::Int),
+            params: vec![Type::Int],
+        }))))
+    );
+    let TypedExprKind::FunctionToPointer { expr, .. } = &args[0].kind else {
+        panic!("expected function-to-pointer conversion");
+    };
+    assert!(matches!(
+        expr.kind,
+        TypedExprKind::FunctionDesignator { ref name, .. } if name == "id"
+    ));
+}
+
+#[test]
+fn accepts_function_designator_decay_in_binary_operand() {
+    let typed_program = check_source(
+        "int id(int x) { return x; } int main() { int (*fp)(int) = id; return fp == id; }",
+    );
+
+    let main = typed_function_at(&typed_program, 1);
+    let TypedStatement::Return(expr) = &main.body[1] else {
+        panic!("expected return statement");
+    };
+    let TypedExprKind::Binary { right, .. } = &expr.kind else {
+        panic!("expected binary expression");
+    };
+
+    assert_eq!(
+        right.ty,
+        Type::Pointer(Box::new(Type::Function(Box::new(FunctionType {
+            return_type: Box::new(Type::Int),
+            params: vec![Type::Int],
+        }))))
+    );
+    let TypedExprKind::FunctionToPointer { expr, .. } = &right.kind else {
+        panic!("expected function-to-pointer conversion");
+    };
+    assert!(matches!(
+        expr.kind,
+        TypedExprKind::FunctionDesignator { ref name, .. } if name == "id"
+    ));
+}
+
+#[test]
+fn accepts_call_through_explicitly_dereferenced_function_designator() {
+    let typed_program =
+        check_source("int id(int x) { return x + 1; } int main() { return (*id)(3); }");
+
+    let main = typed_function_at(&typed_program, 1);
+    let TypedStatement::Return(expr) = &main.body[0] else {
+        panic!("expected return statement");
+    };
+
+    assert_eq!(expr.ty, Type::Int);
+
+    let TypedExprKind::Call { callee, args, .. } = &expr.kind else {
+        panic!("expected call expression");
+    };
+    let TypedExprKind::Unary {
+        op: UnaryOp::Dereference,
+        expr: deref_operand,
+        ..
+    } = &callee.kind
+    else {
+        panic!("expected dereferenced callee");
+    };
+    let TypedExprKind::FunctionToPointer { expr, .. } = &deref_operand.kind else {
+        panic!("expected function-to-pointer conversion before dereference");
+    };
+    assert!(matches!(
+        expr.kind,
+        TypedExprKind::FunctionDesignator { ref name, .. } if name == "id"
+    ));
+    assert_eq!(args.len(), 1);
 }
 
 #[test]
@@ -1856,7 +1964,13 @@ fn accepts_call_through_function_pointer() {
             params: vec![Type::Int],
         }))))
     );
-    assert!(matches!(callee.kind, TypedExprKind::Variable { ref name, .. } if name == "fp"));
+    let TypedExprKind::LvalueToRvalue { expr: inner, .. } = &callee.kind else {
+        panic!("expected lvalue-to-rvalue conversion for function pointer callee");
+    };
+    assert!(matches!(
+        inner.kind,
+        TypedExprKind::Variable { ref name, .. } if name == "fp"
+    ));
     assert_eq!(args.len(), 1);
     assert_eq!(args[0].ty, Type::Int);
 }
@@ -2827,6 +2941,78 @@ fn typed_array_variable_expression_decays_to_pointer_argument() {
     };
 
     assert_eq!(args[0].ty, Type::Pointer(Box::new(Type::Char)));
+    let TypedExprKind::ArrayToPointer { expr, .. } = &args[0].kind else {
+        panic!("expected array-to-pointer conversion");
+    };
+    assert_eq!(
+        expr.ty,
+        Type::Array {
+            element: Box::new(Type::Char),
+            len: 3,
+        }
+    );
+    assert!(matches!(
+        expr.kind,
+        TypedExprKind::Variable { ref name, .. } if name == "buf"
+    ));
+}
+
+#[test]
+fn typed_array_variable_expression_decays_to_pointer_initializer() {
+    let typed_program = check_source("int main() { char buf[3]; char *p = buf; return *p; }");
+    let main = typed_function_at(&typed_program, 0);
+
+    let TypedStatement::Decl(decls) = &main.body[1] else {
+        panic!("expected declaration statement");
+    };
+    let Some(TypedInitializer::Expr(init)) = &decls[0].init else {
+        panic!("expected pointer initializer");
+    };
+
+    assert_eq!(init.ty, Type::Pointer(Box::new(Type::Char)));
+    let TypedExprKind::ArrayToPointer { expr, .. } = &init.kind else {
+        panic!("expected array-to-pointer conversion");
+    };
+    assert_eq!(
+        expr.ty,
+        Type::Array {
+            element: Box::new(Type::Char),
+            len: 3,
+        }
+    );
+    assert!(matches!(
+        expr.kind,
+        TypedExprKind::Variable { ref name, .. } if name == "buf"
+    ));
+}
+
+#[test]
+fn typed_array_variable_expression_decays_to_pointer_binary_operand() {
+    let typed_program = check_source("int main() { char buf[3]; char *p = buf; return p == buf; }");
+    let main = typed_function_at(&typed_program, 0);
+
+    let TypedStatement::Return(expr) = &main.body[2] else {
+        panic!("expected return statement");
+    };
+    let TypedExprKind::Binary { right, .. } = &expr.kind else {
+        panic!("expected binary expression");
+    };
+
+    assert_eq!(right.ty, Type::Pointer(Box::new(Type::Char)));
+    let TypedExprKind::ArrayToPointer { expr, .. } = &right.kind else {
+        panic!("expected array-to-pointer conversion");
+    };
+    assert_eq!(
+        expr.ty,
+        Type::Array {
+            element: Box::new(Type::Char),
+            len: 3,
+        }
+    );
+    assert!(matches!(
+        expr.kind,
+        TypedExprKind::Variable { ref name, .. } if name == "buf"
+    ));
 }
 
 #[test]

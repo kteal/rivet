@@ -101,7 +101,10 @@ impl TypedExpr {
             | TypedExprKind::Variable { span, .. }
             | TypedExprKind::Index { span, .. }
             | TypedExprKind::Cast { span, .. }
-            | TypedExprKind::Call { span, .. } => *span,
+            | TypedExprKind::Call { span, .. }
+            | TypedExprKind::FunctionToPointer { span, .. }
+            | TypedExprKind::ArrayToPointer { span, .. }
+            | TypedExprKind::LvalueToRvalue { span, .. } => *span,
             TypedExprKind::Unary { op_span, .. }
             | TypedExprKind::Binary { op_span, .. }
             | TypedExprKind::Assign { op_span, .. }
@@ -228,6 +231,18 @@ pub enum TypedExprKind {
     FunctionDesignator {
         name: String,
         name_span: Span,
+    },
+    FunctionToPointer {
+        expr: Box<TypedExpr>,
+        span: Span,
+    },
+    ArrayToPointer {
+        expr: Box<TypedExpr>,
+        span: Span,
+    },
+    LvalueToRvalue {
+        expr: Box<TypedExpr>,
+        span: Span,
     },
 }
 
