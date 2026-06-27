@@ -21,6 +21,7 @@ pub enum TokenKind {
     KwDo,
     KwTypedef,
     KwSizeof,
+    KwVoid,
     Ident(String),
     IntLiteral {
         value: u64,
@@ -431,6 +432,7 @@ impl<'a> Lexer<'a> {
             "do" => TokenKind::KwDo,
             "typedef" => TokenKind::KwTypedef,
             "sizeof" => TokenKind::KwSizeof,
+            "void" => TokenKind::KwVoid,
             _ => TokenKind::Ident(text),
         };
 

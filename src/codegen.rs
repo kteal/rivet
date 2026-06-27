@@ -331,6 +331,7 @@ impl Codegen {
                 unreachable!("incomplete arrays should have been handled before codegen")
             }
             Type::Function(_) => unreachable!("function values should have decayed before codegen"),
+            Type::Void => unreachable!("void types should be rejected before codegen"),
         }
     }
 
@@ -352,6 +353,7 @@ impl Codegen {
                 unreachable!("incomplete arrays should have been handled before codegen")
             }
             Type::Function(_) => unreachable!("function values should have decayed before codegen"),
+            Type::Void => unreachable!("void types should be rejected before codegen"),
         }
     }
 
@@ -429,6 +431,7 @@ impl Codegen {
                 unreachable!("incomplete arrays should have been handled before codegen")
             }
             Type::Function(_) => unreachable!("function values should have decayed before codegen"),
+            Type::Void => unreachable!("void types should be rejected before codegen"),
         }
     }
 
@@ -450,6 +453,7 @@ impl Codegen {
                 unreachable!("incomplete arrays should have been handled before codegen")
             }
             Type::Function(_) => unreachable!("function values should have decayed before codegen"),
+            Type::Void => unreachable!("void types should be rejected before codegen"),
         }
     }
 
@@ -512,6 +516,7 @@ impl Codegen {
                 Type::Function(_) => {
                     unreachable!("function values should have decayed before codegen")
                 }
+                Type::Void => unreachable!("void types should be rejected before codegen"),
             },
             BinaryOp::Remainder => match ty {
                 Type::Int | Type::Char | Type::Long | Type::SignedChar => {
@@ -532,6 +537,7 @@ impl Codegen {
                 Type::Function(_) => {
                     unreachable!("function values should have decayed before codegen")
                 }
+                Type::Void => unreachable!("void types should be rejected before codegen"),
             },
             BinaryOp::Equal => {
                 self.emit_line(format_args!("xor a0, t0, a0"));
@@ -560,6 +566,7 @@ impl Codegen {
                 Type::Function(_) => {
                     unreachable!("function values should have decayed before codegen")
                 }
+                Type::Void => unreachable!("void types should be rejected before codegen"),
             },
             BinaryOp::LessEqual => match ty {
                 Type::Int | Type::Char | Type::Long | Type::SignedChar => {
@@ -582,6 +589,7 @@ impl Codegen {
                 Type::Function(_) => {
                     unreachable!("function values should have decayed before codegen")
                 }
+                Type::Void => unreachable!("void types should be rejected before codegen"),
             },
             BinaryOp::Greater => match ty {
                 Type::Int | Type::Char | Type::Long | Type::SignedChar => {
@@ -602,6 +610,7 @@ impl Codegen {
                 Type::Function(_) => {
                     unreachable!("function values should have decayed before codegen")
                 }
+                Type::Void => unreachable!("void types should be rejected before codegen"),
             },
             BinaryOp::GreaterEqual => match ty {
                 Type::Int | Type::Char | Type::Long | Type::SignedChar => {
@@ -624,6 +633,7 @@ impl Codegen {
                 Type::Function(_) => {
                     unreachable!("function values should have decayed before codegen")
                 }
+                Type::Void => unreachable!("void types should be rejected before codegen"),
             },
             BinaryOp::BitAnd => self.emit_line(format_args!("and a0, a0, t0")),
             BinaryOp::BitXor => self.emit_line(format_args!("xor a0, a0, t0")),
@@ -648,6 +658,7 @@ impl Codegen {
                 Type::Function(_) => {
                     unreachable!("function values should have decayed before codegen")
                 }
+                Type::Void => unreachable!("void types should be rejected before codegen"),
             },
             BinaryOp::LogicalAnd | BinaryOp::LogicalOr => unreachable!(),
         }

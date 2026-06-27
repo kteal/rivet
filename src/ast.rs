@@ -285,6 +285,7 @@ pub enum Type {
     Array { element: Box<Self>, len: usize },
     IncompleteArray { element: Box<Self> },
     Function(Box<FunctionType>),
+    Void,
 }
 
 impl Type {
@@ -318,7 +319,7 @@ impl Type {
             Self::Char | Self::SignedChar | Self::UnsignedChar => 1,
             Self::Int | Self::UnsignedInt | Self::Pointer(_) | Self::Long | Self::UnsignedLong => 4,
             Self::Array { element, len } => element.size() * len,
-            Self::Function(_) | Self::IncompleteArray { .. } => {
+            Self::Function(_) | Self::IncompleteArray { .. } | Self::Void => {
                 panic!("cannot calculate size of '{self:?}' type")
             }
         }
@@ -341,7 +342,7 @@ impl Type {
             | Self::Long
             | Self::UnsignedLong => self.size(),
             Self::Array { element, .. } => element.align(),
-            Self::Function(_) | Self::IncompleteArray { .. } => {
+            Self::Function(_) | Self::IncompleteArray { .. } | Self::Void => {
                 panic!("cannot calculate alignment of '{self:?}' type")
             }
         }
@@ -349,7 +350,9 @@ impl Type {
 
     #[must_use]
     pub fn is_assignable_from(&self, value: &Self) -> bool {
-        self == value || (self.is_integer() && value.is_integer())
+        self == value
+            || (self.is_integer() && value.is_integer())
+            || self.is_void_pointer_compatible_with(value)
     }
 
     #[must_use]
@@ -362,7 +365,8 @@ impl Type {
             Self::Pointer(_)
             | Self::Array { .. }
             | Self::IncompleteArray { .. }
-            | Self::Function(_) => None,
+            | Self::Function(_)
+            | Self::Void => None,
         }
     }
 
@@ -388,5 +392,23 @@ impl Type {
         } else {
             Self::Int
         }
+    }
+
+    #[must_use]
+    pub const fn is_object_type(&self) -> bool {
+        !matches!(
+            self,
+            Self::Void | Self::Function(_) | Self::IncompleteArray { .. }
+        )
+    }
+
+    #[must_use]
+    pub fn is_void_pointer_compatible_with(&self, other: &Self) -> bool {
+        matches!(
+            (self, other),
+            (Self::Pointer(left), Self::Pointer(right))
+                if (left.as_ref() == &Self::Void && right.as_ref().is_object_type())
+                || (right.as_ref() == &Self::Void && left.as_ref().is_object_type())
+        )
     }
 }

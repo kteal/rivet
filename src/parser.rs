@@ -80,6 +80,7 @@ enum TypeSpecifier {
     Unsigned,
     Long,
     TypedefName { name: String, span: Span },
+    Void,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -91,6 +92,7 @@ enum TypeQualifier {
 struct TypeSpec {
     unsigned: bool,
     signed: bool,
+    void: bool,
     int_count: usize,
     char_count: usize,
     long_count: usize,
@@ -534,7 +536,8 @@ impl Parser {
             | TokenKind::KwLong
             | TokenKind::KwSigned
             | TokenKind::KwConst
-            | TokenKind::KwTypedef => true,
+            | TokenKind::KwTypedef
+            | TokenKind::KwVoid => true,
             TokenKind::Ident(name) => self.is_typedef_name(name),
             _ => false,
         }
@@ -608,6 +611,12 @@ impl Parser {
                     saw_any = true;
                     saw_type = true;
                 }
+                TokenKind::KwVoid => {
+                    self.advance();
+                    spec.type_specifiers.push(TypeSpecifier::Void);
+                    saw_any = true;
+                    saw_type = true;
+                }
 
                 TokenKind::Ident(name) if !saw_type && self.is_typedef_name(name) => {
                     let name = name.clone();
@@ -651,6 +660,7 @@ impl Parser {
 
                 TypeSpecifier::Unsigned => type_spec.unsigned = true,
                 TypeSpecifier::Signed => type_spec.signed = true,
+                TypeSpecifier::Void => type_spec.void = true,
                 TypeSpecifier::Int => type_spec.int_count += 1,
                 TypeSpecifier::Char => type_spec.char_count += 1,
                 TypeSpecifier::Long => type_spec.long_count += 1,
@@ -659,6 +669,7 @@ impl Parser {
 
         let saw_builtin = type_spec.unsigned
             || type_spec.signed
+            || type_spec.void
             || type_spec.int_count > 0
             || type_spec.char_count > 0
             || type_spec.long_count > 0;
@@ -687,30 +698,34 @@ impl Parser {
         match (
             spec.unsigned,
             spec.signed,
+            spec.void,
             spec.int_count,
             spec.char_count,
             spec.long_count,
         ) {
-            // signed, signed int
-            (false, _, 1, 0, 0) | (false, true, 0, 0, 0) => Ok(Type::Int),
+            // int, signed, signed int
+            (false, false, false, 1, 0, 0) | (false, true, false, 0 | 1, 0, 0) => Ok(Type::Int),
 
             // unsigned, unsigned int
-            (true, false, 0 | 1, 0, 0) => Ok(Type::UnsignedInt),
+            (true, false, false, 0 | 1, 0, 0) => Ok(Type::UnsignedInt),
 
             // char
-            (false, false, 0, 1, 0) => Ok(Type::Char),
+            (false, false, false, 0, 1, 0) => Ok(Type::Char),
 
             // unsigned char
-            (true, false, 0, 1, 0) => Ok(Type::UnsignedChar),
+            (true, false, false, 0, 1, 0) => Ok(Type::UnsignedChar),
 
             // signed char
-            (false, true, 0, 1, 0) => Ok(Type::SignedChar),
+            (false, true, false, 0, 1, 0) => Ok(Type::SignedChar),
 
             // long, long int, signed long, signed long int
-            (false, _, 0 | 1, 0, 1) => Ok(Type::Long),
+            (false, _, false, 0 | 1, 0, 1) => Ok(Type::Long),
 
             // unsigned long, unsigned long int
-            (true, false, 0 | 1, 0, 1) => Ok(Type::UnsignedLong),
+            (true, false, false, 0 | 1, 0, 1) => Ok(Type::UnsignedLong),
+
+            // void
+            (false, false, true, 0, 0, 0) => Ok(Type::Void),
 
             _ => Err(ParseError {
                 message: "unsupported or invalid type specifier combination".to_string(),

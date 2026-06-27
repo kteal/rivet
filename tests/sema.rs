@@ -300,6 +300,28 @@ fn accepts_global_array_initializer_list() {
 }
 
 #[test]
+fn string_literal_infers_global_char_array_size() {
+    let typed_program = check_source("char buf[] = \"abc\"; int main() { return sizeof(buf); }");
+
+    let TypedExternalDecl::Global(global) = &typed_program.declarations[0] else {
+        panic!("expected typed global declaration");
+    };
+
+    assert_eq!(
+        global.ty,
+        Type::Array {
+            element: Box::new(Type::Char),
+            len: 4,
+        }
+    );
+
+    let Some(TypedInitializer::List(values)) = &global.init else {
+        panic!("expected array initializer");
+    };
+    assert_eq!(values.len(), 4);
+}
+
+#[test]
 fn resolves_global_variable_expression() {
     let program = Program {
         declarations: vec![
@@ -2063,7 +2085,10 @@ fn rejects_raw_function_type_local_declaration() {
 
     let err = check(&program).expect_err("semantic check should fail");
 
-    assert_eq!(err.message, "function type is not an object type");
+    assert_eq!(
+        err.message,
+        "Function(FunctionType { return_type: Int, params: [Int] }) type is not an object type"
+    );
 }
 
 #[test]
@@ -2333,6 +2358,46 @@ fn accepts_pointer_compound_assignment_by_integer() {
     ]);
 
     check(&program).expect("semantic check should succeed");
+}
+
+#[test]
+fn accepts_void_pointer_assignment_from_object_pointer() {
+    check_source("int main() { char *s = \"abc\"; void *p = s; return p != 0; }");
+}
+
+#[test]
+fn accepts_object_pointer_assignment_from_void_pointer() {
+    check_source("int main() { char *s = \"abc\"; void *p = s; char *q = p; return q[1]; }");
+}
+
+#[test]
+fn accepts_void_pointer_function_argument_from_object_pointer() {
+    check_source(
+        "int takes_void_pointer(void *p) { return p != 0; } int main() { char *s = \"abc\"; return takes_void_pointer(s); }",
+    );
+}
+
+#[test]
+fn accepts_object_pointer_function_argument_from_void_pointer() {
+    check_source(
+        "int takes_char_pointer(char *p) { return p[1]; } int main() { char *s = \"abc\"; void *p = s; return takes_char_pointer(p); }",
+    );
+}
+
+#[test]
+fn accepts_void_pointer_comparison_with_object_pointer() {
+    check_source("int main() { char *s = \"abc\"; void *p = s; return p == s; }");
+}
+
+#[test]
+fn rejects_plain_void_local_object() {
+    let source = "int main() { void x; return 0; }";
+    let tokens = lex(source, DUMMY_FILE_ID).expect("lexing should succeed");
+    let tokens = preprocess(tokens).expect("preprocessing should succeed");
+    let program = parse(tokens).expect("parsing should succeed");
+    let err = check(&program).expect_err("semantic check should fail");
+
+    assert_eq!(err.message, "Void type is not an object type");
 }
 
 #[test]

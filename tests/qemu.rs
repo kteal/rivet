@@ -289,6 +289,16 @@ fn qemu_string_literal_programs_return_expected_values() {
         99,
     );
     run_qemu_case(
+        "string-literal-infers-global-char-array-size",
+        "char buf[] = \"abc\";\nint main() {\n    return sizeof(buf);\n}\n",
+        4,
+    );
+    run_qemu_case(
+        "string-literal-global-inferred-array-index",
+        "char buf[] = \"abc\";\nint main() {\n    return buf[2];\n}\n",
+        99,
+    );
+    run_qemu_case(
         "empty-string-literal-infers-one-byte-array",
         "int main() {\n    char buf[] = \"\";\n    return sizeof(buf);\n}\n",
         1,
@@ -1545,6 +1555,39 @@ fn qemu_null_pointer_constant_programs_return_expected_values() {
     run_qemu_case(
         "zero-valued-constant-expression-compares-with-pointer",
         "int main() {\n    char *p = 0;\n    return p == 0 * 1;\n}\n",
+        1,
+    );
+}
+
+#[test]
+fn qemu_void_pointer_programs_return_expected_values() {
+    run_qemu_case(
+        "void-pointer-from-char-pointer",
+        "int main() {\n    char *s = \"abc\";\n    void *p = s;\n    return p != 0;\n}\n",
+        1,
+    );
+
+    run_qemu_case(
+        "char-pointer-from-void-pointer",
+        "int main() {\n    char *s = \"abc\";\n    void *p = s;\n    char *q = p;\n    return q[1];\n}\n",
+        98,
+    );
+
+    run_qemu_case(
+        "void-pointer-parameter-from-char-pointer",
+        "int has_pointer(void *p) {\n    return p != 0;\n}\nint main() {\n    char *s = \"abc\";\n    return has_pointer(s);\n}\n",
+        1,
+    );
+
+    run_qemu_case(
+        "char-pointer-parameter-from-void-pointer",
+        "int second(char *p) {\n    return p[1];\n}\nint main() {\n    char *s = \"abc\";\n    void *p = s;\n    return second(p);\n}\n",
+        98,
+    );
+
+    run_qemu_case(
+        "void-pointer-compares-equal-to-char-pointer",
+        "int main() {\n    char *s = \"abc\";\n    void *p = s;\n    return p == s;\n}\n",
         1,
     );
 }

@@ -6,7 +6,7 @@
 
 `rivet` is a C compiler written in Rust that targets RV32IM assembly. It is working toward C23 by growing a small, tested C subset.
 
-It currently handles common integer and character types, basic pointers, function pointers, string literal expressions, address-of and dereference, fixed-size local and file-scope arrays, file-scope globals, array indexing, `sizeof`, functions, simple function prototypes, block scope, common control flow, and C-like expression precedence. It emits RV32IM assembly and reports lexer, parser, and semantic errors with source-map-backed file, line, and column locations.
+The current subset covers integer and character types, `void`, pointers, arrays, globals, functions, typedefs, string literals, `sizeof`, common control flow, and C-like expression precedence. It emits RV32IM assembly and reports lexer, parser, and semantic errors with source-map-backed file, line, and column locations.
 
 The current language subset supports programs shaped like:
 
@@ -243,7 +243,9 @@ Types and semantic analysis:
 - [x] `long`
 - [x] `unsigned long`
 - [x] `signed`, `signed int`, `signed long`, and `signed long int`
+- [x] `void` as a non-object type and `void *` as a generic object pointer
 - [x] basic pointer types such as `char *` and `int *`
+- [x] `void *` compatibility with object pointers in assignments, calls, returns, and comparisons
 - [x] pointer dereference type checking
 - [x] pointer arithmetic with integer offsets
 - [ ] full integer conversion rules
@@ -294,7 +296,7 @@ Objects, aggregate types, and declarators:
 - [x] pointer abstract type-names for `sizeof(type-name)` and casts
 - [x] static `.rodata` storage for string literal expressions
 - [x] string literal initialization for explicit-size character arrays: `char buf[4] = "abc"`
-- [x] inferred-size character arrays from string literals: `char buf[] = "abc"`
+- [x] inferred-size local and global character arrays from string literals: `char buf[] = "abc"`
 - [x] adjacent string literal concatenation: `"foo" "bar"`
 - [ ] full C declarator grammar
 - [ ] structs and unions

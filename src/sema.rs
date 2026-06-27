@@ -140,18 +140,30 @@ impl Checker {
             .expect("semantic checker should have an active scope")
     }
 
+    fn validate_object_type(ty: &Type, span: Span) -> Result<(), SemanticError> {
+        if matches!(ty, Type::Function(_) | Type::Void) {
+            return Err(SemanticError {
+                message: format!("{ty:?} type is not an object type"),
+                span,
+            });
+        }
+        if matches!(ty, Type::IncompleteArray { .. }) {
+            return Err(SemanticError {
+                message: "array size must be specified or inferred from string literal initializer"
+                    .to_string(),
+                span,
+            });
+        }
+        Ok(())
+    }
+
     fn declare_local(
         &mut self,
         ty: &Type,
         name: &str,
         span: Span,
     ) -> Result<LocalSymbol, SemanticError> {
-        if matches!(ty, Type::Function(_)) {
-            return Err(SemanticError {
-                message: "function type is not an object type".to_string(),
-                span,
-            });
-        }
+        Self::validate_object_type(ty, span)?;
         if self.current_scope().contains_key(name) {
             return Err(SemanticError {
                 message: format!("duplicate local variable '{name}'"),
@@ -280,13 +292,7 @@ impl Checker {
     }
 
     fn declare_global(&mut self, name: &str, span: Span, ty: &Type) -> Result<(), SemanticError> {
-        if matches!(ty, Type::Function(_)) {
-            return Err(SemanticError {
-                message: "function type is not an object type".to_string(),
-                span,
-            });
-        }
-
+        Self::validate_object_type(ty, span)?;
         match self.global_symbols.get(name) {
             Some(GlobalOrdinarySymbol::GlobalObject(_)) => {
                 return Err(SemanticError {
@@ -414,7 +420,9 @@ impl Checker {
         if let Type::Pointer(left_inner) = left_type
             && let Type::Pointer(right_inner) = right_type
         {
-            if left_inner == right_inner && (op == BinaryOp::Equal || op == BinaryOp::NotEqual) {
+            if (left_inner == right_inner || left_type.is_void_pointer_compatible_with(right_type))
+                && (op == BinaryOp::Equal || op == BinaryOp::NotEqual)
+            {
                 return Ok(BinaryTypeInfo {
                     operand_ty: left_type.clone(),
                     result_ty: Type::Int,
@@ -1215,8 +1223,8 @@ impl Checker {
                     .to_string(),
                 span: name_span,
             }),
-            (Type::Function(_), _) => Err(SemanticError {
-                message: "function type is not an object type".to_string(),
+            (Type::Function(_) | Type::Void, _) => Err(SemanticError {
+                message: format!("{target_ty:?} type is not an object type"),
                 span: name_span,
             }),
         }
@@ -1475,12 +1483,12 @@ impl Checker {
     }
 
     fn check_global_decl(&self, global: &GlobalDecl) -> Result<TypedGlobalDecl, SemanticError> {
+        let global_symbol = self.resolve_global_object(&global.name, global.name_span)?;
         let typed_init = global
             .init
             .as_ref()
-            .map(|init| self.check_initializer(&global.ty, global.name_span, init))
+            .map(|init| self.check_initializer(&global_symbol.ty, global.name_span, init))
             .transpose()?;
-        let global_symbol = self.resolve_global_object(&global.name, global.name_span)?;
         Ok(TypedGlobalDecl {
             id: global_symbol.id,
             ty: global_symbol.ty,
@@ -1532,7 +1540,12 @@ pub fn check(program: &Program) -> Result<TypedProgram, SemanticError> {
                 )?;
             }
             ExternalDecl::Global(global) => {
-                checker.declare_global(&global.name, global.name_span, &global.ty)?;
+                let completed_ty = Checker::complete_decl_type_from_initializer(
+                    &global.ty,
+                    global.init.as_ref(),
+                    global.name_span,
+                )?;
+                checker.declare_global(&global.name, global.name_span, &completed_ty)?;
             }
             ExternalDecl::Typedef(_) => (),
         }
