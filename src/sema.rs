@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use crate::ast::{
     BinaryOp, Expr, ExternalDecl, FunctionDef, FunctionType, GlobalDecl, Initializer,
-    IntLiteralBase, IntLiteralSuffix, Program, Statement, Type, UnaryOp,
+    IntLiteralBase, IntLiteralSuffix, Program, Statement, Type, UnaryOp, format_type_list,
 };
 use crate::source::Span;
 
@@ -143,7 +143,7 @@ impl Checker {
     fn validate_object_type(ty: &Type, span: Span) -> Result<(), SemanticError> {
         if matches!(ty, Type::Function(_) | Type::Void) {
             return Err(SemanticError {
-                message: format!("{ty:?} type is not an object type"),
+                message: format!("'{ty}' type is not an object type"),
                 span,
             });
         }
@@ -239,7 +239,7 @@ impl Checker {
                 if function.return_type != *return_type {
                     return Err(SemanticError {
                         message: format!(
-                            "function declaration and definition must have same return type, got '{:?}' and '{return_type:?}'",
+                            "function declaration and definition must have same return type, got '{}' and '{return_type}'",
                             function.return_type
                         ),
                         span: name_span,
@@ -248,8 +248,9 @@ impl Checker {
                 if function.param_types != param_types {
                     return Err(SemanticError {
                         message: format!(
-                            "function declaration and definition must have same parameter types, got '{:?}' and '{param_types:?}'",
-                            function.param_types
+                            "function declaration and definition must have same parameter types, got '{}' and '{}'",
+                            format_type_list(&function.param_types),
+                            format_type_list(&param_types)
                         ),
                         span: name_span,
                     });
@@ -394,7 +395,7 @@ impl Checker {
             }
             return Err(SemanticError {
                 message: format!(
-                    "cannot perform binary operation '{op:?}' on types '{left_type:?}' and '{right_type:?}'"
+                    "cannot perform binary operation '{op}' on types '{left_type}' and '{right_type}'"
                 ),
                 span: op_span,
             });
@@ -411,7 +412,7 @@ impl Checker {
             }
             return Err(SemanticError {
                 message: format!(
-                    "cannot perform binary operation '{op:?}' on types '{left_type:?}' and '{right_type:?}'"
+                    "cannot perform binary operation '{op}' on types '{left_type}' and '{right_type}'"
                 ),
                 span: op_span,
             });
@@ -430,9 +431,9 @@ impl Checker {
             }
             return Err(SemanticError {
                 message: format!(
-                    "invalid operands to binary operator '{op:?}'\n\
-                     left operand has type '{left_type:?}'\n\
-                     right operand has type '{right_type:?}'"
+                    "invalid operands to binary operator '{op}'\n\
+                     left operand has type '{left_type}'\n\
+                     right operand has type '{right_type}'"
                 ),
                 span: op_span,
             });
@@ -441,9 +442,9 @@ impl Checker {
         if !left_type.is_integer() || !right_type.is_integer() {
             return Err(SemanticError {
                 message: format!(
-                    "invalid operands to binary operator '{op:?}'\n\
-                     left operand has type '{left_type:?}'\n\
-                     right operand has type '{right_type:?}'"
+                    "invalid operands to binary operator '{op}'\n\
+                     left operand has type '{left_type}'\n\
+                     right operand has type '{right_type}'"
                 ),
                 span: op_span,
             });
@@ -515,10 +516,7 @@ impl Checker {
 
                 let Type::Pointer(inner) = &typed_ptr.ty.clone() else {
                     return Err(SemanticError {
-                        message: format!(
-                            "cannot dereference non-pointer type '{:?}'",
-                            typed_ptr.ty
-                        ),
+                        message: format!("cannot dereference non-pointer type '{}'", typed_ptr.ty),
                         span: *op_span,
                     });
                 };
@@ -570,7 +568,7 @@ impl Checker {
                 } else {
                     return Err(SemanticError {
                         message: format!(
-                            "integer literal '{value}' is too large for type '{:?}'",
+                            "integer literal '{value}' is too large for type '{}'",
                             Type::Int
                         ),
                         span,
@@ -585,7 +583,7 @@ impl Checker {
                 } else {
                     return Err(SemanticError {
                         message: format!(
-                            "integer literal '{value}' is too large for type '{:?}'",
+                            "integer literal '{value}' is too large for type '{}'",
                             Type::Int
                         ),
                         span,
@@ -598,7 +596,7 @@ impl Checker {
                 } else {
                     return Err(SemanticError {
                         message: format!(
-                            "integer literal '{value}' is too large for type '{:?}'",
+                            "integer literal '{value}' is too large for type '{}'",
                             Type::UnsignedInt
                         ),
                         span,
@@ -611,7 +609,7 @@ impl Checker {
                 } else {
                     return Err(SemanticError {
                         message: format!(
-                            "integer literal '{value}' is too large for type '{:?}'",
+                            "integer literal '{value}' is too large for type '{}'",
                             Type::Long
                         ),
                         span,
@@ -624,7 +622,7 @@ impl Checker {
                 } else {
                     return Err(SemanticError {
                         message: format!(
-                            "integer literal '{value}' is too large for type '{:?}'",
+                            "integer literal '{value}' is too large for type '{}'",
                             Type::UnsignedLong
                         ),
                         span,
@@ -679,7 +677,7 @@ impl Checker {
         if !Self::is_inc_dec_type(&typed_lvalue.ty) {
             return Err(SemanticError {
                 message: format!(
-                    "cannot increment or decrement value of type '{:?}'",
+                    "cannot increment or decrement value of type '{}'",
                     typed_lvalue.ty
                 ),
                 span: op_span,
@@ -716,7 +714,7 @@ impl Checker {
                 if !typed_expr.ty.is_integer() {
                     return Err(SemanticError {
                         message: format!(
-                            "cannot perform unary operation '{op:?}' on non-integer type '{:?}'",
+                            "cannot perform unary operation '{op}' on non-integer type '{}'",
                             typed_expr.ty
                         ),
                         span: op_span,
@@ -731,10 +729,7 @@ impl Checker {
                 Type::Pointer(inner) => *inner.clone(),
                 _ => {
                     return Err(SemanticError {
-                        message: format!(
-                            "cannot dereference non-pointer type '{:?}'",
-                            typed_expr.ty
-                        ),
+                        message: format!("cannot dereference non-pointer type '{}'", typed_expr.ty),
                         span: op_span,
                     });
                 }
@@ -768,14 +763,14 @@ impl Checker {
                 Type::Function(function_ty) => function_ty,
                 _ => {
                     return Err(SemanticError {
-                        message: format!("type '{:?}' is not callable", typed_callee.ty),
+                        message: format!("type '{}' is not callable", typed_callee.ty),
                         span,
                     });
                 }
             },
             _ => {
                 return Err(SemanticError {
-                    message: format!("type '{:?}' is not callable", typed_callee.ty),
+                    message: format!("type '{}' is not callable", typed_callee.ty),
                     span,
                 });
             }
@@ -819,7 +814,7 @@ impl Checker {
             if !Self::is_assignable_expr(ty, typed_arg) {
                 return Err(SemanticError {
                     message: format!(
-                        "cannot pass value of type '{:?}' to parameter of type '{ty:?}'",
+                        "cannot pass value of type '{}' to parameter of type '{ty}'",
                         typed_arg.ty,
                     ),
                     span: typed_arg.diagnostic_span(),
@@ -849,7 +844,7 @@ impl Checker {
         if !typed_index.ty.is_integer() {
             return Err(SemanticError {
                 message: format!(
-                    "array index must be integer type, found '{:?}'",
+                    "array index must be integer type, found '{}'",
                     typed_index.ty
                 ),
                 span,
@@ -860,7 +855,7 @@ impl Checker {
             Type::Array { element, .. } | Type::Pointer(element) => *element.clone(),
             ty => {
                 return Err(SemanticError {
-                    message: format!("cannot index expression of type '{ty:?}'"),
+                    message: format!("cannot index expression of type '{ty}'"),
                     span,
                 });
             }
@@ -886,7 +881,7 @@ impl Checker {
 
         if !ty.is_integer() || !typed_expr.ty.is_integer() {
             return Err(SemanticError {
-                message: format!("cannot cast type '{:?}' to '{ty:?}'", typed_expr.ty),
+                message: format!("cannot cast type '{}' to '{ty}'", typed_expr.ty),
                 span,
             });
         }
@@ -985,7 +980,7 @@ impl Checker {
                 if !Self::is_assignable_expr(&typed_target.ty, &typed_value) {
                     return Err(SemanticError {
                         message: format!(
-                            "cannot assign value of type '{:?}' to variable of type '{:?}'",
+                            "cannot assign value of type '{}' to variable of type '{}'",
                             typed_value.ty, typed_target.ty
                         ),
                         span: *op_span,
@@ -1017,7 +1012,7 @@ impl Checker {
                 if !typed_target.ty.is_assignable_from(&type_info.result_ty) {
                     return Err(SemanticError {
                         message: format!(
-                            "cannot assign value of type '{:?}' to variable of type '{:?}'",
+                            "cannot assign value of type '{}' to variable of type '{}'",
                             type_info.result_ty, typed_target.ty
                         ),
                         span: *op_span,
@@ -1098,7 +1093,7 @@ impl Checker {
         ) {
             return Err(SemanticError {
                 message: format!(
-                    "cannot initialize array of type '{element_ty:?}' from string literal"
+                    "cannot initialize array of type '{element_ty}' from string literal"
                 ),
                 span,
             });
@@ -1164,7 +1159,7 @@ impl Checker {
                     if !Self::is_assignable_expr(element_ty, &typed_value) {
                         return Err(SemanticError {
                             message: format!(
-                                "cannot assign value of type '{:?}' to array of type '{element_ty:?}'",
+                                "cannot assign value of type '{}' to array of type '{element_ty}'",
                                 typed_value.ty,
                             ),
                             span: typed_value.diagnostic_span(),
@@ -1191,7 +1186,7 @@ impl Checker {
                 if !Self::is_assignable_expr(target_ty, &typed_init) {
                     return Err(SemanticError {
                         message: format!(
-                            "cannot assign value of type '{:?}' to variable of type '{target_ty:?}'",
+                            "cannot assign value of type '{}' to variable of type '{target_ty}'",
                             typed_init.ty,
                         ),
                         span: typed_init.diagnostic_span(),
@@ -1215,7 +1210,7 @@ impl Checker {
                 | Type::UnsignedLong,
                 Initializer::List(_),
             ) => Err(SemanticError {
-                message: format!("cannot initialize scalar type '{target_ty:?}' with list"),
+                message: format!("cannot initialize scalar type '{target_ty}' with list"),
                 span: name_span,
             }),
             (Type::IncompleteArray { .. }, _) => Err(SemanticError {
@@ -1224,7 +1219,7 @@ impl Checker {
                 span: name_span,
             }),
             (Type::Function(_) | Type::Void, _) => Err(SemanticError {
-                message: format!("{target_ty:?} type is not an object type"),
+                message: format!("'{target_ty}' type is not an object type"),
                 span: name_span,
             }),
         }
@@ -1274,7 +1269,7 @@ impl Checker {
                 if !Self::is_assignable_expr(return_type, &typed_expr) {
                     return Err(SemanticError {
                         message: format!(
-                            "cannot return value of type '{:?}' from function returning '{return_type:?}'",
+                            "cannot return value of type '{}' from function returning '{return_type}'",
                             typed_expr.ty
                         ),
                         span: expr.diagnostic_span(),

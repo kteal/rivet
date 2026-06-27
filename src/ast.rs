@@ -239,6 +239,33 @@ pub enum BinaryOp {
     LogicalOr,
 }
 
+impl std::fmt::Display for BinaryOp {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let op = match self {
+            Self::Add => "+",
+            Self::Subtract => "-",
+            Self::Multiply => "*",
+            Self::Divide => "/",
+            Self::Remainder => "%",
+            Self::Equal => "==",
+            Self::NotEqual => "!=",
+            Self::Less => "<",
+            Self::LessEqual => "<=",
+            Self::Greater => ">",
+            Self::GreaterEqual => ">=",
+            Self::BitAnd => "&",
+            Self::BitOr => "|",
+            Self::BitXor => "^",
+            Self::ShiftLeft => "<<",
+            Self::ShiftRight => ">>",
+            Self::LogicalAnd => "&&",
+            Self::LogicalOr => "||",
+        };
+
+        write!(f, "{op}")
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum UnaryOp {
     Negate,
@@ -246,6 +273,20 @@ pub enum UnaryOp {
     BitwiseNot,
     Dereference,
     AddressOf,
+}
+
+impl std::fmt::Display for UnaryOp {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let op = match self {
+            Self::Negate => "-",
+            Self::LogicalNot => "!",
+            Self::BitwiseNot => "~",
+            Self::AddressOf => "&",
+            Self::Dereference => "*",
+        };
+
+        write!(f, "{op}")
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -320,7 +361,7 @@ impl Type {
             Self::Int | Self::UnsignedInt | Self::Pointer(_) | Self::Long | Self::UnsignedLong => 4,
             Self::Array { element, len } => element.size() * len,
             Self::Function(_) | Self::IncompleteArray { .. } | Self::Void => {
-                panic!("cannot calculate size of '{self:?}' type")
+                panic!("cannot calculate size of '{self}' type")
             }
         }
     }
@@ -343,7 +384,7 @@ impl Type {
             | Self::UnsignedLong => self.size(),
             Self::Array { element, .. } => element.align(),
             Self::Function(_) | Self::IncompleteArray { .. } | Self::Void => {
-                panic!("cannot calculate alignment of '{self:?}' type")
+                panic!("cannot calculate alignment of '{self}' type")
             }
         }
     }
@@ -411,4 +452,44 @@ impl Type {
                 || (right.as_ref() == &Self::Void && left.as_ref().is_object_type())
         )
     }
+}
+
+impl std::fmt::Display for Type {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Int => write!(f, "int"),
+            Self::UnsignedInt => write!(f, "unsigned int"),
+            Self::Char => write!(f, "char"),
+            Self::SignedChar => write!(f, "signed char"),
+            Self::UnsignedChar => write!(f, "unsigned char"),
+            Self::Long => write!(f, "long"),
+            Self::UnsignedLong => write!(f, "unsigned long"),
+            Self::Void => write!(f, "void"),
+            Self::Pointer(inner) => write!(f, "{inner} *"),
+            Self::Array { element, len } => {
+                write!(f, "{element}[{len}]")
+            }
+            Self::IncompleteArray { element } => {
+                write!(f, "{element}[]")
+            }
+            Self::Function(function) => {
+                write!(f, "{}(", function.return_type)?;
+                for (i, param) in function.params.iter().enumerate() {
+                    if i > 0 {
+                        write!(f, ", ")?;
+                    }
+                    write!(f, "{param}")?;
+                }
+                write!(f, ")")
+            }
+        }
+    }
+}
+
+pub fn format_type_list(types: &[Type]) -> String {
+    types
+        .iter()
+        .map(ToString::to_string)
+        .collect::<Vec<_>>()
+        .join(", ")
 }

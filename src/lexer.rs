@@ -207,7 +207,7 @@ impl<'a> Lexer<'a> {
                     let start = self.offset;
                     let ch = self.advance().unwrap();
 
-                    return Err(self.error(start, &format!("unexpected character {ch:?}")));
+                    return Err(self.error(start, &format!("unexpected character '{ch}'")));
                 }
             }
         }

@@ -37,6 +37,13 @@ fn check_source(source: &str) -> rivet::typed_ast::TypedProgram {
     check(&program).expect("semantic check should succeed")
 }
 
+fn check_source_err(source: &str) -> rivet::sema::SemanticError {
+    let tokens = lex(source, DUMMY_FILE_ID).expect("lexing should succeed");
+    let tokens = preprocess(tokens).expect("preprocessing should succeed");
+    let program = parse(tokens).expect("parsing should succeed");
+    check(&program).expect_err("semantic check should fail")
+}
+
 fn function(name: &str, body: Vec<Statement>) -> FunctionDef {
     FunctionDef {
         return_type: Type::Int,
@@ -615,7 +622,7 @@ fn rejects_function_definition_with_conflicting_prototype_return_type() {
 
     assert_eq!(
         err.message,
-        "function declaration and definition must have same return type, got 'Int' and 'Char'"
+        "function declaration and definition must have same return type, got 'int' and 'char'"
     );
 }
 
@@ -651,7 +658,7 @@ fn rejects_function_definition_with_conflicting_prototype_parameter_type() {
 
     assert_eq!(
         err.message,
-        "function declaration and definition must have same parameter types, got '[Int]' and '[Char]'"
+        "function declaration and definition must have same parameter types, got 'int' and 'char'"
     );
 }
 
@@ -702,7 +709,7 @@ fn rejects_function_definition_with_conflicting_pointer_prototype_parameter_type
 
     assert_eq!(
         err.message,
-        "function declaration and definition must have same parameter types, got '[Pointer(Int)]' and '[Pointer(Char)]'"
+        "function declaration and definition must have same parameter types, got 'int *' and 'char *'"
     );
 }
 
@@ -2046,7 +2053,7 @@ fn rejects_function_pointer_initialized_from_incompatible_function_designator() 
 
     assert_eq!(
         err.message,
-        "cannot assign value of type 'Pointer(Function(FunctionType { return_type: Int, params: [Char] }))' to variable of type 'Pointer(Function(FunctionType { return_type: Int, params: [Int] }))'"
+        "cannot assign value of type 'int(char) *' to variable of type 'int(int) *'"
     );
 }
 
@@ -2059,7 +2066,7 @@ fn rejects_call_through_non_callable_expression() {
 
     let err = check(&program).expect_err("semantic check should fail");
 
-    assert_eq!(err.message, "type 'Int' is not callable");
+    assert_eq!(err.message, "type 'int' is not callable");
 }
 
 #[test]
@@ -2085,10 +2092,7 @@ fn rejects_raw_function_type_local_declaration() {
 
     let err = check(&program).expect_err("semantic check should fail");
 
-    assert_eq!(
-        err.message,
-        "Function(FunctionType { return_type: Int, params: [Int] }) type is not an object type"
-    );
+    assert_eq!(err.message, "'int(int)' type is not an object type");
 }
 
 #[test]
@@ -2397,7 +2401,7 @@ fn rejects_plain_void_local_object() {
     let program = parse(tokens).expect("parsing should succeed");
     let err = check(&program).expect_err("semantic check should fail");
 
-    assert_eq!(err.message, "Void type is not an object type");
+    assert_eq!(err.message, "'void' type is not an object type");
 }
 
 #[test]
@@ -2415,7 +2419,7 @@ fn rejects_dereference_of_non_pointer_expression() {
 
     let err = check(&program).expect_err("semantic check should fail");
 
-    assert_eq!(err.message, "cannot dereference non-pointer type 'Int'");
+    assert_eq!(err.message, "cannot dereference non-pointer type 'int'");
 }
 
 #[test]
@@ -2455,7 +2459,7 @@ fn rejects_assignment_through_non_pointer_dereference() {
     let err = check(&program).expect_err("semantic check should fail");
 
     assert_eq!(err.span, op_span);
-    assert_eq!(err.message, "cannot dereference non-pointer type 'Int'");
+    assert_eq!(err.message, "cannot dereference non-pointer type 'int'");
 }
 
 #[test]
@@ -2489,7 +2493,42 @@ fn rejects_pointer_plus_pointer() {
 
     let err = check(&program).expect_err("semantic check should fail");
 
-    assert!(err.message.contains("invalid operands to binary operator"));
+    assert_eq!(
+        err.message,
+        "invalid operands to binary operator '+'\n\
+                     left operand has type 'char *'\n\
+                     right operand has type 'char *'"
+    );
+}
+
+#[test]
+fn pointer_times_integer_error_uses_binary_operator_display() {
+    let err = check_source_err("int main() { char *p = \"abc\"; return p * 2; }");
+
+    assert_eq!(
+        err.message,
+        "cannot perform binary operation '*' on types 'char *' and 'int'"
+    );
+}
+
+#[test]
+fn pointer_unary_minus_error_uses_unary_operator_display() {
+    let err = check_source_err("int main() { char *p = \"abc\"; return -p; }");
+
+    assert_eq!(
+        err.message,
+        "cannot perform unary operation '-' on non-integer type 'char *'"
+    );
+}
+
+#[test]
+fn pointer_bitwise_not_error_uses_unary_operator_display() {
+    let err = check_source_err("int main() { char *p = \"abc\"; return ~p; }");
+
+    assert_eq!(
+        err.message,
+        "cannot perform unary operation '~' on non-integer type 'char *'"
+    );
 }
 
 #[test]
@@ -2530,7 +2569,7 @@ fn rejects_assignment_between_different_pointer_types() {
 
     assert_eq!(
         err.message,
-        "cannot assign value of type 'Pointer(Int)' to variable of type 'Pointer(Char)'"
+        "cannot assign value of type 'int *' to variable of type 'char *'"
     );
 }
 
@@ -3278,7 +3317,7 @@ fn rejects_string_literal_initializer_for_incompatible_pointer_type() {
 
     assert_eq!(
         err.message,
-        "cannot assign value of type 'Pointer(Char)' to variable of type 'Pointer(Int)'"
+        "cannot assign value of type 'char *' to variable of type 'int *'"
     );
 }
 
@@ -3519,7 +3558,7 @@ fn rejects_scalar_initializer_list() {
 
     let err = check(&program).expect_err("semantic check should fail");
 
-    assert_eq!(err.message, "cannot initialize scalar type 'Int' with list");
+    assert_eq!(err.message, "cannot initialize scalar type 'int' with list");
 }
 
 #[test]
@@ -4516,7 +4555,7 @@ fn rejects_indexing_non_array_non_pointer() {
 
     let err = check(&program).expect_err("semantic check should fail");
 
-    assert_eq!(err.message, "cannot index expression of type 'Int'");
+    assert_eq!(err.message, "cannot index expression of type 'int'");
 }
 
 #[test]
@@ -4560,7 +4599,7 @@ fn rejects_non_integer_array_index() {
 
     assert_eq!(
         err.message,
-        "array index must be integer type, found 'Pointer(Int)'"
+        "array index must be integer type, found 'int *'"
     );
 }
 
@@ -4655,22 +4694,22 @@ fn rejects_integer_literals_that_do_not_fit_suffix_type() {
         (
             (i32::MAX as u64) + 1,
             IntLiteralSuffix::None,
-            "integer literal '2147483648' is too large for type 'Int'",
+            "integer literal '2147483648' is too large for type 'int'",
         ),
         (
             u64::from(u32::MAX) + 1,
             IntLiteralSuffix::Unsigned,
-            "integer literal '4294967296' is too large for type 'UnsignedInt'",
+            "integer literal '4294967296' is too large for type 'unsigned int'",
         ),
         (
             (i32::MAX as u64) + 1,
             IntLiteralSuffix::Long,
-            "integer literal '2147483648' is too large for type 'Long'",
+            "integer literal '2147483648' is too large for type 'long'",
         ),
         (
             u64::from(u32::MAX) + 1,
             IntLiteralSuffix::UnsignedLong,
-            "integer literal '4294967296' is too large for type 'UnsignedLong'",
+            "integer literal '4294967296' is too large for type 'unsigned long'",
         ),
     ];
 
@@ -4726,7 +4765,7 @@ fn rejects_unsuffixed_hex_literals_that_do_not_fit_current_integer_types() {
 
     assert_eq!(
         err.message,
-        "integer literal '4294967296' is too large for type 'Int'"
+        "integer literal '4294967296' is too large for type 'int'"
     );
 }
 
@@ -4881,5 +4920,5 @@ fn rejects_cast_from_pointer_to_integer() {
 
     let err = check(&program).expect_err("semantic check should fail");
 
-    assert_eq!(err.message, "cannot cast type 'Pointer(Char)' to 'Int'");
+    assert_eq!(err.message, "cannot cast type 'char *' to 'int'");
 }
