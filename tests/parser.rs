@@ -921,7 +921,8 @@ fn parses_signed_type_specifiers() {
 
 #[test]
 fn parses_array_local_declarations() {
-    let program = parse_source("int main() { char buf[3]; int nums[10]; return 0; }");
+    let program =
+        parse_source("int main() { char buf[3]; int nums[10]; char text[] = \"abc\"; return 0; }");
 
     let body = &first_function(&program).body;
 
@@ -938,6 +939,13 @@ fn parses_array_local_declarations() {
         Type::Array {
             element: Box::new(Type::Int),
             len: 10,
+        }
+    );
+
+    assert_eq!(
+        single_decl(&body[2]).ty,
+        Type::IncompleteArray {
+            element: Box::new(Type::Char),
         }
     );
 }

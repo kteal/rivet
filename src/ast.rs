@@ -283,6 +283,7 @@ pub enum Type {
     UnsignedLong,
     Pointer(Box<Self>),
     Array { element: Box<Self>, len: usize },
+    IncompleteArray { element: Box<Self> },
     Function(Box<FunctionType>),
 }
 
@@ -317,7 +318,9 @@ impl Type {
             Self::Char | Self::SignedChar | Self::UnsignedChar => 1,
             Self::Int | Self::UnsignedInt | Self::Pointer(_) | Self::Long | Self::UnsignedLong => 4,
             Self::Array { element, len } => element.size() * len,
-            Self::Function(_) => panic!("cannot calculate size of function type"),
+            Self::Function(_) | Self::IncompleteArray { .. } => {
+                panic!("cannot calculate size of '{self:?}' type")
+            }
         }
     }
 
@@ -338,7 +341,9 @@ impl Type {
             | Self::Long
             | Self::UnsignedLong => self.size(),
             Self::Array { element, .. } => element.align(),
-            Self::Function(_) => panic!("cannot calculate alignment of function type"),
+            Self::Function(_) | Self::IncompleteArray { .. } => {
+                panic!("cannot calculate alignment of '{self:?}' type")
+            }
         }
     }
 
@@ -354,7 +359,10 @@ impl Type {
             Self::UnsignedInt => Some(Self::UnsignedInt),
             Self::Long => Some(Self::Long),
             Self::UnsignedLong => Some(Self::UnsignedLong),
-            Self::Pointer(_) | Self::Array { .. } | Self::Function(_) => None,
+            Self::Pointer(_)
+            | Self::Array { .. }
+            | Self::IncompleteArray { .. }
+            | Self::Function(_) => None,
         }
     }
 

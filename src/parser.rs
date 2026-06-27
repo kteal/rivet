@@ -126,7 +126,7 @@ enum DeclaratorKind {
     Pointer(Box<Declarator>),
     Array {
         inner: Box<Declarator>,
-        len: usize,
+        len: Option<usize>,
     },
     Function {
         inner: Box<Declarator>,
@@ -810,21 +810,27 @@ impl Parser {
                 TokenKind::LBracket => {
                     // Array declaration
                     self.expect(&TokenKind::LBracket)?;
-                    let (len, _, _, len_span) = self.expect_int_literal()?;
+                    let len = if self.peek_kind() == &TokenKind::RBracket {
+                        None
+                    } else {
+                        let (len, _, _, len_span) = self.expect_int_literal()?;
 
-                    // Don't allow array length <1
-                    if len < 1 {
-                        return Err(ParseError {
-                            message: format!("array size must be greater than 0, got '{len}'"),
-                            span: len_span,
-                        });
-                    }
+                        // Don't allow array length <1
+                        if len < 1 {
+                            return Err(ParseError {
+                                message: format!("array size must be greater than 0, got '{len}'"),
+                                span: len_span,
+                            });
+                        }
+                        Some(usize::try_from(len).expect("u64 cannot be converted to usize"))
+                    };
 
                     self.expect(&TokenKind::RBracket)?;
+
                     declarator = Declarator {
                         kind: DeclaratorKind::Array {
                             inner: Box::new(declarator),
-                            len: usize::try_from(len).expect("u64 cannot be converted to usize"),
+                            len,
                         },
                     };
                 }
@@ -867,26 +873,50 @@ impl Parser {
             DeclaratorKind::Array { inner, len } => match inner.as_ref() {
                 Declarator {
                     kind: DeclaratorKind::Grouped(grouped_inner),
-                } => Self::lower_declarator(
-                    &Type::Array {
-                        element: Box::new(base_type.clone()),
-                        len: *len,
+                } => len.as_ref().map_or_else(
+                    || {
+                        Self::lower_declarator(
+                            &Type::IncompleteArray {
+                                element: Box::new(base_type.clone()),
+                            },
+                            grouped_inner,
+                        )
                     },
-                    grouped_inner,
+                    |len| {
+                        Self::lower_declarator(
+                            &Type::Array {
+                                element: Box::new(base_type.clone()),
+                                len: *len,
+                            },
+                            grouped_inner,
+                        )
+                    },
                 ),
                 _ => match Self::lower_declarator(base_type, inner)? {
                     LoweredDeclarator::Object {
                         ty,
                         name,
                         name_span,
-                    } => Ok(LoweredDeclarator::Object {
-                        ty: Type::Array {
-                            element: Box::new(ty),
-                            len: *len,
-                        },
-                        name,
-                        name_span,
-                    }),
+                    } => {
+                        if let Some(len) = len {
+                            Ok(LoweredDeclarator::Object {
+                                ty: Type::Array {
+                                    element: Box::new(ty),
+                                    len: *len,
+                                },
+                                name,
+                                name_span,
+                            })
+                        } else {
+                            Ok(LoweredDeclarator::Object {
+                                ty: Type::IncompleteArray {
+                                    element: Box::new(ty),
+                                },
+                                name,
+                                name_span,
+                            })
+                        }
+                    }
                     LoweredDeclarator::Function { name_span, .. } => Err(ParseError {
                         message: "function returning array is unsupported".to_string(),
                         span: name_span,

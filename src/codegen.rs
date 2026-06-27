@@ -327,6 +327,9 @@ impl Codegen {
                 self.emit_line(format_args!("andi a0, a0, 255"));
             }
             Type::Array { .. } => unreachable!("array rvalues should have decayed before codegen"),
+            Type::IncompleteArray { .. } => {
+                unreachable!("incomplete arrays should have been handled before codegen")
+            }
             Type::Function(_) => unreachable!("function values should have decayed before codegen"),
         }
     }
@@ -345,6 +348,9 @@ impl Codegen {
                 self.emit_line(format_args!("sb a{reg}, {}(s0)", local.offset));
             }
             Type::Array { .. } => unreachable!("array rvalues should have decayed before codegen"),
+            Type::IncompleteArray { .. } => {
+                unreachable!("incomplete arrays should have been handled before codegen")
+            }
             Type::Function(_) => unreachable!("function values should have decayed before codegen"),
         }
     }
@@ -419,6 +425,9 @@ impl Codegen {
                 self.emit_line(format_args!("lw a0, 0(a0)"));
             }
             Type::Array { .. } => unreachable!("array rvalues should have decayed before codegen"),
+            Type::IncompleteArray { .. } => {
+                unreachable!("incomplete arrays should have been handled before codegen")
+            }
             Type::Function(_) => unreachable!("function values should have decayed before codegen"),
         }
     }
@@ -437,6 +446,9 @@ impl Codegen {
                 self.emit_line(format_args!("sw a0, {offset}({base})"));
             }
             Type::Array { .. } => unreachable!("array rvalues should have decayed before codegen"),
+            Type::IncompleteArray { .. } => {
+                unreachable!("incomplete arrays should have been handled before codegen")
+            }
             Type::Function(_) => unreachable!("function values should have decayed before codegen"),
         }
     }
@@ -494,6 +506,9 @@ impl Codegen {
                 Type::Array { .. } => {
                     unreachable!("array rvalues should have decayed before codegen")
                 }
+                Type::IncompleteArray { .. } => {
+                    unreachable!("incomplete arrays should have been handled before codegen")
+                }
                 Type::Function(_) => {
                     unreachable!("function values should have decayed before codegen")
                 }
@@ -510,6 +525,9 @@ impl Codegen {
                 }
                 Type::Array { .. } => {
                     unreachable!("array rvalues should have decayed before codegen")
+                }
+                Type::IncompleteArray { .. } => {
+                    unreachable!("incomplete arrays should have been handled before codegen")
                 }
                 Type::Function(_) => {
                     unreachable!("function values should have decayed before codegen")
@@ -536,6 +554,9 @@ impl Codegen {
                 Type::Array { .. } => {
                     unreachable!("array rvalues should have decayed before codegen")
                 }
+                Type::IncompleteArray { .. } => {
+                    unreachable!("incomplete arrays should have been handled before codegen")
+                }
                 Type::Function(_) => {
                     unreachable!("function values should have decayed before codegen")
                 }
@@ -555,6 +576,9 @@ impl Codegen {
                 Type::Array { .. } => {
                     unreachable!("array rvalues should have decayed before codegen")
                 }
+                Type::IncompleteArray { .. } => {
+                    unreachable!("incomplete arrays should have been handled before codegen")
+                }
                 Type::Function(_) => {
                     unreachable!("function values should have decayed before codegen")
                 }
@@ -571,6 +595,9 @@ impl Codegen {
                 }
                 Type::Array { .. } => {
                     unreachable!("array rvalues should have decayed before codegen")
+                }
+                Type::IncompleteArray { .. } => {
+                    unreachable!("incomplete arrays should have been handled before codegen")
                 }
                 Type::Function(_) => {
                     unreachable!("function values should have decayed before codegen")
@@ -590,6 +617,9 @@ impl Codegen {
                 }
                 Type::Array { .. } => {
                     unreachable!("array rvalues should have decayed before codegen")
+                }
+                Type::IncompleteArray { .. } => {
+                    unreachable!("incomplete arrays should have been handled before codegen")
                 }
                 Type::Function(_) => {
                     unreachable!("function values should have decayed before codegen")
@@ -611,6 +641,9 @@ impl Codegen {
                 }
                 Type::Array { .. } => {
                     unreachable!("array rvalues should have decayed before codegen")
+                }
+                Type::IncompleteArray { .. } => {
+                    unreachable!("incomplete arrays should have been handled before codegen")
                 }
                 Type::Function(_) => {
                     unreachable!("function values should have decayed before codegen")

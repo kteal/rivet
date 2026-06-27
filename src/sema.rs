@@ -1210,10 +1210,45 @@ impl Checker {
                 message: format!("cannot initialize scalar type '{target_ty:?}' with list"),
                 span: name_span,
             }),
+            (Type::IncompleteArray { .. }, _) => Err(SemanticError {
+                message: "array size must be specified or inferred from string literal initializer"
+                    .to_string(),
+                span: name_span,
+            }),
             (Type::Function(_), _) => Err(SemanticError {
                 message: "function type is not an object type".to_string(),
                 span: name_span,
             }),
+        }
+    }
+
+    fn complete_decl_type_from_initializer(
+        ty: &Type,
+        init: Option<&Initializer>,
+        span: Span,
+    ) -> Result<Type, SemanticError> {
+        match (ty, init) {
+            (
+                Type::IncompleteArray { element },
+                Some(Initializer::Expr(Expr::StringLiteral { bytes, .. })),
+            ) if matches!(
+                element.as_ref(),
+                Type::Char | Type::SignedChar | Type::UnsignedChar
+            ) =>
+            {
+                Ok(Type::Array {
+                    element: element.clone(),
+                    len: bytes.len() + 1,
+                })
+            }
+
+            (Type::IncompleteArray { .. }, _) => Err(SemanticError {
+                message: "array size must be specified or inferred from string literal initializer"
+                    .to_string(),
+                span,
+            }),
+
+            _ => Ok(ty.clone()),
         }
     }
 
@@ -1242,8 +1277,13 @@ impl Checker {
             Statement::Decl(declarations) => {
                 let mut typed_declarations = vec![];
                 for declaration in declarations {
-                    let symbol = self.declare_local(
+                    let completed_ty = Self::complete_decl_type_from_initializer(
                         &declaration.ty,
+                        declaration.init.as_ref(),
+                        declaration.name_span,
+                    )?;
+                    let symbol = self.declare_local(
+                        &completed_ty,
                         &declaration.name,
                         declaration.name_span,
                     )?;
@@ -1252,7 +1292,7 @@ impl Checker {
                         .as_ref()
                         .map(|initializer| {
                             self.check_initializer(
-                                &declaration.ty,
+                                &completed_ty,
                                 declaration.name_span,
                                 initializer,
                             )

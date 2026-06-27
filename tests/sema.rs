@@ -3106,6 +3106,75 @@ fn empty_string_literal_initializes_char_array_with_nul() {
 }
 
 #[test]
+fn string_literal_infers_char_array_size() {
+    let typed_program = check_source("int main() { char buf[] = \"abc\"; return sizeof(buf); }");
+    let main = typed_function_at(&typed_program, 0);
+
+    let TypedStatement::Decl(decls) = &main.body[0] else {
+        panic!("expected declaration statement");
+    };
+
+    assert_eq!(
+        decls[0].ty,
+        Type::Array {
+            element: Box::new(Type::Char),
+            len: 4,
+        }
+    );
+
+    let Some(TypedInitializer::List(values)) = &decls[0].init else {
+        panic!("expected array initializer list");
+    };
+    assert_eq!(values.len(), 4);
+}
+
+#[test]
+fn empty_string_literal_infers_one_byte_char_array() {
+    let typed_program = check_source("int main() { char buf[] = \"\"; return sizeof(buf); }");
+    let main = typed_function_at(&typed_program, 0);
+
+    let TypedStatement::Decl(decls) = &main.body[0] else {
+        panic!("expected declaration statement");
+    };
+
+    assert_eq!(
+        decls[0].ty,
+        Type::Array {
+            element: Box::new(Type::Char),
+            len: 1,
+        }
+    );
+}
+
+#[test]
+fn rejects_incomplete_array_without_string_literal_initializer() {
+    let source = "int main() { char buf[]; return 0; }";
+    let tokens = lex(source, DUMMY_FILE_ID).expect("lexing should succeed");
+    let tokens = preprocess(tokens).expect("preprocessing should succeed");
+    let program = parse(tokens).expect("parsing should succeed");
+    let err = check(&program).expect_err("semantic check should fail");
+
+    assert_eq!(
+        err.message,
+        "array size must be specified or inferred from string literal initializer"
+    );
+}
+
+#[test]
+fn rejects_incomplete_array_with_initializer_list() {
+    let source = "int main() { int nums[] = {1, 2}; return 0; }";
+    let tokens = lex(source, DUMMY_FILE_ID).expect("lexing should succeed");
+    let tokens = preprocess(tokens).expect("preprocessing should succeed");
+    let program = parse(tokens).expect("parsing should succeed");
+    let err = check(&program).expect_err("semantic check should fail");
+
+    assert_eq!(
+        err.message,
+        "array size must be specified or inferred from string literal initializer"
+    );
+}
+
+#[test]
 fn rejects_string_literal_initializer_that_does_not_fit_char_array() {
     let source = "int main() { char buf[3] = \"abc\"; return 0; }";
     let tokens = lex(source, DUMMY_FILE_ID).expect("lexing should succeed");
@@ -3113,9 +3182,10 @@ fn rejects_string_literal_initializer_that_does_not_fit_char_array() {
     let program = parse(tokens).expect("parsing should succeed");
     let err = check(&program).expect_err("semantic check should fail");
 
-    assert!(err.message.contains(
-        "string literal initializer has 4 bytes including NUL, but array"
-    ));
+    assert!(
+        err.message
+            .contains("string literal initializer has 4 bytes including NUL, but array")
+    );
     assert!(err.message.contains("has length 3"));
 }
 

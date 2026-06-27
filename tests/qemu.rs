@@ -278,6 +278,21 @@ fn qemu_string_literal_programs_return_expected_values() {
         "int main() {\n    char buf[4] = \"abc\";\n    buf[0] = 'z';\n    return buf[0];\n}\n",
         122,
     );
+    run_qemu_case(
+        "string-literal-infers-char-array-size",
+        "int main() {\n    char buf[] = \"abc\";\n    return sizeof(buf);\n}\n",
+        4,
+    );
+    run_qemu_case(
+        "string-literal-inferred-array-index",
+        "int main() {\n    char buf[] = \"abc\";\n    return buf[2];\n}\n",
+        99,
+    );
+    run_qemu_case(
+        "empty-string-literal-infers-one-byte-array",
+        "int main() {\n    char buf[] = \"\";\n    return sizeof(buf);\n}\n",
+        1,
+    );
 }
 
 #[test]
