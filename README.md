@@ -6,7 +6,7 @@
 
 `rivet` is a C compiler written in Rust that targets RV32IM assembly. It is working toward C23 by growing a small, tested C subset.
 
-It currently handles common integer and character types, basic pointers, function pointers, address-of and dereference, fixed-size local and file-scope arrays, file-scope globals, array indexing, functions, simple function prototypes, block scope, common control flow, and C-like expression precedence. It emits RV32IM assembly and reports lexer, parser, and semantic errors with source-map-backed file, line, and column locations.
+It currently handles common integer and character types, basic pointers, function pointers, address-of and dereference, fixed-size local and file-scope arrays, file-scope globals, array indexing, `sizeof`, functions, simple function prototypes, block scope, common control flow, and C-like expression precedence. It emits RV32IM assembly and reports lexer, parser, and semantic errors with source-map-backed file, line, and column locations.
 
 The current language subset supports programs shaped like:
 
@@ -197,6 +197,7 @@ Program structure and declarations:
 - [ ] remaining qualifiers: `volatile`, `restrict`, `_Atomic`
 - [x] parenthesized pointer-to-array declarators: `int (*p)[3]`
 - [x] parenthesized function pointer declarators: `int (*fp)(int)`
+- [x] pointer abstract type-names in casts and `sizeof`: `char *`, `int **`
 - [ ] full C declarator grammar
 
 Expressions and operators:
@@ -222,7 +223,7 @@ Expressions and operators:
 - [ ] conditional operator `?:`
 - [ ] comma operator
 - [x] scalar casts
-- [ ] `sizeof`
+- [x] `sizeof` for supported scalar, pointer, array, and function-designator expression types
 - [ ] `_Alignof` / `alignof`
 - [x] address-of: `&`
 - [x] array-to-pointer decay for local and global array expressions
@@ -289,6 +290,7 @@ Objects, aggregate types, and declarators:
 - [x] address-of arrays in semantic analysis: `&arr` has pointer-to-array type
 - [x] parenthesized pointer-to-array declarators and indexing through them: `(*p)[i]`
 - [x] function pointer declarators, typedefs, initialization from function designators, and indirect calls
+- [x] pointer abstract type-names for `sizeof(type-name)` and casts
 - [ ] full C declarator grammar
 - [ ] structs and unions
 - [ ] member access: `.` and `->`

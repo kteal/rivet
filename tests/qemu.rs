@@ -163,6 +163,80 @@ fn qemu_cast_programs_return_expected_values() {
 }
 
 #[test]
+fn qemu_sizeof_programs_return_expected_values() {
+    run_qemu_case(
+        "sizeof-char",
+        "int main() {\n    return sizeof(char);\n}\n",
+        1,
+    );
+    run_qemu_case(
+        "sizeof-int",
+        "int main() {\n    return sizeof(int);\n}\n",
+        4,
+    );
+    run_qemu_case(
+        "sizeof-unsigned-long",
+        "int main() {\n    return sizeof(unsigned long);\n}\n",
+        4,
+    );
+    run_qemu_case(
+        "sizeof-pointer-type",
+        "int main() {\n    return sizeof(char *);\n}\n",
+        4,
+    );
+    run_qemu_case(
+        "sizeof-pointer-expression",
+        "int main() {\n    char *p;\n    return sizeof(p);\n}\n",
+        4,
+    );
+    run_qemu_case(
+        "sizeof-local-variable-expression",
+        "int main() {\n    int x;\n    return sizeof x;\n}\n",
+        4,
+    );
+    run_qemu_case(
+        "sizeof-parenthesized-variable-expression",
+        "int main() {\n    int x;\n    return sizeof(x);\n}\n",
+        4,
+    );
+    run_qemu_case(
+        "sizeof-local-int-array-expression",
+        "int main() {\n    int nums[3];\n    return sizeof(nums);\n}\n",
+        12,
+    );
+    run_qemu_case(
+        "sizeof-local-char-array-expression",
+        "int main() {\n    char buf[3];\n    return sizeof(buf);\n}\n",
+        3,
+    );
+    run_qemu_case(
+        "sizeof-global-array-expression",
+        "int nums[4];\n\nint main() {\n    return sizeof(nums);\n}\n",
+        16,
+    );
+    run_qemu_case(
+        "sizeof-pointer-dereference-expression",
+        "int main() {\n    char *p;\n    return sizeof(*p);\n}\n",
+        1,
+    );
+    run_qemu_case(
+        "sizeof-typedef-name",
+        "typedef unsigned char Byte;\n\nint main() {\n    return sizeof(Byte);\n}\n",
+        1,
+    );
+    run_qemu_case(
+        "sizeof-object-name-shadows-typedef-name",
+        "typedef int T;\n\nint main() {\n    char T;\n    return sizeof(T);\n}\n",
+        1,
+    );
+    run_qemu_case(
+        "sizeof-has-unary-precedence",
+        "int main() {\n    int x;\n    return sizeof x + 1;\n}\n",
+        5,
+    );
+}
+
+#[test]
 fn qemu_logical_operator_programs_return_expected_values() {
     run_qemu_case(
         "logical-and-true",

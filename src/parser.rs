@@ -540,9 +540,14 @@ impl Parser {
         }
     }
 
-    fn parse_type(&mut self) -> Result<Type, ParseError> {
+    fn parse_specifier_type(&mut self) -> Result<Type, ParseError> {
         let (spec, span) = self.parse_decl_spec()?;
         self.lower_decl_spec(&spec, span)
+    }
+
+    fn parse_type_name(&mut self) -> Result<Type, ParseError> {
+        let base = self.parse_specifier_type()?;
+        self.parse_abstract_pointer_type(&base)
     }
 
     fn parse_decl_spec(&mut self) -> Result<(DeclSpec, Span), ParseError> {
@@ -1140,9 +1145,25 @@ impl Parser {
     }
 
     fn parse_unary(&mut self) -> Result<Expr, ParseError> {
+        if self.peek_kind() == &TokenKind::KwSizeof {
+            self.expect(&TokenKind::KwSizeof)?;
+            if self.peek_kind() == &TokenKind::LParen && self.is_decl_start(self.peek_nth_kind(1)) {
+                let span = self.advance().span;
+                let ty = self.parse_type_name()?;
+                self.expect(&TokenKind::RParen)?;
+                return Ok(Expr::SizeOfType { ty, span });
+            }
+
+            let span = self.peek().span;
+            let expr = self.parse_unary()?;
+            return Ok(Expr::SizeOfExpr {
+                expr: Box::new(expr),
+                span,
+            });
+        }
         if self.peek_kind() == &TokenKind::LParen && self.is_decl_start(self.peek_nth_kind(1)) {
             let span = self.advance().span;
-            let ty = self.parse_type()?;
+            let ty = self.parse_type_name()?;
             self.expect(&TokenKind::RParen)?;
             let expr = self.parse_unary()?;
             return Ok(Expr::Cast {

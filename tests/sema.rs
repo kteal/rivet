@@ -4468,6 +4468,72 @@ fn typed_scalar_cast_has_target_type() {
 }
 
 #[test]
+fn sizeof_type_folds_to_unsigned_long_literal() {
+    let program = main_program(vec![Statement::Return(Expr::SizeOfType {
+        ty: Type::Int,
+        span: span(),
+    })]);
+
+    let typed_program = check(&program).expect("semantic check should succeed");
+    let TypedStatement::Return(expr) = &first_typed_function(&typed_program).body[0] else {
+        panic!("expected typed return statement");
+    };
+
+    assert_eq!(expr.ty, Type::UnsignedLong);
+    assert!(matches!(
+        expr.kind,
+        TypedExprKind::IntLiteral { value: 4, .. }
+    ));
+}
+
+#[test]
+fn sizeof_pointer_type_folds_to_unsigned_long_literal() {
+    let program = main_program(vec![Statement::Return(Expr::SizeOfType {
+        ty: Type::Pointer(Box::new(Type::Char)),
+        span: span(),
+    })]);
+
+    let typed_program = check(&program).expect("semantic check should succeed");
+    let TypedStatement::Return(expr) = &first_typed_function(&typed_program).body[0] else {
+        panic!("expected typed return statement");
+    };
+
+    assert_eq!(expr.ty, Type::UnsignedLong);
+    assert!(matches!(
+        expr.kind,
+        TypedExprKind::IntLiteral { value: 4, .. }
+    ));
+}
+
+#[test]
+fn sizeof_expression_uses_raw_array_type_without_decay() {
+    let typed_program = check_source("int main() { int nums[3]; return sizeof(nums); }");
+    let TypedStatement::Return(expr) = &first_typed_function(&typed_program).body[1] else {
+        panic!("expected typed return statement");
+    };
+
+    assert_eq!(expr.ty, Type::UnsignedLong);
+    assert!(matches!(
+        expr.kind,
+        TypedExprKind::IntLiteral { value: 12, .. }
+    ));
+}
+
+#[test]
+fn sizeof_pointer_dereference_uses_pointee_type() {
+    let typed_program = check_source("int main() { char *p; return sizeof(*p); }");
+    let TypedStatement::Return(expr) = &first_typed_function(&typed_program).body[1] else {
+        panic!("expected typed return statement");
+    };
+
+    assert_eq!(expr.ty, Type::UnsignedLong);
+    assert!(matches!(
+        expr.kind,
+        TypedExprKind::IntLiteral { value: 1, .. }
+    ));
+}
+
+#[test]
 fn accepts_casts_between_integer_types() {
     let program = main_program(vec![Statement::Return(Expr::Cast {
         ty: Type::UnsignedChar,

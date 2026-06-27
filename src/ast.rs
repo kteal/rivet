@@ -179,6 +179,14 @@ pub enum Expr {
         expr: Box<Self>,
         span: Span,
     },
+    SizeOfType {
+        ty: Type,
+        span: Span,
+    },
+    SizeOfExpr {
+        expr: Box<Self>,
+        span: Span,
+    },
 }
 
 impl Expr {
@@ -189,7 +197,9 @@ impl Expr {
             | Self::Variable { span, .. }
             | Self::Index { span, .. }
             | Self::Cast { span, .. }
-            | Self::Call { span, .. } => *span,
+            | Self::Call { span, .. }
+            | Self::SizeOfType { span, .. }
+            | Self::SizeOfExpr { span, .. } => *span,
             Self::Unary { op_span, .. }
             | Self::Binary { op_span, .. }
             | Self::Assign { op_span, .. }

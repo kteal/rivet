@@ -1155,6 +1155,66 @@ fn cast_has_unary_precedence() {
 }
 
 #[test]
+fn parses_sizeof_type_and_expression_forms() {
+    let type_expr = only_return_expr("int main() { return sizeof(int); }");
+    let Expr::SizeOfType { ty, .. } = type_expr else {
+        panic!("expected sizeof type expression");
+    };
+    assert_eq!(ty, Type::Int);
+
+    let pointer_type_expr = only_return_expr("int main() { return sizeof(char *); }");
+    let Expr::SizeOfType { ty, .. } = pointer_type_expr else {
+        panic!("expected sizeof pointer type expression");
+    };
+    assert_eq!(ty, Type::Pointer(Box::new(Type::Char)));
+
+    let body = main_body("int main() { int x; return sizeof x; }");
+    let Statement::Return(value_expr) = &body[1] else {
+        panic!("expected return statement");
+    };
+    let Expr::SizeOfExpr { expr, .. } = value_expr else {
+        panic!("expected sizeof expression");
+    };
+    assert!(matches!(expr.as_ref(), Expr::Variable { name, .. } if name == "x"));
+}
+
+#[test]
+fn sizeof_parenthesized_identifier_uses_typedef_lookup() {
+    let type_expr = only_return_expr("typedef int T; int main() { return sizeof(T); }");
+    assert!(matches!(type_expr, Expr::SizeOfType { ty: Type::Int, .. }));
+
+    let body = main_body("typedef int T; int main() { int T; return sizeof(T); }");
+    let Statement::Return(value_expr) = &body[1] else {
+        panic!("expected return statement");
+    };
+    let Expr::SizeOfExpr { expr, .. } = value_expr else {
+        panic!("expected sizeof expression after object shadows typedef");
+    };
+    assert!(matches!(expr.as_ref(), Expr::Variable { name, .. } if name == "T"));
+}
+
+#[test]
+fn sizeof_has_unary_precedence() {
+    let body = main_body("int main() { int x; return sizeof x + 1; }");
+    let Statement::Return(expr) = &body[1] else {
+        panic!("expected return statement");
+    };
+
+    let Expr::Binary {
+        op: BinaryOp::Add,
+        left,
+        right,
+        ..
+    } = expr
+    else {
+        panic!("expected addition expression");
+    };
+
+    assert!(matches!(left.as_ref(), Expr::SizeOfExpr { .. }));
+    assert!(matches!(right.as_ref(), Expr::IntLiteral { value: 1, .. }));
+}
+
+#[test]
 fn parses_typedef_declarations() {
     let program = parse_source(
         "typedef unsigned long uLong;\ntypedef unsigned char *BytefPtr;\nint main() { return 0; }",
