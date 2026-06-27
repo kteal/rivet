@@ -272,11 +272,11 @@ impl InputScanner {
                     message: "failed to convert bytes to string".to_string(),
                     span,
                 })?;
-                return Ok(IncludeName {
+                Ok(IncludeName {
                     kind: IncludeKind::Quoted,
                     name,
                     span,
-                });
+                })
             }
             Token {
                 kind: TokenKind::Less,
@@ -340,12 +340,10 @@ impl InputScanner {
                     span,
                 })
             }
-            token => {
-                return Err(PreprocessError {
-                    message: "expected include path".to_string(),
-                    span: token.span,
-                });
-            }
+            token => Err(PreprocessError {
+                message: "expected include path".to_string(),
+                span: token.span,
+            }),
         }
     }
 
@@ -584,6 +582,67 @@ impl Preprocessor {
         Ok(included_tokens)
     }
 
+    fn eval_if_expr(&self, tokens: &[Token], span: Span) -> Result<u64, PreprocessError> {
+        match tokens {
+            [
+                Token {
+                    kind: TokenKind::IntLiteral { value, .. },
+                    ..
+                },
+            ] => Ok(*value),
+            [
+                Token {
+                    kind: TokenKind::Ident(name),
+                    span,
+                },
+            ] => {
+                let Some(macro_def) = self.macros.get(name) else {
+                    return Ok(0);
+                };
+                if let MacroDef::ObjectLike(replacement) = macro_def {
+                    match replacement.as_slice() {
+                        [
+                            Token {
+                                kind: TokenKind::IntLiteral { value, .. },
+                                ..
+                            },
+                        ] => Ok(*value),
+                        [] => Ok(0),
+                        _ => Err(PreprocessError {
+                            message: "unsupported #if macro replacement".to_string(),
+                            span: *span,
+                        }),
+                    }
+                } else {
+                    Err(PreprocessError {
+                        message: "unsupported #if expression".to_string(),
+                        span: *span,
+                    })
+                }
+            }
+            _ => Err(PreprocessError {
+                message: "unsupported #if expression".to_string(),
+                span,
+            }),
+        }
+    }
+
+    fn parse_if(&mut self, scanner: &mut InputScanner) -> Result<(), PreprocessError> {
+        scanner.expect(&TokenKind::Hash)?;
+        let if_token = scanner.expect(&TokenKind::KwIf)?;
+        let tokens = scanner.collect_until_newline();
+
+        let condition_met = self.eval_if_expr(&tokens, if_token.span)? != 0;
+        let parent_active = self.is_active();
+        self.conditionals.push(ConditionalFrame {
+            parent_active,
+            current_active: parent_active && condition_met,
+            branch_taken: condition_met,
+            saw_else: false,
+        });
+        Ok(())
+    }
+
     fn expand_function_like(
         params: &[String],
         replacement: &[Token],
@@ -701,6 +760,7 @@ impl Preprocessor {
                             }
                         },
                         TokenKind::KwElse => self.parse_else(scanner)?,
+                        TokenKind::KwIf => self.parse_if(scanner)?,
                         kind => {
                             return Err(ProcessError::Local(PreprocessError {
                                 message: format!(

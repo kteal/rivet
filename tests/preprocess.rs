@@ -334,6 +334,84 @@ fn ifndef_skips_defined_branch() {
 }
 
 #[test]
+fn if_keeps_nonzero_integer_literal_branch() {
+    assert_eq!(
+        preprocess_kinds("#if 1\nint x;\n#endif\n"),
+        vec![
+            TokenKind::KwInt,
+            TokenKind::Ident("x".to_string()),
+            TokenKind::Semicolon,
+            TokenKind::Eof,
+        ]
+    );
+}
+
+#[test]
+fn if_skips_zero_integer_literal_branch() {
+    assert_eq!(
+        preprocess_kinds("#if 0\nint x;\n#endif\nint y;\n"),
+        vec![
+            TokenKind::KwInt,
+            TokenKind::Ident("y".to_string()),
+            TokenKind::Semicolon,
+            TokenKind::Eof,
+        ]
+    );
+}
+
+#[test]
+fn if_treats_undefined_identifier_as_zero() {
+    assert_eq!(
+        preprocess_kinds("#if MISSING\nint x;\n#endif\nint y;\n"),
+        vec![
+            TokenKind::KwInt,
+            TokenKind::Ident("y".to_string()),
+            TokenKind::Semicolon,
+            TokenKind::Eof,
+        ]
+    );
+}
+
+#[test]
+fn if_keeps_nonzero_object_like_macro_branch() {
+    assert_eq!(
+        preprocess_kinds("#define A 1\n#if A\nint x;\n#endif\n"),
+        vec![
+            TokenKind::KwInt,
+            TokenKind::Ident("x".to_string()),
+            TokenKind::Semicolon,
+            TokenKind::Eof,
+        ]
+    );
+}
+
+#[test]
+fn if_skips_zero_object_like_macro_branch() {
+    assert_eq!(
+        preprocess_kinds("#define A 0\n#if A\nint x;\n#endif\nint y;\n"),
+        vec![
+            TokenKind::KwInt,
+            TokenKind::Ident("y".to_string()),
+            TokenKind::Semicolon,
+            TokenKind::Eof,
+        ]
+    );
+}
+
+#[test]
+fn if_treats_empty_object_like_macro_as_zero() {
+    assert_eq!(
+        preprocess_kinds("#define A\n#if A\nint x;\n#endif\nint y;\n"),
+        vec![
+            TokenKind::KwInt,
+            TokenKind::Ident("y".to_string()),
+            TokenKind::Semicolon,
+            TokenKind::Eof,
+        ]
+    );
+}
+
+#[test]
 fn else_switches_to_untaken_branch() {
     assert_eq!(
         preprocess_kinds("#ifdef A\nint x;\n#else\nint y;\n#endif\n"),
