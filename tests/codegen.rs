@@ -920,6 +920,18 @@ fn generates_char_global_array() {
 }
 
 #[test]
+fn generates_string_literal_data_and_address() {
+    let asm = generate_source("int main() { char *s = \"a\\n\"; return s[1]; }");
+
+    assert!(asm.contains("    la a0, .Lstr0\n"));
+    assert!(asm.contains(".section .rodata\n"));
+    assert!(asm.contains(".Lstr0:\n"));
+    assert!(asm.contains("    .byte 97\n"));
+    assert!(asm.contains("    .byte 10\n"));
+    assert!(asm.contains("    .byte 0\n"));
+}
+
+#[test]
 fn array_local_reserves_full_frame_slot_and_aligns_next_local() {
     let program = program_with_functions(vec![FunctionDef {
         return_type: Type::Int,

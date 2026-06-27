@@ -28,7 +28,7 @@ pub enum TokenKind {
         base: IntLiteralBase,
     },
     CharLiteral(i32),
-    StringLiteral(String),
+    StringLiteral(Vec<u8>),
     LParen,
     RParen,
     LBrace,
@@ -347,24 +347,60 @@ impl<'a> Lexer<'a> {
     fn lex_string_literal(&mut self) -> Result<Token, LexError> {
         let start = self.offset;
         self.advance();
-        let mut text = String::new();
+
+        let mut bytes = Vec::new();
 
         loop {
             match self.peek() {
-                Some('"') => break,
-                Some(_) => {
-                    let ch = self.advance().expect("peeked character should exist");
-                    text.push(ch);
+                Some('"') => {
+                    self.advance();
+                    break;
                 }
-                None => {
+                Some('\\') => {
+                    self.advance();
+
+                    let Some(escaped) = self.peek() else {
+                        return Err(self.error(start, "unterminated string literal"));
+                    };
+
+                    let byte = match escaped {
+                        'n' => b'\n',
+                        't' => b'\t',
+                        'r' => b'\r',
+                        '0' => b'\0',
+                        '\'' => b'\'',
+                        '"' => b'"',
+                        '\\' => b'\\',
+                        c => {
+                            self.advance();
+                            return Err(
+                                self.error(start, &format!("unknown escape sequence '\\{c}'"))
+                            );
+                        }
+                    };
+
+                    self.advance();
+                    bytes.push(byte);
+                }
+                Some('\n') | None => {
                     return Err(self.error(start, "unterminated string literal"));
+                }
+                Some(ch) => {
+                    self.advance();
+
+                    if !ch.is_ascii() {
+                        return Err(
+                            self.error(start, "non-ASCII string literals are not supported")
+                        );
+                    }
+
+                    bytes.push(ch as u8);
                 }
             }
         }
-        self.advance();
 
         Ok(Token {
-            kind: TokenKind::StringLiteral(text),
+            kind: TokenKind::StringLiteral(bytes),
             span: self.span(start, self.offset),
         })
     }

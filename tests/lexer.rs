@@ -602,6 +602,55 @@ fn lexes_char_literal_spans() {
 }
 
 #[test]
+fn lexes_string_literals_as_bytes() {
+    let tokens = lex_with_struct(r#""abc""#).expect("lexing should succeed");
+
+    assert_eq!(
+        token_kinds(&tokens),
+        vec![TokenKind::StringLiteral(b"abc".to_vec()), TokenKind::Eof,]
+    );
+}
+
+#[test]
+fn lexes_string_literal_escapes() {
+    let tokens = lex_with_struct(r#""a\n\t\r\0\'\"\\b""#).expect("lexing should succeed");
+
+    assert_eq!(
+        token_kinds(&tokens),
+        vec![
+            TokenKind::StringLiteral(b"a\n\t\r\0'\"\\b".to_vec()),
+            TokenKind::Eof,
+        ]
+    );
+}
+
+#[test]
+fn lexes_string_literal_spans() {
+    let tokens = lex_with_struct(r#""A" "\n""#).expect("lexing should succeed");
+
+    assert_eq!(
+        token_spans(&tokens),
+        vec![
+            Span {
+                file_id: DUMMY_FILE_ID,
+                start: 0,
+                end: 3
+            },
+            Span {
+                file_id: DUMMY_FILE_ID,
+                start: 4,
+                end: 8
+            },
+            Span {
+                file_id: DUMMY_FILE_ID,
+                start: 8,
+                end: 8
+            },
+        ]
+    );
+}
+
+#[test]
 fn rejects_empty_char_literal() {
     let err = lex_with_struct("''").expect_err("lexing should fail");
 
@@ -636,6 +685,66 @@ fn rejects_unknown_char_literal_escape() {
     let err = lex_with_struct("'\\q'").expect_err("lexing should fail");
 
     assert_eq!(err.message, "unknown escape sequence '\\q'");
+    assert_eq!(
+        err.span,
+        Span {
+            file_id: DUMMY_FILE_ID,
+            start: 0,
+            end: 3
+        }
+    );
+}
+
+#[test]
+fn rejects_unterminated_string_literal() {
+    let err = lex_with_struct("\"abc").expect_err("lexing should fail");
+
+    assert_eq!(err.message, "unterminated string literal");
+    assert_eq!(
+        err.span,
+        Span {
+            file_id: DUMMY_FILE_ID,
+            start: 0,
+            end: 4
+        }
+    );
+}
+
+#[test]
+fn rejects_newline_in_string_literal() {
+    let err = lex_with_struct("\"abc\n\"").expect_err("lexing should fail");
+
+    assert_eq!(err.message, "unterminated string literal");
+    assert_eq!(
+        err.span,
+        Span {
+            file_id: DUMMY_FILE_ID,
+            start: 0,
+            end: 4
+        }
+    );
+}
+
+#[test]
+fn rejects_unknown_string_literal_escape() {
+    let err = lex_with_struct(r#""\q""#).expect_err("lexing should fail");
+
+    assert_eq!(err.message, "unknown escape sequence '\\q'");
+    assert_eq!(
+        err.span,
+        Span {
+            file_id: DUMMY_FILE_ID,
+            start: 0,
+            end: 3
+        }
+    );
+}
+
+#[test]
+fn rejects_non_ascii_string_literal() {
+    let err = lex_with_struct("\"é\"").expect_err("lexing should fail");
+
+    assert_eq!(err.message, "non-ASCII string literals are not supported");
     assert_eq!(
         err.span,
         Span {

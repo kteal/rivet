@@ -1056,12 +1056,68 @@ impl Checker {
             Expr::Cast { ty, expr, span } => self.check_cast_expr(ty, expr, *span),
             Expr::SizeOfType { ty, span } => Ok(Self::check_sizeof_type_expr(ty, *span)),
             Expr::SizeOfExpr { expr, span } => self.check_sizeof_expr_expr(expr, *span),
+            Expr::StringLiteral { bytes, span } => {
+                let ty = Type::Array {
+                    element: Box::new(Type::Char),
+                    len: bytes.len() + 1,
+                };
+
+                Ok(TypedExpr {
+                    kind: TypedExprKind::StringLiteral {
+                        bytes: bytes.clone(),
+                        span: *span,
+                    },
+                    ty,
+                })
+            }
         }
     }
 
     fn check_expr(&self, expr: &Expr) -> Result<TypedExpr, SemanticError> {
         let typed = self.check_expr_raw(expr)?;
         Ok(Self::decay_expr(typed))
+    }
+
+    fn check_string_array_initializer(
+        element_ty: &Type,
+        array_len: usize,
+        bytes: &[u8],
+        span: Span,
+    ) -> Result<TypedInitializer, SemanticError> {
+        if !matches!(
+            element_ty,
+            Type::Char | Type::SignedChar | Type::UnsignedChar
+        ) {
+            return Err(SemanticError {
+                message: format!(
+                    "cannot initialize array of type '{element_ty:?}' from string literal"
+                ),
+                span,
+            });
+        }
+
+        let initialized_len = bytes.len() + 1;
+        if initialized_len > array_len {
+            return Err(SemanticError {
+                message: format!(
+                  "string literal initializer has {initialized_len} bytes including NUL, but array
+                  has length {array_len}"
+              ),
+                span,
+            });
+        }
+
+        let mut values = Vec::with_capacity(initialized_len);
+        for byte in bytes.iter().copied().chain(std::iter::once(0)) {
+            values.push(TypedExpr {
+                kind: TypedExprKind::IntLiteral {
+                    value: u64::from(byte),
+                    span,
+                },
+                ty: Type::Int,
+            });
+        }
+        Ok(TypedInitializer::List(values))
     }
 
     fn check_initializer(
@@ -1071,6 +1127,10 @@ impl Checker {
         initializer: &Initializer,
     ) -> Result<TypedInitializer, SemanticError> {
         match (target_ty, initializer) {
+            (
+                Type::Array { element, len },
+                Initializer::Expr(Expr::StringLiteral { bytes, span }),
+            ) => Self::check_string_array_initializer(element, *len, bytes, *span),
             (
                 Type::Array {
                     element: element_ty,

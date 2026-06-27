@@ -187,6 +187,10 @@ pub enum Expr {
         expr: Box<Self>,
         span: Span,
     },
+    StringLiteral {
+        bytes: Vec<u8>,
+        span: Span,
+    },
 }
 
 impl Expr {
@@ -199,7 +203,8 @@ impl Expr {
             | Self::Cast { span, .. }
             | Self::Call { span, .. }
             | Self::SizeOfType { span, .. }
-            | Self::SizeOfExpr { span, .. } => *span,
+            | Self::SizeOfExpr { span, .. }
+            | Self::StringLiteral { span, .. } => *span,
             Self::Unary { op_span, .. }
             | Self::Binary { op_span, .. }
             | Self::Assign { op_span, .. }

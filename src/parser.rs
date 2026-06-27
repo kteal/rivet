@@ -1060,6 +1060,10 @@ impl Parser {
                 self.expect(&TokenKind::RParen)?;
                 Ok(expr)
             }
+            TokenKind::StringLiteral(bytes) => Ok(Expr::StringLiteral {
+                bytes,
+                span: token.span,
+            }),
             found => Err(ParseError {
                 message: format!("expected expression, found {found:?}"),
                 span: token.span,

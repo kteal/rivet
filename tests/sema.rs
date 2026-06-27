@@ -2987,6 +2987,153 @@ fn typed_array_variable_expression_decays_to_pointer_initializer() {
 }
 
 #[test]
+fn typed_string_literal_has_raw_char_array_type() {
+    let program = main_program(vec![
+        Statement::ExprStatement(Expr::StringLiteral {
+            bytes: b"abc".to_vec(),
+            span: span(),
+        }),
+        Statement::Return(int_literal(0)),
+    ]);
+
+    let typed_program = check(&program).expect("semantic check should succeed");
+    let TypedStatement::ExprStatement(expr) = &first_typed_function(&typed_program).body[0] else {
+        panic!("expected typed expression statement");
+    };
+
+    assert_eq!(expr.ty, Type::Pointer(Box::new(Type::Char)));
+    let TypedExprKind::ArrayToPointer { expr, .. } = &expr.kind else {
+        panic!("expected array-to-pointer conversion");
+    };
+    assert_eq!(
+        expr.ty,
+        Type::Array {
+            element: Box::new(Type::Char),
+            len: 4,
+        }
+    );
+    assert!(matches!(
+        expr.kind,
+        TypedExprKind::StringLiteral { ref bytes, .. } if bytes == b"abc"
+    ));
+}
+
+#[test]
+fn sizeof_string_literal_uses_raw_array_type_without_decay() {
+    let typed_program = check_source("int main() { return sizeof(\"abc\"); }");
+    let TypedStatement::Return(expr) = &first_typed_function(&typed_program).body[0] else {
+        panic!("expected typed return statement");
+    };
+
+    assert_eq!(expr.ty, Type::UnsignedLong);
+    assert!(matches!(
+        expr.kind,
+        TypedExprKind::IntLiteral { value: 4, .. }
+    ));
+}
+
+#[test]
+fn typed_string_literal_decays_to_pointer_initializer() {
+    let typed_program = check_source("int main() { char *p = \"abc\"; return *p; }");
+    let main = typed_function_at(&typed_program, 0);
+
+    let TypedStatement::Decl(decls) = &main.body[0] else {
+        panic!("expected declaration statement");
+    };
+    let Some(TypedInitializer::Expr(init)) = &decls[0].init else {
+        panic!("expected pointer initializer");
+    };
+
+    assert_eq!(init.ty, Type::Pointer(Box::new(Type::Char)));
+    let TypedExprKind::ArrayToPointer { expr, .. } = &init.kind else {
+        panic!("expected array-to-pointer conversion");
+    };
+    assert_eq!(
+        expr.ty,
+        Type::Array {
+            element: Box::new(Type::Char),
+            len: 4,
+        }
+    );
+    assert!(matches!(
+        expr.kind,
+        TypedExprKind::StringLiteral { ref bytes, .. } if bytes == b"abc"
+    ));
+}
+
+#[test]
+fn string_literal_initializes_char_array_as_byte_list() {
+    let typed_program = check_source("int main() { char buf[4] = \"abc\"; return buf[2]; }");
+    let main = typed_function_at(&typed_program, 0);
+
+    let TypedStatement::Decl(decls) = &main.body[0] else {
+        panic!("expected declaration statement");
+    };
+    let Some(TypedInitializer::List(values)) = &decls[0].init else {
+        panic!("expected array initializer list");
+    };
+
+    let actual: Vec<u64> = values
+        .iter()
+        .map(|value| {
+            let TypedExprKind::IntLiteral { value, .. } = value.kind else {
+                panic!("expected integer literal initializer");
+            };
+            value
+        })
+        .collect();
+
+    assert_eq!(actual, vec![97, 98, 99, 0]);
+}
+
+#[test]
+fn empty_string_literal_initializes_char_array_with_nul() {
+    let typed_program = check_source("int main() { char buf[4] = \"\"; return buf[0]; }");
+    let main = typed_function_at(&typed_program, 0);
+
+    let TypedStatement::Decl(decls) = &main.body[0] else {
+        panic!("expected declaration statement");
+    };
+    let Some(TypedInitializer::List(values)) = &decls[0].init else {
+        panic!("expected array initializer list");
+    };
+
+    assert_eq!(values.len(), 1);
+    assert!(matches!(
+        values[0].kind,
+        TypedExprKind::IntLiteral { value: 0, .. }
+    ));
+}
+
+#[test]
+fn rejects_string_literal_initializer_that_does_not_fit_char_array() {
+    let source = "int main() { char buf[3] = \"abc\"; return 0; }";
+    let tokens = lex(source, DUMMY_FILE_ID).expect("lexing should succeed");
+    let tokens = preprocess(tokens).expect("preprocessing should succeed");
+    let program = parse(tokens).expect("parsing should succeed");
+    let err = check(&program).expect_err("semantic check should fail");
+
+    assert!(err.message.contains(
+        "string literal initializer has 4 bytes including NUL, but array"
+    ));
+    assert!(err.message.contains("has length 3"));
+}
+
+#[test]
+fn rejects_string_literal_initializer_for_incompatible_pointer_type() {
+    let source = "int main() { int *p = \"abc\"; return 0; }";
+    let tokens = lex(source, DUMMY_FILE_ID).expect("lexing should succeed");
+    let tokens = preprocess(tokens).expect("preprocessing should succeed");
+    let program = parse(tokens).expect("parsing should succeed");
+    let err = check(&program).expect_err("semantic check should fail");
+
+    assert_eq!(
+        err.message,
+        "cannot assign value of type 'Pointer(Char)' to variable of type 'Pointer(Int)'"
+    );
+}
+
+#[test]
 fn typed_array_variable_expression_decays_to_pointer_binary_operand() {
     let typed_program = check_source("int main() { char buf[3]; char *p = buf; return p == buf; }");
     let main = typed_function_at(&typed_program, 0);

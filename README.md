@@ -6,7 +6,7 @@
 
 `rivet` is a C compiler written in Rust that targets RV32IM assembly. It is working toward C23 by growing a small, tested C subset.
 
-It currently handles common integer and character types, basic pointers, function pointers, address-of and dereference, fixed-size local and file-scope arrays, file-scope globals, array indexing, `sizeof`, functions, simple function prototypes, block scope, common control flow, and C-like expression precedence. It emits RV32IM assembly and reports lexer, parser, and semantic errors with source-map-backed file, line, and column locations.
+It currently handles common integer and character types, basic pointers, function pointers, string literal expressions, address-of and dereference, fixed-size local and file-scope arrays, file-scope globals, array indexing, `sizeof`, functions, simple function prototypes, block scope, common control flow, and C-like expression precedence. It emits RV32IM assembly and reports lexer, parser, and semantic errors with source-map-backed file, line, and column locations.
 
 The current language subset supports programs shaped like:
 
@@ -173,7 +173,7 @@ Lexing and preprocessing:
 - [x] local quoted `#include "file.h"` handling
 - [x] string literal preprocessing tokens for quoted include paths
 - [x] file-aware token spans with `SourceMap` / `FileId`
-- [ ] string literals
+- [x] byte-backed string literal tokens with basic escape decoding
 - [ ] full macro expansion semantics: hide sets, stringification, token pasting, variadics, and exact whitespace-sensitive function-like macro definition rules
 - [ ] full `#include` behavior: system includes and include search paths
 
@@ -220,6 +220,7 @@ Expressions and operators:
 - [x] array indexing as rvalue and lvalue: `a[i]`
 - [x] null pointer constants in pointer assignment, calls, returns, and comparisons
 - [x] compatible pointer equality and inequality
+- [x] string literal expressions with array-to-pointer decay
 - [ ] conditional operator `?:`
 - [ ] comma operator
 - [x] scalar casts
@@ -291,6 +292,10 @@ Objects, aggregate types, and declarators:
 - [x] parenthesized pointer-to-array declarators and indexing through them: `(*p)[i]`
 - [x] function pointer declarators, typedefs, initialization from function designators, and indirect calls
 - [x] pointer abstract type-names for `sizeof(type-name)` and casts
+- [x] static `.rodata` storage for string literal expressions
+- [x] string literal initialization for explicit-size character arrays: `char buf[4] = "abc"`
+- [ ] inferred-size character arrays from string literals: `char buf[] = "abc"`
+- [ ] adjacent string literal concatenation: `"foo" "bar"`
 - [ ] full C declarator grammar
 - [ ] structs and unions
 - [ ] member access: `.` and `->`

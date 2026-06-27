@@ -1179,6 +1179,43 @@ fn parses_sizeof_type_and_expression_forms() {
 }
 
 #[test]
+fn parses_string_literal_expressions() {
+    let expr = only_return_expr("int main() { return \"abc\"; }");
+    let Expr::StringLiteral { bytes, .. } = expr else {
+        panic!("expected string literal expression");
+    };
+
+    assert_eq!(bytes, b"abc".to_vec());
+}
+
+#[test]
+fn parses_string_literal_postfix_indexing() {
+    let expr = only_return_expr("int main() { return \"abc\"[1]; }");
+    let Expr::Index { base, index, .. } = expr else {
+        panic!("expected index expression");
+    };
+
+    assert!(matches!(
+        base.as_ref(),
+        Expr::StringLiteral { bytes, .. } if bytes == b"abc"
+    ));
+    assert!(matches!(index.as_ref(), Expr::IntLiteral { value: 1, .. }));
+}
+
+#[test]
+fn parses_sizeof_string_literal_as_expression() {
+    let expr = only_return_expr("int main() { return sizeof(\"abc\"); }");
+    let Expr::SizeOfExpr { expr, .. } = expr else {
+        panic!("expected sizeof expression");
+    };
+
+    assert!(matches!(
+        expr.as_ref(),
+        Expr::StringLiteral { bytes, .. } if bytes == b"abc"
+    ));
+}
+
+#[test]
 fn sizeof_parenthesized_identifier_uses_typedef_lookup() {
     let type_expr = only_return_expr("typedef int T; int main() { return sizeof(T); }");
     assert!(matches!(type_expr, Expr::SizeOfType { ty: Type::Int, .. }));

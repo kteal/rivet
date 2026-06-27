@@ -255,9 +255,15 @@ impl InputScanner {
 
         match token {
             Token {
-                kind: TokenKind::StringLiteral(name),
+                kind: TokenKind::StringLiteral(bytes),
                 span,
-            } => Ok((name, span)),
+            } => {
+                let name = String::from_utf8(bytes).map_err(|_| PreprocessError {
+                    message: "failed to convert bytes to string".to_string(),
+                    span,
+                })?;
+                Ok((name, token.span))
+            }
 
             token => Err(PreprocessError {
                 message: format!("expected string literal token, got '{:?}'", token.kind),

@@ -12,6 +12,12 @@ pub enum CodegenTarget {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+struct StringData {
+    label: String,
+    bytes: Vec<u8>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 struct LoopLabels {
     continue_label: String,
     break_label: String,
@@ -132,6 +138,7 @@ struct Codegen {
     loop_stack: Vec<LoopLabels>,
     current_function_return_type: Option<Type>,
     globals: HashMap<GlobalId, GlobalSlot>,
+    strings: Vec<StringData>,
     #[allow(dead_code)]
     target: CodegenTarget,
 }
@@ -146,6 +153,7 @@ impl Codegen {
             loop_stack: vec![],
             current_function_return_type: None,
             globals: HashMap::new(),
+            strings: vec![],
             target,
         }
     }
@@ -190,6 +198,34 @@ impl Codegen {
 
     fn resolve_global(&self, id: GlobalId) -> &GlobalSlot {
         self.globals.get(&id).expect("global id should have slot")
+    }
+
+    fn add_string_literal(&mut self, bytes: &[u8]) -> String {
+        let label = format!(".Lstr{}", self.strings.len());
+        self.strings.push(StringData {
+            label: label.clone(),
+            bytes: bytes.to_vec(),
+        });
+        label
+    }
+
+    fn emit_string_data(&mut self) {
+        if self.strings.is_empty() {
+            return;
+        }
+
+        self.emit_line(format_args!(".section .rodata"));
+
+        let strings = self.strings.clone();
+        for string in strings {
+            self.emit_line(format_args!("{}:", string.label));
+
+            for byte in &string.bytes {
+                self.emit_line(format_args!("    .byte {byte}"));
+            }
+
+            self.emit_line(format_args!("    .byte 0"));
+        }
     }
 
     fn emit(&mut self, args: fmt::Arguments) {
@@ -366,6 +402,10 @@ impl Codegen {
 
                 self.pop_t0();
                 self.emit_line(format_args!("add a0, t0, a0"));
+            }
+            TypedExprKind::StringLiteral { bytes, .. } => {
+                let label = self.add_string_literal(bytes);
+                self.emit_line(format_args!("la a0, {label}"));
             }
             _ => unreachable!("semantic analysis should reject non-lvalue expression"),
         }
@@ -815,6 +855,9 @@ impl Codegen {
                 self.emit_addr(expr);
                 self.emit_load_from_addr(&expr.ty);
             }
+            TypedExprKind::StringLiteral { .. } => {
+                self.emit_addr(expr);
+            }
         }
     }
 
@@ -1091,6 +1134,8 @@ impl Codegen {
                 self.emit_function(function);
             }
         }
+
+        self.emit_string_data();
 
         std::mem::take(&mut self.out)
     }

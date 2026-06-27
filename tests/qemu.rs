@@ -237,6 +237,50 @@ fn qemu_sizeof_programs_return_expected_values() {
 }
 
 #[test]
+fn qemu_string_literal_programs_return_expected_values() {
+    run_qemu_case(
+        "string-literal-pointer-index",
+        "int main() {\n    char *s = \"abc\";\n    return s[1];\n}\n",
+        98,
+    );
+    run_qemu_case(
+        "string-literal-direct-index",
+        "int main() {\n    return \"abc\"[2];\n}\n",
+        99,
+    );
+    run_qemu_case(
+        "string-literal-trailing-nul",
+        "int main() {\n    return \"abc\"[3];\n}\n",
+        0,
+    );
+    run_qemu_case(
+        "string-literal-escape-byte",
+        "int main() {\n    char *s = \"a\\n\";\n    return s[1];\n}\n",
+        10,
+    );
+    run_qemu_case(
+        "sizeof-string-literal",
+        "int main() {\n    return sizeof(\"abc\");\n}\n",
+        4,
+    );
+    run_qemu_case(
+        "string-literal-char-array-initializer",
+        "int main() {\n    char buf[4] = \"abc\";\n    return buf[2];\n}\n",
+        99,
+    );
+    run_qemu_case(
+        "empty-string-literal-char-array-initializer",
+        "int main() {\n    char buf[4] = \"\";\n    return buf[0];\n}\n",
+        0,
+    );
+    run_qemu_case(
+        "string-literal-array-initializer-is-writable",
+        "int main() {\n    char buf[4] = \"abc\";\n    buf[0] = 'z';\n    return buf[0];\n}\n",
+        122,
+    );
+}
+
+#[test]
 fn qemu_logical_operator_programs_return_expected_values() {
     run_qemu_case(
         "logical-and-true",

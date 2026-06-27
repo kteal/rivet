@@ -104,7 +104,8 @@ impl TypedExpr {
             | TypedExprKind::Call { span, .. }
             | TypedExprKind::FunctionToPointer { span, .. }
             | TypedExprKind::ArrayToPointer { span, .. }
-            | TypedExprKind::LvalueToRvalue { span, .. } => *span,
+            | TypedExprKind::LvalueToRvalue { span, .. }
+            | TypedExprKind::StringLiteral { span, .. } => *span,
             TypedExprKind::Unary { op_span, .. }
             | TypedExprKind::Binary { op_span, .. }
             | TypedExprKind::Assign { op_span, .. }
@@ -242,6 +243,10 @@ pub enum TypedExprKind {
     },
     LvalueToRvalue {
         expr: Box<TypedExpr>,
+        span: Span,
+    },
+    StringLiteral {
+        bytes: Vec<u8>,
         span: Span,
     },
 }
