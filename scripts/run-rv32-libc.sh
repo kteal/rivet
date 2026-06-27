@@ -28,36 +28,31 @@ for tool in cargo riscv32-unknown-linux-gnu-gcc qemu-riscv32; do
     fi
 done
 
+libc_file="$(riscv32-unknown-linux-gnu-gcc -print-file-name=libc.so.6)"
+if [ "$libc_file" = "libc.so.6" ] || [ ! -f "$libc_file" ]; then
+    echo "error: failed to locate riscv32 glibc through riscv32-unknown-linux-gnu-gcc" >&2
+    exit 1
+fi
+
+glibc_root="$(dirname "$(dirname "$libc_file")")"
+
 workdir="$(mktemp -d)"
 trap 'rm -rf "$workdir"' EXIT
 
 asm_file="$workdir/program.s"
-start_file="$workdir/start.s"
 exe_file="$workdir/program"
 
 cargo run --quiet -- "$source_file" > "$asm_file"
 
-cat > "$start_file" <<'EOF'
-.globl _start
-_start:
-    call main
-    li a7, 93
-    ecall
-EOF
-
 riscv32-unknown-linux-gnu-gcc \
-    -nostdlib \
-    -nostartfiles \
-    -march=rv32im \
-    -mabi=ilp32 \
-    -Wl,-m,elf32lriscv \
-    -Wl,-e,_start \
+    -march=rv32imafd \
+    -mabi=ilp32d \
+    -no-pie \
     -o "$exe_file" \
-    "$start_file" \
     "$asm_file"
 
 set +e
-qemu-riscv32 "$exe_file"
+qemu-riscv32 -L "$glibc_root" "$exe_file"
 status="$?"
 set -e
 

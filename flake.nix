@@ -20,12 +20,7 @@
       let
         pkgs = import nixpkgs { inherit system; };
         cargoToml = builtins.fromTOML (builtins.readFile ./Cargo.toml);
-        riscvBinutils = pkgs.pkgsCross.riscv64.buildPackages.binutils;
-        riscvLinuxGnuBinutils = pkgs.runCommand "riscv64-linux-gnu-binutils" { } ''
-          mkdir -p $out/bin
-          ln -s ${riscvBinutils}/bin/riscv64-unknown-linux-gnu-as $out/bin/riscv64-linux-gnu-as
-          ln -s ${riscvBinutils}/bin/riscv64-unknown-linux-gnu-ld $out/bin/riscv64-linux-gnu-ld
-        '';
+        riscv32Pkgs = pkgs.pkgsCross.riscv32;
         treefmtEval = treefmt-nix.lib.evalModule pkgs {
           projectRootFile = "flake.nix";
           programs = {
@@ -51,7 +46,7 @@
 
           nativeCheckInputs = [
             pkgs.qemu
-            riscvLinuxGnuBinutils
+            riscv32Pkgs.stdenv.cc
           ];
 
           preCheck = ''
@@ -69,7 +64,7 @@
             cargo-nextest
 
             qemu
-            riscvLinuxGnuBinutils
+            riscv32Pkgs.stdenv.cc
           ];
         };
       }

@@ -35,7 +35,8 @@ int main() {
 The provided Nix development shell includes:
 
 - Rust toolchain (`cargo`, `rustc`, `clippy`, `rustfmt`, `rust-analyzer`, `cargo-nextest`)
-- RISC-V assembler and linker
+- RV32 Linux GNU cross toolchain (`riscv32-unknown-linux-gnu-gcc`)
+- RV32 glibc sysroot for hosted/dynamic-libc execution
 - QEMU user emulation
 
 Enter the shell with:
@@ -49,15 +50,9 @@ nix develop
 Install:
 
 - Rust and Cargo
-- `riscv64-linux-gnu-as`
-- `riscv64-linux-gnu-ld`
+- an RV32 Linux GNU cross GCC named `riscv32-unknown-linux-gnu-gcc`
+- an RV32 glibc sysroot compatible with that compiler
 - `qemu-riscv32`
-
-On Ubuntu or Debian:
-
-```bash
-sudo apt install qemu-user binutils-riscv64-linux-gnu
-```
 
 All commands below assume either:
 
@@ -122,7 +117,7 @@ The repository includes Rust unit tests as well as end-to-end QEMU tests. These 
 cargo nextest run --locked --all-targets --all-features
 ```
 
-CI runs tests inside the Nix development shell so the RISC-V binutils and QEMU tools are available:
+CI runs tests inside the Nix development shell so the RV32 cross toolchain and QEMU tools are available:
 
 ```bash
 nix develop --command cargo nextest run --locked --all-targets --all-features
@@ -137,7 +132,7 @@ nix flake check
 
 ## Run Generated Programs Under QEMU
 
-Use the helper script:
+Use the freestanding helper script:
 
 ```bash
 scripts/run-rv32.sh path/to/program.c
@@ -152,9 +147,27 @@ scripts/run-rv32.sh --expect 7 path/to/program.c
 The script:
 
 1. runs `rivet` to produce assembly
-2. assembles and links an RV32 executable
+2. links a freestanding RV32 executable with a tiny `_start`
 3. runs it with `qemu-riscv32`
 4. prints the program exit code
+
+For hosted/dynamic-libc execution, use:
+
+```bash
+scripts/run-rv32-libc.sh path/to/program.c
+```
+
+Or assert an expected exit code:
+
+```bash
+scripts/run-rv32-libc.sh --expect 0 path/to/program.c
+```
+
+The libc runner links with `riscv32-unknown-linux-gnu-gcc`, uses the matching
+RV32 glibc sysroot, and runs the result with `qemu-riscv32 -L`. This is the
+path for future tests that call external C library functions. The normal QEMU
+test suite still uses the freestanding runner so backend regressions stay
+separate from hosted runtime integration.
 
 ## Status
 
@@ -311,6 +324,7 @@ Toolchain and library compatibility:
 
 - [x] diagnostics with source-map-backed file, line, and column locations
 - [x] full Adler-32 compatibility fixture with reduced local `zutil.h`
+- [x] RV32 dynamic-libc QEMU runner using the Nix-provided cross GCC/glibc toolchain
 - [ ] macro expansion provenance in diagnostics
 - [ ] standard header strategy
 - [ ] minimal hosted C runtime integration
