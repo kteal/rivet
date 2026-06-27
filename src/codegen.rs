@@ -1,4 +1,4 @@
-use crate::ast::{BinaryOp, Type, UnaryOp};
+use crate::ast::{BinaryOp, Linkage, Type, UnaryOp};
 use crate::typed_ast::{
     GlobalId, LocalId, ObjectId, TypedExpr, TypedExprKind, TypedExternalDecl, TypedFunction,
     TypedGlobalDecl, TypedInitializer, TypedProgram, TypedStatement,
@@ -274,7 +274,9 @@ impl Codegen {
     }
 
     fn emit_global(&mut self, global: &TypedGlobalDecl) {
-        self.emit_line(format_args!(".globl {}", global.name));
+        if global.linkage == Linkage::External {
+            self.emit_line(format_args!(".globl {}", global.name));
+        }
         self.emit_line(format_args!("{}:", global.name));
 
         match &global.ty {
@@ -1099,9 +1101,11 @@ impl Codegen {
         }
     }
 
-    fn emit_prologue(&mut self, name: &str) {
+    fn emit_prologue(&mut self, name: &str, linkage: Linkage) {
         let frame_size = self.frame.size;
-        self.emit(format_args!(".globl {name}\n"));
+        if linkage == Linkage::External {
+            self.emit(format_args!(".globl {name}\n"));
+        }
         self.emit_label(name);
         self.emit_line(format_args!("addi sp, sp, -{frame_size}"));
         self.emit_line(format_args!("sw ra, {}(sp)", frame_size - 4));
@@ -1124,7 +1128,7 @@ impl Codegen {
 
     fn emit_function(&mut self, function: &TypedFunction) {
         self.reset_for_function(function);
-        self.emit_prologue(&function.name);
+        self.emit_prologue(&function.name, function.linkage);
 
         for (i, param) in function.params.iter().enumerate() {
             let slot = self.resolve_local(param.id).clone();

@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use crate::ast::{
     BinaryOp, Expr, ExternalDecl, FunctionDef, FunctionType, GlobalDecl, Initializer,
-    IntLiteralBase, IntLiteralSuffix, Program, Statement, Type, UnaryOp, format_type_list,
+    IntLiteralBase, IntLiteralSuffix, Linkage, Program, Statement, Type, UnaryOp, format_type_list,
 };
 use crate::source::Span;
 
@@ -22,6 +22,7 @@ struct FunctionInfo {
     return_type: Type,
     param_types: Vec<Type>,
     defined: bool,
+    linkage: Linkage,
 }
 
 struct BinaryTypeInfo {
@@ -39,6 +40,7 @@ struct LocalSymbol {
 struct GlobalSymbol {
     id: GlobalId,
     ty: Type,
+    linkage: Linkage,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -224,6 +226,7 @@ impl Checker {
         name_span: Span,
         return_type: &Type,
         param_types: Vec<Type>,
+        linkage: Linkage,
         has_body: bool,
     ) -> Result<(), SemanticError> {
         match self.global_symbols.get_mut(name) {
@@ -255,7 +258,12 @@ impl Checker {
                         span: name_span,
                     });
                 }
-
+                if function.linkage != linkage {
+                    return Err(SemanticError {
+                        message: format!("function '{name}' declared with conflicting linkage"),
+                        span: name_span,
+                    });
+                }
                 if has_body && function.defined {
                     return Err(SemanticError {
                         message: format!("duplicate function definition '{name}'"),
@@ -285,6 +293,7 @@ impl Checker {
                         return_type: return_type.clone(),
                         param_types,
                         defined: has_body,
+                        linkage,
                     }),
                 );
             }
@@ -292,7 +301,13 @@ impl Checker {
         Ok(())
     }
 
-    fn declare_global(&mut self, name: &str, span: Span, ty: &Type) -> Result<(), SemanticError> {
+    fn declare_global(
+        &mut self,
+        name: &str,
+        span: Span,
+        ty: &Type,
+        linkage: Linkage,
+    ) -> Result<(), SemanticError> {
         Self::validate_object_type(ty, span)?;
         match self.global_symbols.get(name) {
             Some(GlobalOrdinarySymbol::GlobalObject(_)) => {
@@ -313,7 +328,11 @@ impl Checker {
                 let id = self.new_global_id();
                 self.global_symbols.insert(
                     name.to_string(),
-                    GlobalOrdinarySymbol::GlobalObject(GlobalSymbol { id, ty: ty.clone() }),
+                    GlobalOrdinarySymbol::GlobalObject(GlobalSymbol {
+                        id,
+                        ty: ty.clone(),
+                        linkage,
+                    }),
                 );
             }
         }
@@ -1496,6 +1515,7 @@ impl Checker {
                 name_span: function.name_span,
                 params: typed_params,
                 body: typed_body,
+                linkage: function.linkage,
             })
         })();
 
@@ -1517,6 +1537,7 @@ impl Checker {
             name: global.name.clone(),
             name_span: global.name_span,
             init: typed_init,
+            linkage: global_symbol.linkage,
         })
     }
 
@@ -1549,6 +1570,7 @@ pub fn check(program: &Program) -> Result<TypedProgram, SemanticError> {
                     function.name_span,
                     &function.return_type,
                     function.params.iter().map(|p| p.ty.clone()).collect(),
+                    function.linkage,
                     false,
                 )?;
             }
@@ -1558,6 +1580,7 @@ pub fn check(program: &Program) -> Result<TypedProgram, SemanticError> {
                     function.name_span,
                     &function.return_type,
                     function.params.iter().map(|p| p.ty.clone()).collect(),
+                    function.linkage,
                     true,
                 )?;
             }
@@ -1567,7 +1590,12 @@ pub fn check(program: &Program) -> Result<TypedProgram, SemanticError> {
                     global.init.as_ref(),
                     global.name_span,
                 )?;
-                checker.declare_global(&global.name, global.name_span, &completed_ty)?;
+                checker.declare_global(
+                    &global.name,
+                    global.name_span,
+                    &completed_ty,
+                    global.linkage,
+                )?;
             }
             ExternalDecl::Typedef(_) => (),
         }

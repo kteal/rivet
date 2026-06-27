@@ -1,4 +1,4 @@
-use crate::ast::{BinaryOp, Type, UnaryOp};
+use crate::ast::{BinaryOp, Linkage, Type, UnaryOp};
 use crate::source::Span;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -21,6 +21,7 @@ pub struct TypedFunction {
     pub name_span: Span,
     pub params: Vec<TypedParam>,
     pub body: Vec<TypedStatement>,
+    pub linkage: Linkage,
 }
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TypedGlobalDecl {
@@ -29,6 +30,7 @@ pub struct TypedGlobalDecl {
     pub name: String,
     pub name_span: Span,
     pub init: Option<TypedInitializer>,
+    pub linkage: Linkage,
 }
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TypedParam {

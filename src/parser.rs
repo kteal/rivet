@@ -2,8 +2,8 @@ use std::collections::HashMap;
 
 use crate::ast::{
     BinaryOp, Expr, ExternalDecl, FunctionDecl, FunctionDef, FunctionType, GlobalDecl, Initializer,
-    IntLiteralBase, IntLiteralSuffix, LocalDecl, Param, ParamDecl, Program, Statement, Type,
-    Typedef, UnaryOp,
+    IntLiteralBase, IntLiteralSuffix, Linkage, LocalDecl, Param, ParamDecl, Program, Statement,
+    Type, Typedef, UnaryOp,
 };
 use crate::lexer::{Token, TokenKind};
 use crate::source::Span;
@@ -70,6 +70,8 @@ struct DeclSpec {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum StorageClass {
     Typedef,
+    Static,
+    Extern,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -376,16 +378,22 @@ impl Parser {
         })
     }
 
+    #[allow(clippy::too_many_lines)]
     fn parse_external_decl(&mut self) -> Result<Vec<ExternalDecl>, ParseError> {
-        if self.peek_kind() == &TokenKind::KwTypedef {
+        let (spec, spec_span) = self.parse_decl_spec()?;
+        if spec.storage_class == Some(StorageClass::Typedef) {
+            let declaration = self.parse_declaration_after_spec(spec, spec_span)?;
             return Ok(self
-                .parse_typedefs()?
+                .parse_typedefs_from_declaration(declaration)?
                 .into_iter()
                 .map(ExternalDecl::Typedef)
                 .collect());
         }
-
-        let (spec, spec_span) = self.parse_decl_spec()?;
+        let linkage = match spec.storage_class {
+            Some(StorageClass::Static) => Linkage::Internal,
+            Some(StorageClass::Extern) | None => Linkage::External,
+            Some(StorageClass::Typedef) => unreachable!("typedef should have been handled"),
+        };
         let base_ty = self.lower_decl_spec(&spec, spec_span)?;
         let declarator = self.parse_declarator()?;
         let lowered = Self::lower_declarator(&base_ty, &declarator)?;
@@ -404,6 +412,7 @@ impl Parser {
                         name,
                         name_span,
                         params: params.into_iter().map(raw_param_to_decl).collect(),
+                        linkage,
                     })])
                 }
                 TokenKind::LBrace => {
@@ -427,6 +436,7 @@ impl Parser {
                         name_span,
                         params,
                         body,
+                        linkage,
                     })])
                 }
                 _ => {
@@ -455,6 +465,7 @@ impl Parser {
                         name,
                         name_span,
                         init: None,
+                        linkage,
                     })])
                 }
                 Token {
@@ -469,6 +480,7 @@ impl Parser {
                         name,
                         name_span,
                         init,
+                        linkage,
                     })])
                 }
                 token => Err(ParseError {
@@ -479,9 +491,11 @@ impl Parser {
         }
     }
 
-    fn parse_typedefs(&mut self) -> Result<Vec<Typedef>, ParseError> {
+    fn parse_typedefs_from_declaration(
+        &mut self,
+        declaration: Declaration,
+    ) -> Result<Vec<Typedef>, ParseError> {
         let mut typedefs = vec![];
-        let declaration = self.parse_declaration()?;
         if declaration.spec.storage_class != Some(StorageClass::Typedef) {
             return Err(ParseError {
                 message: "expected typedef declaration".to_string(),
@@ -537,7 +551,9 @@ impl Parser {
             | TokenKind::KwSigned
             | TokenKind::KwConst
             | TokenKind::KwTypedef
-            | TokenKind::KwVoid => true,
+            | TokenKind::KwVoid
+            | TokenKind::KwStatic
+            | TokenKind::KwExtern => true,
             TokenKind::Ident(name) => self.is_typedef_name(name),
             _ => false,
         }
@@ -553,6 +569,7 @@ impl Parser {
         self.parse_abstract_pointer_type(&base)
     }
 
+    #[allow(clippy::too_many_lines)]
     fn parse_decl_spec(&mut self) -> Result<(DeclSpec, Span), ParseError> {
         let start = self.peek().span;
         let mut spec = DeclSpec {
@@ -569,7 +586,41 @@ impl Parser {
                 // storage class
                 TokenKind::KwTypedef => {
                     self.advance();
+                    if spec.storage_class.is_some() {
+                        let token = self.peek();
+                        return Err(ParseError {
+                            message: "multiple storage classes in declaration specifier"
+                                .to_string(),
+                            span: token.span,
+                        });
+                    }
                     spec.storage_class = Some(StorageClass::Typedef);
+                    saw_any = true;
+                }
+                TokenKind::KwStatic => {
+                    self.advance();
+                    if spec.storage_class.is_some() {
+                        let token = self.peek();
+                        return Err(ParseError {
+                            message: "multiple storage classes in declaration specifier"
+                                .to_string(),
+                            span: token.span,
+                        });
+                    }
+                    spec.storage_class = Some(StorageClass::Static);
+                    saw_any = true;
+                }
+                TokenKind::KwExtern => {
+                    self.advance();
+                    if spec.storage_class.is_some() {
+                        let token = self.peek();
+                        return Err(ParseError {
+                            message: "multiple storage classes in declaration specifier"
+                                .to_string(),
+                            span: token.span,
+                        });
+                    }
+                    spec.storage_class = Some(StorageClass::Extern);
                     saw_any = true;
                 }
 
@@ -736,6 +787,14 @@ impl Parser {
 
     fn parse_declaration(&mut self) -> Result<Declaration, ParseError> {
         let (spec, spec_span) = self.parse_decl_spec()?;
+        self.parse_declaration_after_spec(spec, spec_span)
+    }
+
+    fn parse_declaration_after_spec(
+        &mut self,
+        spec: DeclSpec,
+        spec_span: Span,
+    ) -> Result<Declaration, ParseError> {
         let mut declarators = vec![self.parse_init_declarator()?];
 
         while self.peek_kind() == &TokenKind::Comma {

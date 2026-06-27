@@ -27,6 +27,12 @@ pub struct FunctionType {
     pub params: Vec<Type>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Linkage {
+    External,
+    Internal,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FunctionDef {
     pub return_type: Type,
@@ -34,6 +40,7 @@ pub struct FunctionDef {
     pub name_span: Span,
     pub params: Vec<Param>,
     pub body: Vec<Statement>,
+    pub linkage: Linkage,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -42,6 +49,7 @@ pub struct FunctionDecl {
     pub name: String,
     pub name_span: Span,
     pub params: Vec<ParamDecl>,
+    pub linkage: Linkage,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -50,6 +58,7 @@ pub struct GlobalDecl {
     pub name: String,
     pub name_span: Span,
     pub init: Option<Initializer>,
+    pub linkage: Linkage,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

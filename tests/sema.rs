@@ -22,6 +22,7 @@ use rivet::ast::FunctionType;
 
 fn main_program(body: Vec<Statement>) -> Program {
     program_with_functions(vec![FunctionDef {
+        linkage: rivet::ast::Linkage::External,
         return_type: Type::Int,
         name_span: span(),
         name: "main".to_string(),
@@ -53,6 +54,7 @@ fn typed_return_expr(statement: &TypedStatement) -> &rivet::typed_ast::TypedExpr
 
 fn function(name: &str, body: Vec<Statement>) -> FunctionDef {
     FunctionDef {
+        linkage: rivet::ast::Linkage::External,
         return_type: Type::Int,
         name_span: span(),
         name: name.to_string(),
@@ -63,6 +65,7 @@ fn function(name: &str, body: Vec<Statement>) -> FunctionDef {
 
 fn function_with_params(name: &str, params: &[&str], body: Vec<Statement>) -> FunctionDef {
     FunctionDef {
+        linkage: rivet::ast::Linkage::External,
         return_type: Type::Int,
         name_span: span(),
         name: name.to_string(),
@@ -73,6 +76,7 @@ fn function_with_params(name: &str, params: &[&str], body: Vec<Statement>) -> Fu
 
 fn function_decl(name: &str, params: &[&str]) -> FunctionDecl {
     FunctionDecl {
+        linkage: rivet::ast::Linkage::External,
         return_type: Type::Int,
         name_span: span(),
         name: name.to_string(),
@@ -82,6 +86,7 @@ fn function_decl(name: &str, params: &[&str]) -> FunctionDecl {
 
 fn global_decl(name: &str, ty: Type, init: Option<Initializer>) -> GlobalDecl {
     GlobalDecl {
+        linkage: rivet::ast::Linkage::External,
         ty,
         name: name.to_string(),
         name_span: span(),
@@ -530,6 +535,7 @@ fn accepts_function_prototype_with_unnamed_pointer_parameter_before_definition()
     let program = Program {
         declarations: vec![
             ExternalDecl::FunctionDecl(FunctionDecl {
+                linkage: rivet::ast::Linkage::External,
                 return_type: Type::Int,
                 name_span: span(),
                 name: "helper".to_string(),
@@ -540,6 +546,7 @@ fn accepts_function_prototype_with_unnamed_pointer_parameter_before_definition()
                 }],
             }),
             ExternalDecl::FunctionDef(FunctionDef {
+                linkage: rivet::ast::Linkage::External,
                 return_type: Type::Int,
                 name_span: span(),
                 name: "helper".to_string(),
@@ -565,6 +572,13 @@ fn accepts_function_prototype_with_unnamed_pointer_parameter_before_definition()
     };
 
     check(&program).expect("semantic check should succeed");
+}
+
+#[test]
+fn accepts_matching_static_function_declaration_before_definition() {
+    check_source(
+        "static int helper(void); static int helper(void) { return 3; } int main(void) { return helper(); }",
+    );
 }
 
 #[test]
@@ -597,6 +611,7 @@ fn rejects_function_definition_with_conflicting_prototype_return_type() {
         declarations: vec![
             ExternalDecl::FunctionDecl(function_decl("helper", &["x"])),
             ExternalDecl::FunctionDef(FunctionDef {
+                linkage: rivet::ast::Linkage::External,
                 return_type: Type::Char,
                 name_span: span(),
                 name: "helper".to_string(),
@@ -630,11 +645,36 @@ fn rejects_function_definition_with_conflicting_prototype_return_type() {
 }
 
 #[test]
+fn rejects_static_function_declaration_followed_by_external_definition() {
+    let err = check_source_err(
+        "static int helper(void); int helper(void) { return 3; } int main(void) { return helper(); }",
+    );
+
+    assert_eq!(
+        err.message,
+        "function 'helper' declared with conflicting linkage"
+    );
+}
+
+#[test]
+fn rejects_external_function_declaration_followed_by_static_definition() {
+    let err = check_source_err(
+        "int helper(void); static int helper(void) { return 3; } int main(void) { return helper(); }",
+    );
+
+    assert_eq!(
+        err.message,
+        "function 'helper' declared with conflicting linkage"
+    );
+}
+
+#[test]
 fn rejects_function_definition_with_conflicting_prototype_parameter_type() {
     let program = Program {
         declarations: vec![
             ExternalDecl::FunctionDecl(function_decl("helper", &["x"])),
             ExternalDecl::FunctionDef(FunctionDef {
+                linkage: rivet::ast::Linkage::External,
                 return_type: Type::Int,
                 name_span: span(),
                 name: "helper".to_string(),
@@ -670,6 +710,7 @@ fn rejects_function_definition_with_conflicting_pointer_prototype_parameter_type
     let program = Program {
         declarations: vec![
             ExternalDecl::FunctionDecl(FunctionDecl {
+                linkage: rivet::ast::Linkage::External,
                 return_type: Type::Int,
                 name_span: span(),
                 name: "helper".to_string(),
@@ -680,6 +721,7 @@ fn rejects_function_definition_with_conflicting_pointer_prototype_parameter_type
                 }],
             }),
             ExternalDecl::FunctionDef(FunctionDef {
+                linkage: rivet::ast::Linkage::External,
                 return_type: Type::Int,
                 name_span: span(),
                 name: "helper".to_string(),
@@ -831,6 +873,7 @@ fn rejects_duplicate_parameter_names() {
 fn duplicate_parameter_errors_point_at_duplicate_parameter() {
     let duplicate_span = span_from(20, 21);
     let program = program_with_functions(vec![FunctionDef {
+        linkage: rivet::ast::Linkage::External,
         return_type: Type::Int,
         name_span: span_from(4, 8),
         name: "main".to_string(),
@@ -1049,6 +1092,7 @@ fn rejects_function_with_more_than_eight_parameters() {
 fn too_many_parameter_errors_point_at_ninth_parameter() {
     let ninth_span = span_from(50, 51);
     let program = program_with_functions(vec![FunctionDef {
+        linkage: rivet::ast::Linkage::External,
         return_type: Type::Int,
         name_span: span_from(4, 8),
         name: "main".to_string(),
@@ -1551,6 +1595,7 @@ fn typed_unary_logical_not_returns_int_for_unsigned_operand() {
 fn typed_pointer_dereference_has_pointee_type() {
     let program = program_with_functions(vec![
         FunctionDef {
+            linkage: rivet::ast::Linkage::External,
             return_type: Type::Int,
             name_span: span(),
             name: "first".to_string(),
@@ -2098,6 +2143,7 @@ fn rejects_address_of_non_lvalue() {
 fn accepts_assignment_through_pointer_dereference() {
     let program = program_with_functions(vec![
         FunctionDef {
+            linkage: rivet::ast::Linkage::External,
             return_type: Type::Int,
             name_span: span(),
             name: "store".to_string(),
@@ -2157,6 +2203,7 @@ fn accepts_assignment_through_pointer_dereference() {
 fn accepts_compound_assignment_through_pointer_dereference() {
     let program = program_with_functions(vec![
         FunctionDef {
+            linkage: rivet::ast::Linkage::External,
             return_type: Type::Int,
             name_span: span(),
             name: "add_to_pointed_value".to_string(),
@@ -2214,6 +2261,7 @@ fn accepts_compound_assignment_through_pointer_dereference() {
 fn accepts_increment_through_pointer_dereference() {
     let program = program_with_functions(vec![
         FunctionDef {
+            linkage: rivet::ast::Linkage::External,
             return_type: Type::Int,
             name_span: span(),
             name: "increment_pointed_value".to_string(),
@@ -2261,6 +2309,7 @@ fn typed_pointer_arithmetic_has_pointer_operand_and_result_type() {
     let pointer_to_int = Type::Pointer(Box::new(Type::Int));
     let program = program_with_functions(vec![
         FunctionDef {
+            linkage: rivet::ast::Linkage::External,
             return_type: pointer_to_int.clone(),
             name_span: span(),
             name: "advance".to_string(),
@@ -2653,6 +2702,7 @@ fn typed_postfix_increment_preserves_postfix_kind() {
 fn typed_call_preserves_typed_arguments() {
     let program = program_with_functions(vec![
         FunctionDef {
+            linkage: rivet::ast::Linkage::External,
             return_type: Type::Int,
             name_span: span(),
             name: "id".to_string(),
@@ -2663,6 +2713,7 @@ fn typed_call_preserves_typed_arguments() {
             })],
         },
         FunctionDef {
+            linkage: rivet::ast::Linkage::External,
             return_type: Type::Int,
             name_span: span(),
             name: "main".to_string(),
@@ -2994,6 +3045,7 @@ fn accepts_local_array_declaration_without_value_use() {
 fn typed_array_variable_expression_decays_to_pointer_argument() {
     let program = program_with_functions(vec![
         FunctionDef {
+            linkage: rivet::ast::Linkage::External,
             return_type: Type::Int,
             name_span: span(),
             name: "takes_char_pointer".to_string(),
@@ -3012,6 +3064,7 @@ fn typed_array_variable_expression_decays_to_pointer_argument() {
             })],
         },
         FunctionDef {
+            linkage: rivet::ast::Linkage::External,
             return_type: Type::Int,
             name_span: span(),
             name: "main".to_string(),
@@ -3804,6 +3857,7 @@ fn rejects_undeclared_local_inside_nested_expression() {
 fn accepts_char_function_return_used_as_char_initializer() {
     let program = program_with_functions(vec![
         FunctionDef {
+            linkage: rivet::ast::Linkage::External,
             return_type: Type::Char,
             name_span: span(),
             name: "id".to_string(),
@@ -3814,6 +3868,7 @@ fn accepts_char_function_return_used_as_char_initializer() {
             })],
         },
         FunctionDef {
+            linkage: rivet::ast::Linkage::External,
             return_type: Type::Int,
             name_span: span(),
             name: "main".to_string(),
@@ -3977,6 +4032,7 @@ fn accepts_int_initializer_from_char_expression() {
 fn accepts_char_argument_from_int_expression() {
     let program = program_with_functions(vec![
         FunctionDef {
+            linkage: rivet::ast::Linkage::External,
             return_type: Type::Int,
             name_span: span(),
             name: "takes_char".to_string(),
@@ -3989,6 +4045,7 @@ fn accepts_char_argument_from_int_expression() {
             })],
         },
         FunctionDef {
+            linkage: rivet::ast::Linkage::External,
             return_type: Type::Int,
             name_span: span(),
             name: "main".to_string(),
@@ -4018,6 +4075,7 @@ fn accepts_char_argument_from_int_expression() {
 fn accepts_int_argument_from_char_expression() {
     let program = program_with_functions(vec![
         FunctionDef {
+            linkage: rivet::ast::Linkage::External,
             return_type: Type::Int,
             name_span: span(),
             name: "takes_int".to_string(),
@@ -4028,6 +4086,7 @@ fn accepts_int_argument_from_char_expression() {
             })],
         },
         FunctionDef {
+            linkage: rivet::ast::Linkage::External,
             return_type: Type::Int,
             name_span: span(),
             name: "main".to_string(),
@@ -4061,6 +4120,7 @@ fn accepts_int_argument_from_char_expression() {
 #[test]
 fn accepts_char_return_from_int_expression() {
     let program = program_with_functions(vec![FunctionDef {
+        linkage: rivet::ast::Linkage::External,
         return_type: Type::Char,
         name_span: span(),
         name: "main".to_string(),
@@ -4089,6 +4149,7 @@ fn accepts_char_return_from_int_expression() {
 #[test]
 fn accepts_int_return_from_char_expression() {
     let program = program_with_functions(vec![FunctionDef {
+        linkage: rivet::ast::Linkage::External,
         return_type: Type::Int,
         name_span: span(),
         name: "main".to_string(),
@@ -4554,6 +4615,7 @@ fn rejects_indexing_non_array_non_pointer() {
 #[test]
 fn rejects_non_integer_array_index() {
     let program = program_with_functions(vec![FunctionDef {
+        linkage: rivet::ast::Linkage::External,
         name: "main".to_string(),
         name_span: span(),
         return_type: Type::Int,

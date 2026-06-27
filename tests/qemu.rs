@@ -1271,6 +1271,11 @@ fn qemu_function_calls_return_expected_values() {
         3,
     );
     run_qemu_case(
+        "static-helper-function",
+        "static int helper(void) {\n    return 11;\n}\n\nint main(void) {\n    return helper();\n}\n",
+        11,
+    );
+    run_qemu_case(
         "pointer-return-function-call",
         "int *id(int *);\n\nint *id(int *p) {\n    return p;\n}\n\nint main() {\n    int *p;\n    id(p);\n    return 7;\n}\n",
         7,
@@ -1425,6 +1430,12 @@ fn qemu_array_indexing_programs_return_expected_values() {
         "global-char-array-index-rvalue",
         "char buf[3] = {'a', 'b', 'c'};\n\nint main() {\n    return buf[1];\n}\n",
         98,
+    );
+
+    run_qemu_case(
+        "static-global-int-rvalue",
+        "static int g = 17;\n\nint main(void) {\n    return g;\n}\n",
+        17,
     );
 
     run_qemu_case(

@@ -34,6 +34,7 @@ fn generate_with_codegen(program: &Program) -> String {
 
 fn empty_main_function() -> FunctionDef {
     FunctionDef {
+        linkage: rivet::ast::Linkage::External,
         return_type: Type::Int,
         name_span: span(),
         name: "main".to_string(),
@@ -49,6 +50,7 @@ fn empty_main_function() -> FunctionDef {
 
 fn global_decl(name: &str, ty: Type, init: Option<Initializer>) -> GlobalDecl {
     GlobalDecl {
+        linkage: rivet::ast::Linkage::External,
         ty,
         name: name.to_string(),
         name_span: span(),
@@ -67,6 +69,7 @@ const fn int_literal(value: u64) -> Expr {
 
 fn add_function() -> FunctionDef {
     FunctionDef {
+        linkage: rivet::ast::Linkage::External,
         return_type: Type::Int,
         name_span: span(),
         name: "add".to_string(),
@@ -88,6 +91,7 @@ fn add_function() -> FunctionDef {
 
 fn right_function() -> FunctionDef {
     FunctionDef {
+        linkage: rivet::ast::Linkage::External,
         return_type: Type::Int,
         name_span: span(),
         name: "right".to_string(),
@@ -105,6 +109,7 @@ fn right_function() -> FunctionDef {
 fn generates_multiple_functions() {
     let program = program_with_functions(vec![
         FunctionDef {
+            linkage: rivet::ast::Linkage::External,
             return_type: Type::Int,
             name_span: span(),
             name: "helper".to_string(),
@@ -117,6 +122,7 @@ fn generates_multiple_functions() {
             })],
         },
         FunctionDef {
+            linkage: rivet::ast::Linkage::External,
             return_type: Type::Int,
             name_span: span(),
             name: "main".to_string(),
@@ -139,9 +145,21 @@ fn generates_multiple_functions() {
 }
 
 #[test]
+fn omits_global_directive_for_static_function() {
+    let asm = generate_source(
+        "static int helper(void) { return 3; } int main(void) { return helper(); }",
+    );
+
+    assert!(asm.contains("helper:\n"));
+    assert!(!asm.contains(".globl helper\n"));
+    assert!(asm.contains(".globl main\nmain:\n"));
+}
+
+#[test]
 fn resets_local_offsets_between_functions() {
     let program = program_with_functions(vec![
         FunctionDef {
+            linkage: rivet::ast::Linkage::External,
             return_type: Type::Int,
             name_span: span(),
             name: "first".to_string(),
@@ -165,6 +183,7 @@ fn resets_local_offsets_between_functions() {
             ],
         },
         FunctionDef {
+            linkage: rivet::ast::Linkage::External,
             return_type: Type::Int,
             name_span: span(),
             name: "main".to_string(),
@@ -200,6 +219,7 @@ fn resets_local_offsets_between_functions() {
 fn computes_frame_layout_per_function() {
     let program = program_with_functions(vec![
         FunctionDef {
+            linkage: rivet::ast::Linkage::External,
             return_type: Type::Int,
             name_span: span(),
             name: "helper".to_string(),
@@ -212,6 +232,7 @@ fn computes_frame_layout_per_function() {
             })],
         },
         FunctionDef {
+            linkage: rivet::ast::Linkage::External,
             return_type: Type::Int,
             name_span: span(),
             name: "main".to_string(),
@@ -268,6 +289,7 @@ fn computes_frame_layout_per_function() {
 fn generates_zero_argument_function_call() {
     let program = program_with_functions(vec![
         FunctionDef {
+            linkage: rivet::ast::Linkage::External,
             return_type: Type::Int,
             name_span: span(),
             name: "helper".to_string(),
@@ -280,6 +302,7 @@ fn generates_zero_argument_function_call() {
             })],
         },
         FunctionDef {
+            linkage: rivet::ast::Linkage::External,
             return_type: Type::Int,
             name_span: span(),
             name: "main".to_string(),
@@ -298,6 +321,7 @@ fn generates_zero_argument_function_call() {
 fn uses_call_result_as_expression_operand() {
     let program = program_with_functions(vec![
         FunctionDef {
+            linkage: rivet::ast::Linkage::External,
             return_type: Type::Int,
             name_span: span(),
             name: "helper".to_string(),
@@ -310,6 +334,7 @@ fn uses_call_result_as_expression_operand() {
             })],
         },
         FunctionDef {
+            linkage: rivet::ast::Linkage::External,
             return_type: Type::Int,
             name_span: span(),
             name: "main".to_string(),
@@ -338,6 +363,7 @@ fn uses_call_result_as_expression_operand() {
 fn stores_single_parameter_in_function_frame() {
     let program = program_with_functions(vec![
         FunctionDef {
+            linkage: rivet::ast::Linkage::External,
             return_type: Type::Int,
             name_span: span(),
             name: "id".to_string(),
@@ -374,6 +400,7 @@ fn generates_function_call_with_arguments() {
     let program = program_with_functions(vec![
         add_function(),
         FunctionDef {
+            linkage: rivet::ast::Linkage::External,
             return_type: Type::Int,
             name_span: span(),
             name: "main".to_string(),
@@ -410,6 +437,7 @@ fn generates_function_call_with_expression_arguments() {
     let program = program_with_functions(vec![
         add_function(),
         FunctionDef {
+            linkage: rivet::ast::Linkage::External,
             return_type: Type::Int,
             name_span: span(),
             name: "main".to_string(),
@@ -493,6 +521,7 @@ fn generates_indirect_call_for_explicitly_dereferenced_function_pointer_call() {
 #[test]
 fn emits_nothing_for_empty_statement() {
     let program = program_with_functions(vec![FunctionDef {
+        linkage: rivet::ast::Linkage::External,
         return_type: Type::Int,
         name_span: span(),
         name: "main".to_string(),
@@ -520,6 +549,7 @@ fn emits_nothing_for_empty_statement() {
 fn emits_expression_statement_and_discards_result() {
     let program = program_with_functions(vec![
         FunctionDef {
+            linkage: rivet::ast::Linkage::External,
             return_type: Type::Int,
             name_span: span(),
             name: "helper".to_string(),
@@ -532,6 +562,7 @@ fn emits_expression_statement_and_discards_result() {
             })],
         },
         FunctionDef {
+            linkage: rivet::ast::Linkage::External,
             return_type: Type::Int,
             name_span: span(),
             name: "main".to_string(),
@@ -557,6 +588,7 @@ fn emits_expression_statement_and_discards_result() {
 #[test]
 fn generates_return_jump_to_shared_epilogue() {
     let program = program_with_functions(vec![FunctionDef {
+        linkage: rivet::ast::Linkage::External,
         return_type: Type::Int,
         name_span: span(),
         name: "main".to_string(),
@@ -579,6 +611,7 @@ fn generates_logical_and_with_short_circuit_branch() {
     let program = program_with_functions(vec![
         right_function(),
         FunctionDef {
+            linkage: rivet::ast::Linkage::External,
             return_type: Type::Int,
             name_span: span(),
             name: "main".to_string(),
@@ -614,6 +647,7 @@ fn generates_logical_or_with_short_circuit_branch() {
     let program = program_with_functions(vec![
         right_function(),
         FunctionDef {
+            linkage: rivet::ast::Linkage::External,
             return_type: Type::Int,
             name_span: span(),
             name: "main".to_string(),
@@ -647,6 +681,7 @@ fn generates_logical_or_with_short_circuit_branch() {
 #[test]
 fn generates_single_local_variable() {
     let program = program_with_functions(vec![FunctionDef {
+        linkage: rivet::ast::Linkage::External,
         return_type: Type::Int,
         name_span: span(),
         name: "main".to_string(),
@@ -681,6 +716,7 @@ fn generates_single_local_variable() {
 #[test]
 fn generates_local_variable_without_initializer() {
     let program = program_with_functions(vec![FunctionDef {
+        linkage: rivet::ast::Linkage::External,
         return_type: Type::Int,
         name_span: span(),
         name: "main".to_string(),
@@ -746,6 +782,16 @@ fn generates_initialized_int_global() {
 }
 
 #[test]
+fn omits_global_directive_for_static_global() {
+    let asm = generate_source("static int g = 3; int main(void) { return g; }");
+
+    assert!(asm.contains("g:\n"));
+    assert!(!asm.contains(".globl g\n"));
+    assert!(asm.contains(".globl main\nmain:\n"));
+    assert!(asm.contains(".word 3\n"));
+}
+
+#[test]
 fn generates_zero_initialized_int_global() {
     let program = Program {
         declarations: vec![
@@ -793,6 +839,7 @@ fn generates_load_from_int_global() {
                 Some(Initializer::Expr(int_literal(3))),
             )),
             ExternalDecl::FunctionDef(FunctionDef {
+                linkage: rivet::ast::Linkage::External,
                 return_type: Type::Int,
                 name_span: span(),
                 name: "main".to_string(),
@@ -817,6 +864,7 @@ fn generates_store_to_int_global() {
         declarations: vec![
             ExternalDecl::Global(global_decl("g", Type::Int, None)),
             ExternalDecl::FunctionDef(FunctionDef {
+                linkage: rivet::ast::Linkage::External,
                 return_type: Type::Int,
                 name_span: span(),
                 name: "main".to_string(),
@@ -934,6 +982,7 @@ fn generates_string_literal_data_and_address() {
 #[test]
 fn array_local_reserves_full_frame_slot_and_aligns_next_local() {
     let program = program_with_functions(vec![FunctionDef {
+        linkage: rivet::ast::Linkage::External,
         return_type: Type::Int,
         name_span: span(),
         name: "main".to_string(),
@@ -976,6 +1025,7 @@ fn array_local_reserves_full_frame_slot_and_aligns_next_local() {
 #[test]
 fn generates_array_initializer_element_stores() {
     let program = program_with_functions(vec![FunctionDef {
+        linkage: rivet::ast::Linkage::External,
         return_type: Type::Int,
         name_span: span(),
         name: "main".to_string(),
@@ -1052,6 +1102,7 @@ fn generates_array_initializer_element_stores() {
 #[test]
 fn generates_zero_stores_for_empty_array_initializer_list() {
     let program = program_with_functions(vec![FunctionDef {
+        linkage: rivet::ast::Linkage::External,
         return_type: Type::Int,
         name_span: span(),
         name: "main".to_string(),
@@ -1095,6 +1146,7 @@ fn generates_zero_stores_for_empty_array_initializer_list() {
 #[test]
 fn narrows_char_local_initializer() {
     let program = program_with_functions(vec![FunctionDef {
+        linkage: rivet::ast::Linkage::External,
         return_type: Type::Int,
         name_span: span(),
         name: "main".to_string(),
@@ -1126,6 +1178,7 @@ fn narrows_char_local_initializer() {
 #[test]
 fn loads_char_local_with_unsigned_byte_load() {
     let program = program_with_functions(vec![FunctionDef {
+        linkage: rivet::ast::Linkage::External,
         return_type: Type::Int,
         name_span: span(),
         name: "main".to_string(),
@@ -1157,6 +1210,7 @@ fn loads_char_local_with_unsigned_byte_load() {
 #[test]
 fn narrows_char_assignment_through_address() {
     let program = program_with_functions(vec![FunctionDef {
+        linkage: rivet::ast::Linkage::External,
         return_type: Type::Int,
         name_span: span(),
         name: "main".to_string(),
@@ -1198,6 +1252,7 @@ fn narrows_char_assignment_through_address() {
 #[test]
 fn generates_compound_assignment() {
     let program = program_with_functions(vec![FunctionDef {
+        linkage: rivet::ast::Linkage::External,
         return_type: Type::Int,
         name_span: span(),
         name: "main".to_string(),
@@ -1245,6 +1300,7 @@ fn generates_compound_assignment() {
 #[test]
 fn generates_compound_assignment_expression_result() {
     let program = program_with_functions(vec![FunctionDef {
+        linkage: rivet::ast::Linkage::External,
         return_type: Type::Int,
         name_span: span(),
         name: "main".to_string(),
@@ -1288,6 +1344,7 @@ fn generates_compound_assignment_expression_result() {
 #[test]
 fn narrows_char_compound_assignment() {
     let program = program_with_functions(vec![FunctionDef {
+        linkage: rivet::ast::Linkage::External,
         return_type: Type::Int,
         name_span: span(),
         name: "main".to_string(),
@@ -1335,6 +1392,7 @@ fn narrows_char_compound_assignment() {
 #[test]
 fn narrows_char_return_value() {
     let program = program_with_functions(vec![FunctionDef {
+        linkage: rivet::ast::Linkage::External,
         return_type: Type::Char,
         name_span: span(),
         name: "main".to_string(),
@@ -1356,6 +1414,7 @@ fn narrows_char_return_value() {
 fn narrows_char_parameter_on_function_entry() {
     let program = program_with_functions(vec![
         FunctionDef {
+            linkage: rivet::ast::Linkage::External,
             return_type: Type::Int,
             name_span: span(),
             name: "id".to_string(),
@@ -1366,6 +1425,7 @@ fn narrows_char_parameter_on_function_entry() {
             })],
         },
         FunctionDef {
+            linkage: rivet::ast::Linkage::External,
             return_type: Type::Int,
             name_span: span(),
             name: "main".to_string(),
@@ -1391,6 +1451,7 @@ fn narrows_char_parameter_on_function_entry() {
 #[test]
 fn narrows_char_increment_store() {
     let program = program_with_functions(vec![FunctionDef {
+        linkage: rivet::ast::Linkage::External,
         return_type: Type::Int,
         name_span: span(),
         name: "main".to_string(),
@@ -1431,6 +1492,7 @@ fn narrows_char_increment_store() {
 #[test]
 fn generates_chained_assignment_expression_right_associative() {
     let program = program_with_functions(vec![FunctionDef {
+        linkage: rivet::ast::Linkage::External,
         return_type: Type::Int,
         name_span: span(),
         name: "main".to_string(),
@@ -1493,6 +1555,7 @@ fn generates_chained_assignment_expression_right_associative() {
 #[test]
 fn generates_if_without_else() {
     let program = program_with_functions(vec![FunctionDef {
+        linkage: rivet::ast::Linkage::External,
         return_type: Type::Int,
         name_span: span(),
         name: "main".to_string(),
@@ -1533,6 +1596,7 @@ fn generates_if_without_else() {
 #[test]
 fn generates_if_else() {
     let program = program_with_functions(vec![FunctionDef {
+        linkage: rivet::ast::Linkage::External,
         return_type: Type::Int,
         name_span: span(),
         name: "main".to_string(),
@@ -1571,6 +1635,7 @@ fn generates_if_else() {
 #[test]
 fn generates_while_loop() {
     let program = program_with_functions(vec![FunctionDef {
+        linkage: rivet::ast::Linkage::External,
         return_type: Type::Int,
         name_span: span(),
         name: "main".to_string(),
@@ -1634,6 +1699,7 @@ fn generates_while_loop() {
 #[test]
 fn generates_break_jump_to_loop_end() {
     let program = program_with_functions(vec![FunctionDef {
+        linkage: rivet::ast::Linkage::External,
         return_type: Type::Int,
         name_span: span(),
         name: "main".to_string(),
@@ -1666,6 +1732,7 @@ fn generates_break_jump_to_loop_end() {
 #[test]
 fn generates_continue_jump_to_loop_start() {
     let program = program_with_functions(vec![FunctionDef {
+        linkage: rivet::ast::Linkage::External,
         return_type: Type::Int,
         name_span: span(),
         name: "main".to_string(),
@@ -1701,6 +1768,7 @@ fn generates_continue_jump_to_loop_start() {
 #[test]
 fn generates_do_while_loop_with_body_before_condition() {
     let program = program_with_functions(vec![FunctionDef {
+        linkage: rivet::ast::Linkage::External,
         return_type: Type::Int,
         name_span: span(),
         name: "main".to_string(),
@@ -1768,6 +1836,7 @@ fn generates_do_while_loop_with_body_before_condition() {
 #[test]
 fn generates_continue_in_do_while_to_condition() {
     let program = program_with_functions(vec![FunctionDef {
+        linkage: rivet::ast::Linkage::External,
         return_type: Type::Int,
         name_span: span(),
         name: "main".to_string(),
@@ -1800,6 +1869,7 @@ fn generates_continue_in_do_while_to_condition() {
 #[test]
 fn counts_locals_inside_do_while_body_for_frame_size() {
     let program = program_with_functions(vec![FunctionDef {
+        linkage: rivet::ast::Linkage::External,
         return_type: Type::Int,
         name_span: span(),
         name: "main".to_string(),
@@ -1865,6 +1935,7 @@ fn counts_locals_inside_do_while_body_for_frame_size() {
 #[test]
 fn nested_loop_break_uses_inner_loop_end() {
     let program = program_with_functions(vec![FunctionDef {
+        linkage: rivet::ast::Linkage::External,
         return_type: Type::Int,
         name_span: span(),
         name: "main".to_string(),
@@ -1904,6 +1975,7 @@ fn nested_loop_break_uses_inner_loop_end() {
 #[test]
 fn generates_for_loop_with_init_condition_and_post() {
     let program = program_with_functions(vec![FunctionDef {
+        linkage: rivet::ast::Linkage::External,
         return_type: Type::Int,
         name_span: span(),
         name: "main".to_string(),
@@ -1990,6 +2062,7 @@ fn generates_for_loop_with_init_condition_and_post() {
 #[test]
 fn generates_for_loop_without_condition_as_unconditional_loop() {
     let program = program_with_functions(vec![FunctionDef {
+        linkage: rivet::ast::Linkage::External,
         return_type: Type::Int,
         name_span: span(),
         name: "main".to_string(),
@@ -2021,6 +2094,7 @@ fn generates_for_loop_without_condition_as_unconditional_loop() {
 #[test]
 fn generates_continue_in_for_loop_to_post_clause() {
     let program = program_with_functions(vec![FunctionDef {
+        linkage: rivet::ast::Linkage::External,
         return_type: Type::Int,
         name_span: span(),
         name: "main".to_string(),
@@ -2092,6 +2166,7 @@ fn generates_continue_in_for_loop_to_post_clause() {
 #[test]
 fn counts_locals_inside_for_init_and_body_for_frame_size() {
     let program = program_with_functions(vec![FunctionDef {
+        linkage: rivet::ast::Linkage::External,
         return_type: Type::Int,
         name_span: span(),
         name: "main".to_string(),
@@ -2178,6 +2253,7 @@ fn counts_locals_inside_for_init_and_body_for_frame_size() {
 #[test]
 fn for_init_scope_can_shadow_outer_local_without_replacing_it() {
     let program = program_with_functions(vec![FunctionDef {
+        linkage: rivet::ast::Linkage::External,
         return_type: Type::Int,
         name_span: span(),
         name: "main".to_string(),
@@ -2262,6 +2338,7 @@ fn for_init_scope_can_shadow_outer_local_without_replacing_it() {
 #[test]
 fn counts_locals_inside_while_body_for_frame_size() {
     let program = program_with_functions(vec![FunctionDef {
+        linkage: rivet::ast::Linkage::External,
         return_type: Type::Int,
         name_span: span(),
         name: "main".to_string(),
@@ -2357,6 +2434,7 @@ fn counts_locals_inside_while_body_for_frame_size() {
 fn loads_char_pointer_dereference_with_byte_load() {
     let program = program_with_functions(vec![
         FunctionDef {
+            linkage: rivet::ast::Linkage::External,
             return_type: Type::Int,
             name_span: span(),
             name: "first".to_string(),
@@ -2387,6 +2465,7 @@ fn loads_char_pointer_dereference_with_byte_load() {
 fn loads_int_pointer_dereference_with_word_load() {
     let program = program_with_functions(vec![
         FunctionDef {
+            linkage: rivet::ast::Linkage::External,
             return_type: Type::Int,
             name_span: span(),
             name: "first".to_string(),
@@ -2416,6 +2495,7 @@ fn loads_int_pointer_dereference_with_word_load() {
 fn stores_through_int_pointer_dereference() {
     let program = program_with_functions(vec![
         FunctionDef {
+            linkage: rivet::ast::Linkage::External,
             return_type: Type::Int,
             name_span: span(),
             name: "store".to_string(),
@@ -2464,6 +2544,7 @@ fn stores_through_int_pointer_dereference() {
 fn stores_through_char_pointer_dereference_with_byte_store() {
     let program = program_with_functions(vec![
         FunctionDef {
+            linkage: rivet::ast::Linkage::External,
             return_type: Type::Int,
             name_span: span(),
             name: "store_char".to_string(),
@@ -2512,6 +2593,7 @@ fn stores_through_char_pointer_dereference_with_byte_store() {
 fn generates_compound_assignment_through_pointer_dereference() {
     let program = program_with_functions(vec![
         FunctionDef {
+            linkage: rivet::ast::Linkage::External,
             return_type: Type::Int,
             name_span: span(),
             name: "add_to_pointed_value".to_string(),
@@ -2561,6 +2643,7 @@ fn generates_compound_assignment_through_pointer_dereference() {
 fn generates_postfix_increment_through_pointer_dereference() {
     let program = program_with_functions(vec![
         FunctionDef {
+            linkage: rivet::ast::Linkage::External,
             return_type: Type::Int,
             name_span: span(),
             name: "increment_pointed_value".to_string(),
@@ -2594,6 +2677,7 @@ fn generates_postfix_increment_through_pointer_dereference() {
 #[test]
 fn scales_int_pointer_compound_assignment_by_pointee_size() {
     let program = program_with_functions(vec![FunctionDef {
+        linkage: rivet::ast::Linkage::External,
         return_type: Type::Int,
         name_span: span(),
         name: "main".to_string(),
@@ -2638,6 +2722,7 @@ fn scales_int_pointer_compound_assignment_by_pointee_size() {
 #[test]
 fn scales_int_pointer_increment_by_pointee_size() {
     let program = program_with_functions(vec![FunctionDef {
+        linkage: rivet::ast::Linkage::External,
         return_type: Type::Int,
         name_span: span(),
         name: "main".to_string(),
@@ -2675,6 +2760,7 @@ fn scales_int_pointer_increment_by_pointee_size() {
 #[test]
 fn leaves_char_pointer_increment_unscaled() {
     let program = program_with_functions(vec![FunctionDef {
+        linkage: rivet::ast::Linkage::External,
         return_type: Type::Int,
         name_span: span(),
         name: "main".to_string(),
