@@ -293,6 +293,21 @@ fn qemu_string_literal_programs_return_expected_values() {
         "int main() {\n    char buf[] = \"\";\n    return sizeof(buf);\n}\n",
         1,
     );
+    run_qemu_case(
+        "adjacent-string-literal-pointer-index",
+        "int main() {\n    char *s = \"foo\" \"bar\";\n    return s[3];\n}\n",
+        98,
+    );
+    run_qemu_case(
+        "sizeof-adjacent-string-literals",
+        "int main() {\n    return sizeof(\"foo\" \"bar\");\n}\n",
+        7,
+    );
+    run_qemu_case(
+        "adjacent-string-literals-infer-char-array-size",
+        "int main() {\n    char buf[] = \"foo\" \"bar\";\n    return sizeof(buf);\n}\n",
+        7,
+    );
 }
 
 #[test]

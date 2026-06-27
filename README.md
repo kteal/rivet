@@ -295,7 +295,7 @@ Objects, aggregate types, and declarators:
 - [x] static `.rodata` storage for string literal expressions
 - [x] string literal initialization for explicit-size character arrays: `char buf[4] = "abc"`
 - [x] inferred-size character arrays from string literals: `char buf[] = "abc"`
-- [ ] adjacent string literal concatenation: `"foo" "bar"`
+- [x] adjacent string literal concatenation: `"foo" "bar"`
 - [ ] full C declarator grammar
 - [ ] structs and unions
 - [ ] member access: `.` and `->`

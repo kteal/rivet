@@ -1197,6 +1197,16 @@ fn parses_string_literal_expressions() {
 }
 
 #[test]
+fn parses_adjacent_string_literals_as_one_expression() {
+    let expr = only_return_expr("int main() { return \"foo\" \"bar\"; }");
+    let Expr::StringLiteral { bytes, .. } = expr else {
+        panic!("expected string literal expression");
+    };
+
+    assert_eq!(bytes, b"foobar".to_vec());
+}
+
+#[test]
 fn parses_string_literal_postfix_indexing() {
     let expr = only_return_expr("int main() { return \"abc\"[1]; }");
     let Expr::Index { base, index, .. } = expr else {

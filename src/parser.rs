@@ -1090,10 +1090,25 @@ impl Parser {
                 self.expect(&TokenKind::RParen)?;
                 Ok(expr)
             }
-            TokenKind::StringLiteral(bytes) => Ok(Expr::StringLiteral {
-                bytes,
-                span: token.span,
-            }),
+            TokenKind::StringLiteral(mut bytes) => {
+                let start = token.span.start;
+                let mut end = token.span.end;
+
+                while matches!(self.peek_kind(), TokenKind::StringLiteral(_)) {
+                    let next = self.advance();
+
+                    let TokenKind::StringLiteral(next_bytes) = next.kind else {
+                        unreachable!("peeked string literal");
+                    };
+
+                    bytes.extend(next_bytes);
+                    end = next.span.end;
+                }
+                Ok(Expr::StringLiteral {
+                    bytes,
+                    span: Span::new(token.span.file_id, start, end),
+                })
+            }
             found => Err(ParseError {
                 message: format!("expected expression, found {found:?}"),
                 span: token.span,

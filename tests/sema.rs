@@ -3033,6 +3033,20 @@ fn sizeof_string_literal_uses_raw_array_type_without_decay() {
 }
 
 #[test]
+fn sizeof_adjacent_string_literals_uses_concatenated_array_size() {
+    let typed_program = check_source("int main() { return sizeof(\"foo\" \"bar\"); }");
+    let TypedStatement::Return(expr) = &first_typed_function(&typed_program).body[0] else {
+        panic!("expected typed return statement");
+    };
+
+    assert_eq!(expr.ty, Type::UnsignedLong);
+    assert!(matches!(
+        expr.kind,
+        TypedExprKind::IntLiteral { value: 7, .. }
+    ));
+}
+
+#[test]
 fn typed_string_literal_decays_to_pointer_initializer() {
     let typed_program = check_source("int main() { char *p = \"abc\"; return *p; }");
     let main = typed_function_at(&typed_program, 0);
