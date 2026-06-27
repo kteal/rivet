@@ -1005,12 +1005,14 @@ impl Codegen {
     fn emit_statement(&mut self, statement: &TypedStatement) {
         match statement {
             TypedStatement::Return(expr) => {
-                self.emit_expr(expr);
-                let return_type = self
-                    .current_function_return_type
-                    .clone()
-                    .expect("codegen should have a function return type");
-                self.emit_narrow_to_type(&return_type);
+                if let Some(expr) = expr {
+                    self.emit_expr(expr);
+                    let return_type = self
+                        .current_function_return_type
+                        .clone()
+                        .expect("codegen should have a function return type");
+                    self.emit_narrow_to_type(&return_type);
+                }
                 let return_label = self
                     .return_label
                     .clone()

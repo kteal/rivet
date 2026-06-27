@@ -35,8 +35,21 @@ fn only_statement(source: &str) -> Statement {
 
 fn only_return_expr(source: &str) -> Expr {
     let statement = only_statement(source);
-    let Statement::Return(expr) = statement else {
+    let Statement::Return {
+        expr: Some(expr), ..
+    } = statement
+    else {
         panic!("expected return statement");
+    };
+    expr
+}
+
+fn return_expr(statement: &Statement) -> &Expr {
+    let Statement::Return {
+        expr: Some(expr), ..
+    } = statement
+    else {
+        panic!("expected return statement with expression");
     };
     expr
 }
@@ -131,7 +144,10 @@ fn parses_basic_main_function() {
     assert_eq!(first_function(&program).name, "main");
     assert!(matches!(
         first_function(&program).body[0],
-        Statement::Return(Expr::IntLiteral { value: 42, .. })
+        Statement::Return {
+            expr: Some(Expr::IntLiteral { value: 42, .. }),
+            ..
+        }
     ));
 }
 
@@ -172,6 +188,47 @@ fn parses_function_prototype_with_unnamed_pointer_parameter() {
     );
     assert_eq!(function.params[1].name, None);
     assert_eq!(function.params[1].name_span, None);
+}
+
+#[test]
+fn parses_void_parameter_list_as_no_parameters() {
+    let program = parse_source("int helper(void); int main(void) { return helper(); }");
+
+    let ExternalDecl::FunctionDecl(function_decl) = &program.declarations[0] else {
+        panic!("expected function declaration");
+    };
+    assert_eq!(function_decl.name, "helper");
+    assert!(function_decl.params.is_empty());
+
+    let function_def = first_function(&program);
+    assert_eq!(function_def.name, "main");
+    assert!(function_def.params.is_empty());
+}
+
+#[test]
+fn parses_void_pointer_parameter_as_object_parameter() {
+    let program = parse_source("int has_pointer(void *p) { return p != 0; }");
+    let function = first_function(&program);
+
+    assert_eq!(function.params.len(), 1);
+    assert_eq!(function.params[0].ty, Type::Pointer(Box::new(Type::Void)));
+    assert_eq!(function.params[0].name, "p");
+}
+
+#[test]
+fn rejects_plain_void_parameter_forms() {
+    assert_eq!(
+        parse_source_err("int f(void x) { return 0; }").message,
+        "cannot have 'void' parameter type"
+    );
+    assert_eq!(
+        parse_source_err("int f(void, int x) { return 0; }").message,
+        "cannot have 'void' parameter type"
+    );
+    assert_eq!(
+        parse_source_err("int f(int x, void) { return 0; }").message,
+        "cannot have 'void' parameter type"
+    );
 }
 
 #[test]
@@ -281,7 +338,11 @@ fn parses_integer_literal_suffixes() {
 fn parses_large_integer_literal_magnitudes() {
     let statement = only_statement("int main() { return 4294967295U; }");
 
-    let Statement::Return(Expr::IntLiteral { value, suffix, .. }) = statement else {
+    let Statement::Return {
+        expr: Some(Expr::IntLiteral { value, suffix, .. }),
+        ..
+    } = statement
+    else {
         panic!("expected integer literal return");
     };
 
@@ -323,10 +384,13 @@ fn parses_function_returning_binary_op() {
 
     assert!(matches!(
         statement,
-        Statement::Return(Expr::Binary {
-            op: BinaryOp::Add,
+        Statement::Return {
+            expr: Some(Expr::Binary {
+                op: BinaryOp::Add,
+                ..
+            }),
             ..
-        })
+        }
     ));
 }
 
@@ -345,12 +409,16 @@ fn parses_pointer_return_type() {
 fn parses_function_calls() {
     let statement = only_statement("int main() { return helper() + 2; }");
 
-    let Statement::Return(Expr::Binary {
-        op: BinaryOp::Add,
-        left,
-        right,
+    let Statement::Return {
+        expr:
+            Some(Expr::Binary {
+                op: BinaryOp::Add,
+                left,
+                right,
+                ..
+            }),
         ..
-    }) = statement
+    } = statement
     else {
         panic!("expected binary return");
     };
@@ -436,7 +504,10 @@ fn parses_char_literals_as_int_literals() {
     ));
     assert!(matches!(
         body[1],
-        Statement::Return(Expr::IntLiteral { value: 65, .. })
+        Statement::Return {
+            expr: Some(Expr::IntLiteral { value: 65, .. }),
+            ..
+        }
     ));
 }
 
@@ -450,7 +521,11 @@ fn parses_function_parameters_and_argument_lists() {
     assert_eq!(function.params[1].ty, Type::Char);
     assert_eq!(function.params[1].name, "y");
 
-    let Statement::Return(Expr::Call { callee, args, .. }) = &function.body[0] else {
+    let Statement::Return {
+        expr: Some(Expr::Call { callee, args, .. }),
+        ..
+    } = &function.body[0]
+    else {
         panic!("expected call return");
     };
 
@@ -702,7 +777,14 @@ fn parses_loop_and_jump_statements() {
     assert!(matches!(body[0], Statement::While { .. }));
     assert!(matches!(body[1], Statement::DoWhile { .. }));
     assert!(matches!(body[2], Statement::For { .. }));
-    assert!(matches!(body[3], Statement::Return(_)));
+    assert!(matches!(body[3], Statement::Return { .. }));
+}
+
+#[test]
+fn parses_bare_return_statement() {
+    let statement = only_statement("void f() { return; }");
+
+    assert!(matches!(statement, Statement::Return { expr: None, .. }));
 }
 
 #[test]
@@ -811,7 +893,7 @@ fn parses_block_statements() {
     let body = main_body("int main() { { int x = 1; { x += 2; } } return x; }");
 
     assert!(matches!(body[0], Statement::Block(_)));
-    assert!(matches!(body[1], Statement::Return(_)));
+    assert!(matches!(body[1], Statement::Return { .. }));
 }
 
 #[test]
@@ -822,7 +904,7 @@ fn parses_declarations_mixed_with_statements() {
     assert!(matches!(body[0], Statement::Decl(_)));
     assert!(matches!(body[1], Statement::ExprStatement(_)));
     assert!(matches!(body[2], Statement::Decl(_)));
-    assert!(matches!(body[3], Statement::Return(_)));
+    assert!(matches!(body[3], Statement::Return { .. }));
 
     let y_decl = single_decl(&body[2]);
     assert_eq!(y_decl.name, "y");
@@ -842,9 +924,7 @@ fn parses_pointer_parameter_and_dereference_expression() {
     let function = &first_function(&program);
     assert_eq!(function.params[0].ty, Type::Pointer(Box::new(Type::Char)));
 
-    let Statement::Return(expr) = &function.body[0] else {
-        panic!("expected return statement");
-    };
+    let expr = return_expr(&function.body[0]);
 
     let Expr::Unary {
         op, expr: operand, ..
@@ -1177,9 +1257,7 @@ fn parses_sizeof_type_and_expression_forms() {
     assert_eq!(ty, Type::Pointer(Box::new(Type::Char)));
 
     let body = main_body("int main() { int x; return sizeof x; }");
-    let Statement::Return(value_expr) = &body[1] else {
-        panic!("expected return statement");
-    };
+    let value_expr = return_expr(&body[1]);
     let Expr::SizeOfExpr { expr, .. } = value_expr else {
         panic!("expected sizeof expression");
     };
@@ -1239,9 +1317,7 @@ fn sizeof_parenthesized_identifier_uses_typedef_lookup() {
     assert!(matches!(type_expr, Expr::SizeOfType { ty: Type::Int, .. }));
 
     let body = main_body("typedef int T; int main() { int T; return sizeof(T); }");
-    let Statement::Return(value_expr) = &body[1] else {
-        panic!("expected return statement");
-    };
+    let value_expr = return_expr(&body[1]);
     let Expr::SizeOfExpr { expr, .. } = value_expr else {
         panic!("expected sizeof expression after object shadows typedef");
     };
@@ -1251,9 +1327,7 @@ fn sizeof_parenthesized_identifier_uses_typedef_lookup() {
 #[test]
 fn sizeof_has_unary_precedence() {
     let body = main_body("int main() { int x; return sizeof x + 1; }");
-    let Statement::Return(expr) = &body[1] else {
-        panic!("expected return statement");
-    };
+    let expr = return_expr(&body[1]);
 
     let Expr::Binary {
         op: BinaryOp::Add,
@@ -1396,7 +1470,7 @@ fn object_declaration_shadows_typedef_name() {
     let decl = single_decl(&body[0]);
     assert_eq!(decl.name, "T");
     assert_eq!(decl.ty, Type::Int);
-    assert!(matches!(body[1], Statement::Return(Expr::Variable { ref name, .. }) if name == "T"));
+    assert!(matches!(return_expr(&body[1]), Expr::Variable { name, .. } if name == "T"));
 }
 
 #[test]
@@ -1406,8 +1480,8 @@ fn parameter_name_shadows_typedef_name_in_function_body() {
 
     assert_eq!(function.params[0].name, "T");
     assert!(matches!(
-        function.body[0],
-        Statement::Return(Expr::Variable { ref name, .. }) if name == "T"
+        return_expr(&function.body[0]),
+        Expr::Variable { name, .. } if name == "T"
     ));
 }
 

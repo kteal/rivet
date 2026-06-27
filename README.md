@@ -180,7 +180,7 @@ Lexing and preprocessing:
 Program structure and declarations:
 
 - [x] local variable declarations
-- [x] `return`
+- [x] `return` with values and bare `return;` from `void` functions
 - [x] blocks
 - [x] nested blocks and scope
 - [x] declarations without initializers
@@ -273,6 +273,7 @@ Functions:
 - [x] function definitions beyond `main`
 - [x] simple function declarations/prototypes
 - [x] unnamed scalar and pointer parameters in function prototypes
+- [x] C `void` parameter lists as no-parameter signatures: `int f(void)`
 - [x] zero-argument function calls
 - [x] function parameters
 - [x] function calls with up to 8 register arguments

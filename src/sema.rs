@@ -1262,24 +1262,47 @@ impl Checker {
     #[allow(clippy::too_many_lines)]
     fn check_statement(&mut self, statement: &Statement) -> Result<TypedStatement, SemanticError> {
         match statement {
-            Statement::Return(expr) => {
-                let typed_expr = self.check_expr(expr)?;
+            Statement::Return { expr, span } => {
+                if let Some(expr) = expr {
+                    let typed_expr = self.check_expr(expr)?;
 
-                let return_type = self
-                    .current_function_return_type
-                    .as_ref()
-                    .expect("return statement checked outside function");
-
-                if !Self::is_assignable_expr(return_type, &typed_expr) {
-                    return Err(SemanticError {
-                        message: format!(
-                            "cannot return value of type '{}' from function returning '{return_type}'",
-                            typed_expr.ty
-                        ),
-                        span: expr.diagnostic_span(),
-                    });
+                    let return_type = self
+                        .current_function_return_type
+                        .as_ref()
+                        .expect("return statement checked outside function");
+                    if return_type == &Type::Void {
+                        return Err(SemanticError {
+                            message: format!(
+                                "function returning '{return_type}' cannot have a return value"
+                            ),
+                            span: expr.diagnostic_span(),
+                        });
+                    }
+                    if !Self::is_assignable_expr(return_type, &typed_expr) {
+                        return Err(SemanticError {
+                            message: format!(
+                                "cannot return value of type '{}' from function returning '{return_type}'",
+                                typed_expr.ty
+                            ),
+                            span: expr.diagnostic_span(),
+                        });
+                    }
+                    Ok(TypedStatement::Return(Some(typed_expr)))
+                } else {
+                    let return_type = self
+                        .current_function_return_type
+                        .as_ref()
+                        .expect("return statement checked outside function");
+                    if return_type != &Type::Void {
+                        return Err(SemanticError {
+                            message: format!(
+                                "function returning '{return_type}' requires a return value"
+                            ),
+                            span: *span,
+                        });
+                    }
+                    Ok(TypedStatement::Return(None))
                 }
-                Ok(TypedStatement::Return(typed_expr))
             }
             Statement::Decl(declarations) => {
                 let mut typed_declarations = vec![];

@@ -50,7 +50,7 @@ pub struct TypedLocalDecl {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TypedStatement {
     Decl(Vec<TypedLocalDecl>),
-    Return(TypedExpr),
+    Return(Option<TypedExpr>),
     Block(Vec<Self>),
     If {
         cond: TypedExpr,

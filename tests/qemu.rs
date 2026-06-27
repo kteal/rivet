@@ -1261,6 +1261,16 @@ fn qemu_function_calls_return_expected_values() {
         10,
     );
     run_qemu_case(
+        "void-function-bare-return",
+        "void set(int *p) {\n    *p = 7;\n    return;\n}\n\nint main() {\n    int x = 0;\n    set(&x);\n    return x;\n}\n",
+        7,
+    );
+    run_qemu_case(
+        "void-parameter-list",
+        "int helper(void);\n\nint helper(void) {\n    return 3;\n}\n\nint main(void) {\n    return helper();\n}\n",
+        3,
+    );
+    run_qemu_case(
         "pointer-return-function-call",
         "int *id(int *);\n\nint *id(int *p) {\n    return p;\n}\n\nint main() {\n    int *p;\n    id(p);\n    return 7;\n}\n",
         7,

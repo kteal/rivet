@@ -2,7 +2,7 @@ mod common;
 
 use common::{
     call_expr, first_typed_function, local_decl, param, param_with_span, program_with_functions,
-    span, span_from, typed_function_at,
+    return_stmt, span, span_from, typed_function_at,
 };
 use rivet::ast::{
     BinaryOp, Expr, ExternalDecl, FunctionDecl, FunctionDef, GlobalDecl, Initializer,
@@ -42,6 +42,13 @@ fn check_source_err(source: &str) -> rivet::sema::SemanticError {
     let tokens = preprocess(tokens).expect("preprocessing should succeed");
     let program = parse(tokens).expect("parsing should succeed");
     check(&program).expect_err("semantic check should fail")
+}
+
+fn typed_return_expr(statement: &TypedStatement) -> &rivet::typed_ast::TypedExpr {
+    let TypedStatement::Return(Some(expr)) = statement else {
+        panic!("expected return statement with expression");
+    };
+    expr
 }
 
 fn function(name: &str, body: Vec<Statement>) -> FunctionDef {
@@ -96,7 +103,7 @@ fn accepts_multiple_functions() {
     let program = program_with_functions(vec![
         function(
             "helper",
-            vec![Statement::Return(Expr::IntLiteral {
+            vec![return_stmt(Expr::IntLiteral {
                 value: 1,
                 suffix: IntLiteralSuffix::None,
                 base: IntLiteralBase::Decimal,
@@ -105,7 +112,7 @@ fn accepts_multiple_functions() {
         ),
         function(
             "main",
-            vec![Statement::Return(Expr::IntLiteral {
+            vec![return_stmt(Expr::IntLiteral {
                 value: 0,
                 suffix: IntLiteralSuffix::None,
                 base: IntLiteralBase::Decimal,
@@ -134,7 +141,7 @@ fn accepts_same_local_name_in_different_functions() {
                         span: span(),
                     })),
                 }]),
-                Statement::Return(Expr::Variable {
+                return_stmt(Expr::Variable {
                     name: "x".to_string(),
                     span: span(),
                 }),
@@ -154,7 +161,7 @@ fn accepts_same_local_name_in_different_functions() {
                         span: span(),
                     })),
                 }]),
-                Statement::Return(Expr::Variable {
+                return_stmt(Expr::Variable {
                     name: "x".to_string(),
                     span: span(),
                 }),
@@ -162,7 +169,7 @@ fn accepts_same_local_name_in_different_functions() {
         ),
         function(
             "main",
-            vec![Statement::Return(Expr::IntLiteral {
+            vec![return_stmt(Expr::IntLiteral {
                 value: 0,
                 suffix: IntLiteralSuffix::None,
                 base: IntLiteralBase::Decimal,
@@ -179,7 +186,7 @@ fn rejects_duplicate_function_names() {
     let program = program_with_functions(vec![
         function(
             "main",
-            vec![Statement::Return(Expr::IntLiteral {
+            vec![return_stmt(Expr::IntLiteral {
                 value: 0,
                 suffix: IntLiteralSuffix::None,
                 base: IntLiteralBase::Decimal,
@@ -188,7 +195,7 @@ fn rejects_duplicate_function_names() {
         ),
         function(
             "main",
-            vec![Statement::Return(Expr::IntLiteral {
+            vec![return_stmt(Expr::IntLiteral {
                 value: 1,
                 suffix: IntLiteralSuffix::None,
                 base: IntLiteralBase::Decimal,
@@ -206,7 +213,7 @@ fn rejects_duplicate_function_names() {
 fn rejects_program_without_main_function() {
     let program = program_with_functions(vec![function(
         "helper",
-        vec![Statement::Return(Expr::IntLiteral {
+        vec![return_stmt(Expr::IntLiteral {
             value: 1,
             suffix: IntLiteralSuffix::None,
             base: IntLiteralBase::Decimal,
@@ -224,7 +231,7 @@ fn accepts_global_declaration_without_initializer() {
     let program = Program {
         declarations: vec![
             ExternalDecl::Global(global_decl("g", Type::Int, None)),
-            ExternalDecl::FunctionDef(function("main", vec![Statement::Return(int_literal(0))])),
+            ExternalDecl::FunctionDef(function("main", vec![return_stmt(int_literal(0))])),
         ],
         eof_span: span(),
     };
@@ -249,7 +256,7 @@ fn accepts_global_declaration_with_scalar_initializer() {
                 Type::Int,
                 Some(Initializer::Expr(int_literal(3))),
             )),
-            ExternalDecl::FunctionDef(function("main", vec![Statement::Return(int_literal(0))])),
+            ExternalDecl::FunctionDef(function("main", vec![return_stmt(int_literal(0))])),
         ],
         eof_span: span(),
     };
@@ -283,7 +290,7 @@ fn accepts_global_array_initializer_list() {
                 },
                 Some(Initializer::List(vec![int_literal(1), int_literal(2)])),
             )),
-            ExternalDecl::FunctionDef(function("main", vec![Statement::Return(int_literal(0))])),
+            ExternalDecl::FunctionDef(function("main", vec![return_stmt(int_literal(0))])),
         ],
         eof_span: span(),
     };
@@ -335,7 +342,7 @@ fn resolves_global_variable_expression() {
             ExternalDecl::Global(global_decl("g", Type::Int, None)),
             ExternalDecl::FunctionDef(function(
                 "main",
-                vec![Statement::Return(Expr::Variable {
+                vec![return_stmt(Expr::Variable {
                     name: "g".to_string(),
                     span: span(),
                 })],
@@ -347,9 +354,7 @@ fn resolves_global_variable_expression() {
     let typed_program = check(&program).expect("semantic check should succeed");
     let main = first_typed_function(&typed_program);
 
-    let TypedStatement::Return(expr) = &main.body[0] else {
-        panic!("expected return statement");
-    };
+    let expr = typed_return_expr(&main.body[0]);
     let TypedExprKind::LvalueToRvalue { expr: inner, .. } = &expr.kind else {
         panic!("expected lvalue-to-rvalue conversion");
     };
@@ -371,7 +376,7 @@ fn local_variable_shadows_global_variable_expression() {
                 "main",
                 vec![
                     Statement::Decl(vec![local_decl(Type::Int, "x", None)]),
-                    Statement::Return(Expr::Variable {
+                    return_stmt(Expr::Variable {
                         name: "x".to_string(),
                         span: span(),
                     }),
@@ -384,9 +389,7 @@ fn local_variable_shadows_global_variable_expression() {
     let typed_program = check(&program).expect("semantic check should succeed");
     let main = first_typed_function(&typed_program);
 
-    let TypedStatement::Return(expr) = &main.body[1] else {
-        panic!("expected return statement");
-    };
+    let expr = typed_return_expr(&main.body[1]);
     let TypedExprKind::LvalueToRvalue { expr: inner, .. } = &expr.kind else {
         panic!("expected lvalue-to-rvalue conversion");
     };
@@ -405,7 +408,7 @@ fn rejects_duplicate_global_declarations() {
         declarations: vec![
             ExternalDecl::Global(global_decl("g", Type::Int, None)),
             ExternalDecl::Global(global_decl("g", Type::Char, None)),
-            ExternalDecl::FunctionDef(function("main", vec![Statement::Return(int_literal(0))])),
+            ExternalDecl::FunctionDef(function("main", vec![return_stmt(int_literal(0))])),
         ],
         eof_span: span(),
     };
@@ -421,7 +424,7 @@ fn rejects_function_conflicting_with_global_declaration() {
         declarations: vec![
             ExternalDecl::Global(global_decl("helper", Type::Int, None)),
             ExternalDecl::FunctionDecl(function_decl("helper", &[])),
-            ExternalDecl::FunctionDef(function("main", vec![Statement::Return(int_literal(0))])),
+            ExternalDecl::FunctionDef(function("main", vec![return_stmt(int_literal(0))])),
         ],
         eof_span: span(),
     };
@@ -440,7 +443,7 @@ fn rejects_global_conflicting_with_function_declaration() {
         declarations: vec![
             ExternalDecl::FunctionDecl(function_decl("helper", &[])),
             ExternalDecl::Global(global_decl("helper", Type::Int, None)),
-            ExternalDecl::FunctionDef(function("main", vec![Statement::Return(int_literal(0))])),
+            ExternalDecl::FunctionDef(function("main", vec![return_stmt(int_literal(0))])),
         ],
         eof_span: span(),
     };
@@ -458,14 +461,14 @@ fn accepts_call_to_declared_function() {
     let program = program_with_functions(vec![
         function(
             "helper",
-            vec![Statement::Return(Expr::IntLiteral {
+            vec![return_stmt(Expr::IntLiteral {
                 value: 1,
                 suffix: IntLiteralSuffix::None,
                 base: IntLiteralBase::Decimal,
                 span: span(),
             })],
         ),
-        function("main", vec![Statement::Return(call_expr("helper", vec![]))]),
+        function("main", vec![return_stmt(call_expr("helper", vec![]))]),
     ]);
 
     check(&program).expect("semantic check should succeed");
@@ -474,10 +477,10 @@ fn accepts_call_to_declared_function() {
 #[test]
 fn accepts_forward_call_to_later_function() {
     let program = program_with_functions(vec![
-        function("main", vec![Statement::Return(call_expr("helper", vec![]))]),
+        function("main", vec![return_stmt(call_expr("helper", vec![]))]),
         function(
             "helper",
-            vec![Statement::Return(Expr::IntLiteral {
+            vec![return_stmt(Expr::IntLiteral {
                 value: 1,
                 suffix: IntLiteralSuffix::None,
                 base: IntLiteralBase::Decimal,
@@ -497,14 +500,14 @@ fn accepts_function_prototype_before_definition() {
             ExternalDecl::FunctionDef(function_with_params(
                 "helper",
                 &["value"],
-                vec![Statement::Return(Expr::Variable {
+                vec![return_stmt(Expr::Variable {
                     name: "value".to_string(),
                     span: span(),
                 })],
             )),
             ExternalDecl::FunctionDef(function(
                 "main",
-                vec![Statement::Return(call_expr(
+                vec![return_stmt(call_expr(
                     "helper",
                     vec![Expr::IntLiteral {
                         value: 3,
@@ -541,7 +544,7 @@ fn accepts_function_prototype_with_unnamed_pointer_parameter_before_definition()
                 name_span: span(),
                 name: "helper".to_string(),
                 params: vec![param_with_span(int_pointer, "p", span())],
-                body: vec![Statement::Return(Expr::IntLiteral {
+                body: vec![return_stmt(Expr::IntLiteral {
                     value: 0,
                     suffix: IntLiteralSuffix::None,
                     base: IntLiteralBase::Decimal,
@@ -550,7 +553,7 @@ fn accepts_function_prototype_with_unnamed_pointer_parameter_before_definition()
             }),
             ExternalDecl::FunctionDef(function(
                 "main",
-                vec![Statement::Return(Expr::IntLiteral {
+                vec![return_stmt(Expr::IntLiteral {
                     value: 0,
                     suffix: IntLiteralSuffix::None,
                     base: IntLiteralBase::Decimal,
@@ -571,7 +574,7 @@ fn accepts_call_to_prototyped_function_without_definition() {
             ExternalDecl::FunctionDecl(function_decl("helper", &["x"])),
             ExternalDecl::FunctionDef(function(
                 "main",
-                vec![Statement::Return(call_expr(
+                vec![return_stmt(call_expr(
                     "helper",
                     vec![Expr::IntLiteral {
                         value: 3,
@@ -598,7 +601,7 @@ fn rejects_function_definition_with_conflicting_prototype_return_type() {
                 name_span: span(),
                 name: "helper".to_string(),
                 params: vec![param("x")],
-                body: vec![Statement::Return(Expr::IntLiteral {
+                body: vec![return_stmt(Expr::IntLiteral {
                     value: 1,
                     suffix: IntLiteralSuffix::None,
                     base: IntLiteralBase::Decimal,
@@ -607,7 +610,7 @@ fn rejects_function_definition_with_conflicting_prototype_return_type() {
             }),
             ExternalDecl::FunctionDef(function(
                 "main",
-                vec![Statement::Return(Expr::IntLiteral {
+                vec![return_stmt(Expr::IntLiteral {
                     value: 0,
                     suffix: IntLiteralSuffix::None,
                     base: IntLiteralBase::Decimal,
@@ -636,14 +639,14 @@ fn rejects_function_definition_with_conflicting_prototype_parameter_type() {
                 name_span: span(),
                 name: "helper".to_string(),
                 params: vec![param_with_span(Type::Char, "x", span())],
-                body: vec![Statement::Return(Expr::Variable {
+                body: vec![return_stmt(Expr::Variable {
                     name: "x".to_string(),
                     span: span(),
                 })],
             }),
             ExternalDecl::FunctionDef(function(
                 "main",
-                vec![Statement::Return(Expr::IntLiteral {
+                vec![return_stmt(Expr::IntLiteral {
                     value: 0,
                     suffix: IntLiteralSuffix::None,
                     base: IntLiteralBase::Decimal,
@@ -685,7 +688,7 @@ fn rejects_function_definition_with_conflicting_pointer_prototype_parameter_type
                     "p",
                     span(),
                 )],
-                body: vec![Statement::Return(Expr::IntLiteral {
+                body: vec![return_stmt(Expr::IntLiteral {
                     value: 0,
                     suffix: IntLiteralSuffix::None,
                     base: IntLiteralBase::Decimal,
@@ -694,7 +697,7 @@ fn rejects_function_definition_with_conflicting_pointer_prototype_parameter_type
             }),
             ExternalDecl::FunctionDef(function(
                 "main",
-                vec![Statement::Return(Expr::IntLiteral {
+                vec![return_stmt(Expr::IntLiteral {
                     value: 0,
                     suffix: IntLiteralSuffix::None,
                     base: IntLiteralBase::Decimal,
@@ -715,7 +718,7 @@ fn rejects_function_definition_with_conflicting_pointer_prototype_parameter_type
 
 #[test]
 fn rejects_call_to_undeclared_function() {
-    let program = main_program(vec![Statement::Return(call_expr("helper", vec![]))]);
+    let program = main_program(vec![return_stmt(call_expr("helper", vec![]))]);
 
     let err = check(&program).expect_err("semantic check should fail");
 
@@ -726,7 +729,7 @@ fn rejects_call_to_undeclared_function() {
 fn accepts_empty_statement() {
     let program = main_program(vec![
         Statement::Empty,
-        Statement::Return(Expr::IntLiteral {
+        return_stmt(Expr::IntLiteral {
             value: 0,
             suffix: IntLiteralSuffix::None,
             base: IntLiteralBase::Decimal,
@@ -742,7 +745,7 @@ fn accepts_expression_statement() {
     let program = program_with_functions(vec![
         function(
             "helper",
-            vec![Statement::Return(Expr::IntLiteral {
+            vec![return_stmt(Expr::IntLiteral {
                 value: 1,
                 suffix: IntLiteralSuffix::None,
                 base: IntLiteralBase::Decimal,
@@ -753,7 +756,7 @@ fn accepts_expression_statement() {
             "main",
             vec![
                 Statement::ExprStatement(call_expr("helper", vec![])),
-                Statement::Return(Expr::IntLiteral {
+                return_stmt(Expr::IntLiteral {
                     value: 0,
                     suffix: IntLiteralSuffix::None,
                     base: IntLiteralBase::Decimal,
@@ -773,7 +776,7 @@ fn rejects_expression_statement_with_undeclared_variable() {
             name: "x".to_string(),
             span: span(),
         }),
-        Statement::Return(Expr::IntLiteral {
+        return_stmt(Expr::IntLiteral {
             value: 0,
             suffix: IntLiteralSuffix::None,
             base: IntLiteralBase::Decimal,
@@ -791,7 +794,7 @@ fn accepts_parameter_usage_as_local() {
     let program = program_with_functions(vec![function_with_params(
         "main",
         &["x", "y"],
-        vec![Statement::Return(Expr::Binary {
+        vec![return_stmt(Expr::Binary {
             op: BinaryOp::Add,
             op_span: span(),
             left: Box::new(Expr::Variable {
@@ -813,7 +816,7 @@ fn rejects_duplicate_parameter_names() {
     let program = program_with_functions(vec![function_with_params(
         "main",
         &["x", "x"],
-        vec![Statement::Return(Expr::Variable {
+        vec![return_stmt(Expr::Variable {
             name: "x".to_string(),
             span: span(),
         })],
@@ -835,7 +838,7 @@ fn duplicate_parameter_errors_point_at_duplicate_parameter() {
             param_with_span(Type::Int, "x", span_from(13, 14)),
             param_with_span(Type::Int, "x", duplicate_span),
         ],
-        body: vec![Statement::Return(Expr::Variable {
+        body: vec![return_stmt(Expr::Variable {
             name: "x".to_string(),
             span: span(),
         })],
@@ -864,7 +867,7 @@ fn rejects_local_redeclaring_parameter_in_function_scope() {
                     span: span(),
                 })),
             }]),
-            Statement::Return(Expr::Variable {
+            return_stmt(Expr::Variable {
                 name: "x".to_string(),
                 span: span(),
             }),
@@ -893,7 +896,7 @@ fn accepts_inner_block_shadowing_parameter() {
                     span: span(),
                 })),
             }]),
-            Statement::Return(Expr::Variable {
+            return_stmt(Expr::Variable {
                 name: "x".to_string(),
                 span: span(),
             }),
@@ -909,7 +912,7 @@ fn accepts_call_with_matching_argument_count() {
         function_with_params(
             "add",
             &["x", "y"],
-            vec![Statement::Return(Expr::Binary {
+            vec![return_stmt(Expr::Binary {
                 op: BinaryOp::Add,
                 op_span: span(),
                 left: Box::new(Expr::Variable {
@@ -924,7 +927,7 @@ fn accepts_call_with_matching_argument_count() {
         ),
         function(
             "main",
-            vec![Statement::Return(call_expr(
+            vec![return_stmt(call_expr(
                 "add",
                 vec![
                     Expr::IntLiteral {
@@ -953,14 +956,14 @@ fn rejects_call_with_too_few_arguments() {
         function_with_params(
             "add",
             &["x", "y"],
-            vec![Statement::Return(Expr::Variable {
+            vec![return_stmt(Expr::Variable {
                 name: "x".to_string(),
                 span: span(),
             })],
         ),
         function(
             "main",
-            vec![Statement::Return(call_expr(
+            vec![return_stmt(call_expr(
                 "add",
                 vec![Expr::IntLiteral {
                     value: 1,
@@ -986,14 +989,14 @@ fn rejects_call_with_too_many_arguments_for_signature() {
         function_with_params(
             "id",
             &["x"],
-            vec![Statement::Return(Expr::Variable {
+            vec![return_stmt(Expr::Variable {
                 name: "x".to_string(),
                 span: span(),
             })],
         ),
         function(
             "main",
-            vec![Statement::Return(call_expr(
+            vec![return_stmt(call_expr(
                 "id",
                 vec![
                     Expr::IntLiteral {
@@ -1026,7 +1029,7 @@ fn rejects_function_with_more_than_eight_parameters() {
     let program = program_with_functions(vec![function_with_params(
         "main",
         &["a", "b", "c", "d", "e", "f", "g", "h", "i"],
-        vec![Statement::Return(Expr::IntLiteral {
+        vec![return_stmt(Expr::IntLiteral {
             value: 0,
             suffix: IntLiteralSuffix::None,
             base: IntLiteralBase::Decimal,
@@ -1060,7 +1063,7 @@ fn too_many_parameter_errors_point_at_ninth_parameter() {
             param_with_span(Type::Int, "h", span_from(48, 49)),
             param_with_span(Type::Int, "i", ninth_span),
         ],
-        body: vec![Statement::Return(Expr::IntLiteral {
+        body: vec![return_stmt(Expr::IntLiteral {
             value: 0,
             suffix: IntLiteralSuffix::None,
             base: IntLiteralBase::Decimal,
@@ -1082,7 +1085,7 @@ fn rejects_call_with_more_than_eight_arguments() {
     let program = program_with_functions(vec![
         function(
             "helper",
-            vec![Statement::Return(Expr::IntLiteral {
+            vec![return_stmt(Expr::IntLiteral {
                 value: 0,
                 suffix: IntLiteralSuffix::None,
                 base: IntLiteralBase::Decimal,
@@ -1091,7 +1094,7 @@ fn rejects_call_with_more_than_eight_arguments() {
         ),
         function(
             "main",
-            vec![Statement::Return(call_expr(
+            vec![return_stmt(call_expr(
                 "helper",
                 vec![
                     Expr::IntLiteral {
@@ -1196,7 +1199,7 @@ fn accepts_declared_local_usage() {
                 }),
             }),
         }),
-        Statement::Return(Expr::Variable {
+        return_stmt(Expr::Variable {
             name: "x".to_string(),
             span: span(),
         }),
@@ -1227,7 +1230,7 @@ fn accepts_declaration_without_initializer_assigned_before_use() {
                 span: span(),
             }),
         }),
-        Statement::Return(Expr::Variable {
+        return_stmt(Expr::Variable {
             name: "x".to_string(),
             span: span(),
         }),
@@ -1245,7 +1248,7 @@ fn accepts_assignment_expression_in_return() {
             name: "x".to_string(),
             init: None,
         }]),
-        Statement::Return(Expr::Assign {
+        return_stmt(Expr::Assign {
             op_span: span(),
             target: Box::new(Expr::Variable {
                 name: "x".to_string(),
@@ -1291,7 +1294,7 @@ fn accepts_compound_assignment_to_int() {
                 span: span(),
             }),
         }),
-        Statement::Return(Expr::Variable {
+        return_stmt(Expr::Variable {
             name: "x".to_string(),
             span: span(),
         }),
@@ -1328,7 +1331,7 @@ fn accepts_compound_assignment_to_char_from_int_expression() {
                 span: span(),
             }),
         }),
-        Statement::Return(Expr::Variable {
+        return_stmt(Expr::Variable {
             name: "c".to_string(),
             span: span(),
         }),
@@ -1351,7 +1354,7 @@ fn accepts_compound_assignment_expression_in_return() {
                 span: span(),
             })),
         }]),
-        Statement::Return(Expr::CompoundAssign {
+        return_stmt(Expr::CompoundAssign {
             target: Box::new(Expr::Variable {
                 name: "x".to_string(),
                 span: span(),
@@ -1372,7 +1375,7 @@ fn accepts_compound_assignment_expression_in_return() {
 
 #[test]
 fn typed_binary_expression_has_result_type() {
-    let program = main_program(vec![Statement::Return(Expr::Binary {
+    let program = main_program(vec![return_stmt(Expr::Binary {
         op: BinaryOp::Add,
         op_span: span(),
         left: Box::new(Expr::IntLiteral {
@@ -1391,9 +1394,7 @@ fn typed_binary_expression_has_result_type() {
 
     let typed_program = check(&program).expect("semantic check should succeed");
 
-    let TypedStatement::Return(expr) = &first_typed_function(&typed_program).body[0] else {
-        panic!("expected return statement");
-    };
+    let expr = typed_return_expr(&first_typed_function(&typed_program).body[0]);
 
     assert_eq!(expr.ty, Type::Int);
     assert!(matches!(expr.kind, TypedExprKind::Binary { .. }));
@@ -1424,7 +1425,7 @@ fn typed_shift_uses_promoted_left_operand_type() {
                 span: span(),
             })),
         }]),
-        Statement::Return(Expr::Binary {
+        return_stmt(Expr::Binary {
             op: BinaryOp::ShiftRight,
             op_span: span(),
             left: Box::new(Expr::Variable {
@@ -1440,16 +1441,14 @@ fn typed_shift_uses_promoted_left_operand_type() {
 
     let typed_program = check(&program).expect("semantic check should succeed");
 
-    let TypedStatement::Return(expr) = &first_typed_function(&typed_program).body[2] else {
-        panic!("expected return statement");
-    };
+    let expr = typed_return_expr(&first_typed_function(&typed_program).body[2]);
 
     let TypedExprKind::Binary { operand_ty, .. } = &expr.kind else {
         panic!("expected binary expression");
     };
 
     assert_eq!(expr.ty, Type::Int);
-    assert_eq!(*operand_ty, Type::Int);
+    assert_eq!(operand_ty, &Type::Int);
 }
 
 #[test]
@@ -1466,7 +1465,7 @@ fn typed_unary_negate_preserves_unsigned_operand_type() {
                 span: span(),
             })),
         }]),
-        Statement::Return(Expr::Unary {
+        return_stmt(Expr::Unary {
             op: UnaryOp::Negate,
             op_span: span(),
             expr: Box::new(Expr::Variable {
@@ -1478,9 +1477,7 @@ fn typed_unary_negate_preserves_unsigned_operand_type() {
 
     let typed_program = check(&program).expect("semantic check should succeed");
 
-    let TypedStatement::Return(expr) = &first_typed_function(&typed_program).body[1] else {
-        panic!("expected return statement");
-    };
+    let expr = typed_return_expr(&first_typed_function(&typed_program).body[1]);
 
     assert_eq!(expr.ty, Type::UnsignedInt);
     assert!(matches!(expr.kind, TypedExprKind::Unary { .. }));
@@ -1500,7 +1497,7 @@ fn typed_unary_bitwise_not_preserves_unsigned_operand_type() {
                 span: span(),
             })),
         }]),
-        Statement::Return(Expr::Unary {
+        return_stmt(Expr::Unary {
             op: UnaryOp::BitwiseNot,
             op_span: span(),
             expr: Box::new(Expr::Variable {
@@ -1512,9 +1509,7 @@ fn typed_unary_bitwise_not_preserves_unsigned_operand_type() {
 
     let typed_program = check(&program).expect("semantic check should succeed");
 
-    let TypedStatement::Return(expr) = &first_typed_function(&typed_program).body[1] else {
-        panic!("expected return statement");
-    };
+    let expr = typed_return_expr(&first_typed_function(&typed_program).body[1]);
 
     assert_eq!(expr.ty, Type::UnsignedInt);
     assert!(matches!(expr.kind, TypedExprKind::Unary { .. }));
@@ -1534,7 +1529,7 @@ fn typed_unary_logical_not_returns_int_for_unsigned_operand() {
                 span: span(),
             })),
         }]),
-        Statement::Return(Expr::Unary {
+        return_stmt(Expr::Unary {
             op: UnaryOp::LogicalNot,
             op_span: span(),
             expr: Box::new(Expr::Variable {
@@ -1546,9 +1541,7 @@ fn typed_unary_logical_not_returns_int_for_unsigned_operand() {
 
     let typed_program = check(&program).expect("semantic check should succeed");
 
-    let TypedStatement::Return(expr) = &first_typed_function(&typed_program).body[1] else {
-        panic!("expected return statement");
-    };
+    let expr = typed_return_expr(&first_typed_function(&typed_program).body[1]);
 
     assert_eq!(expr.ty, Type::Int);
     assert!(matches!(expr.kind, TypedExprKind::Unary { .. }));
@@ -1566,7 +1559,7 @@ fn typed_pointer_dereference_has_pointee_type() {
                 "buf",
                 span(),
             )],
-            body: vec![Statement::Return(Expr::Unary {
+            body: vec![return_stmt(Expr::Unary {
                 op: UnaryOp::Dereference,
                 op_span: span(),
                 expr: Box::new(Expr::Variable {
@@ -1577,7 +1570,7 @@ fn typed_pointer_dereference_has_pointee_type() {
         },
         function(
             "main",
-            vec![Statement::Return(Expr::IntLiteral {
+            vec![return_stmt(Expr::IntLiteral {
                 value: 0,
                 suffix: IntLiteralSuffix::None,
                 base: IntLiteralBase::Decimal,
@@ -1588,9 +1581,7 @@ fn typed_pointer_dereference_has_pointee_type() {
 
     let typed_program = check(&program).expect("semantic check should succeed");
 
-    let TypedStatement::Return(expr) = &first_typed_function(&typed_program).body[0] else {
-        panic!("expected return statement");
-    };
+    let expr = typed_return_expr(&first_typed_function(&typed_program).body[0]);
 
     assert_eq!(expr.ty, Type::Char);
     let TypedExprKind::LvalueToRvalue { expr: inner, .. } = &expr.kind else {
@@ -1634,7 +1625,7 @@ fn typed_address_of_local_has_pointer_type() {
                 }),
             })),
         }]),
-        Statement::Return(Expr::IntLiteral {
+        return_stmt(Expr::IntLiteral {
             value: 0,
             suffix: IntLiteralSuffix::None,
             base: IntLiteralBase::Decimal,
@@ -1683,7 +1674,7 @@ fn typed_address_of_global_has_pointer_type() {
                             }),
                         })),
                     }]),
-                    Statement::Return(Expr::IntLiteral {
+                    return_stmt(Expr::IntLiteral {
                         value: 0,
                         suffix: IntLiteralSuffix::None,
                         base: IntLiteralBase::Decimal,
@@ -1749,7 +1740,7 @@ fn typed_address_of_index_expression_has_element_pointer_type() {
                 }),
             })),
         }]),
-        Statement::Return(Expr::IntLiteral {
+        return_stmt(Expr::IntLiteral {
             value: 0,
             suffix: IntLiteralSuffix::None,
             base: IntLiteralBase::Decimal,
@@ -1803,7 +1794,7 @@ fn typed_address_of_array_has_pointer_to_array_type() {
                 }),
             })),
         }]),
-        Statement::Return(Expr::IntLiteral {
+        return_stmt(Expr::IntLiteral {
             value: 0,
             suffix: IntLiteralSuffix::None,
             base: IntLiteralBase::Decimal,
@@ -1883,9 +1874,7 @@ fn accepts_function_designator_decay_in_call_argument() {
     );
 
     let main = typed_function_at(&typed_program, 2);
-    let TypedStatement::Return(expr) = &main.body[0] else {
-        panic!("expected return statement");
-    };
+    let expr = typed_return_expr(&main.body[0]);
     let TypedExprKind::Call { args, .. } = &expr.kind else {
         panic!("expected call expression");
     };
@@ -1913,9 +1902,7 @@ fn accepts_function_designator_decay_in_binary_operand() {
     );
 
     let main = typed_function_at(&typed_program, 1);
-    let TypedStatement::Return(expr) = &main.body[1] else {
-        panic!("expected return statement");
-    };
+    let expr = typed_return_expr(&main.body[1]);
     let TypedExprKind::Binary { right, .. } = &expr.kind else {
         panic!("expected binary expression");
     };
@@ -1942,9 +1929,7 @@ fn accepts_call_through_explicitly_dereferenced_function_designator() {
         check_source("int id(int x) { return x + 1; } int main() { return (*id)(3); }");
 
     let main = typed_function_at(&typed_program, 1);
-    let TypedStatement::Return(expr) = &main.body[0] else {
-        panic!("expected return statement");
-    };
+    let expr = typed_return_expr(&main.body[0]);
 
     assert_eq!(expr.ty, Type::Int);
 
@@ -1976,9 +1961,7 @@ fn accepts_call_through_function_pointer() {
     );
 
     let main = typed_function_at(&typed_program, 1);
-    let TypedStatement::Return(expr) = &main.body[1] else {
-        panic!("expected return statement");
-    };
+    let expr = typed_return_expr(&main.body[1]);
 
     assert_eq!(expr.ty, Type::Int);
 
@@ -2011,9 +1994,7 @@ fn accepts_call_through_explicitly_dereferenced_function_pointer() {
     );
 
     let main = typed_function_at(&typed_program, 1);
-    let TypedStatement::Return(expr) = &main.body[1] else {
-        panic!("expected return statement");
-    };
+    let expr = typed_return_expr(&main.body[1]);
 
     assert_eq!(expr.ty, Type::Int);
 
@@ -2082,7 +2063,7 @@ fn rejects_raw_function_type_local_declaration() {
             name: "f".to_string(),
             init: None,
         }]),
-        Statement::Return(Expr::IntLiteral {
+        return_stmt(Expr::IntLiteral {
             value: 0,
             suffix: IntLiteralSuffix::None,
             base: IntLiteralBase::Decimal,
@@ -2097,7 +2078,7 @@ fn rejects_raw_function_type_local_declaration() {
 
 #[test]
 fn rejects_address_of_non_lvalue() {
-    let program = main_program(vec![Statement::Return(Expr::Unary {
+    let program = main_program(vec![return_stmt(Expr::Unary {
         op: UnaryOp::AddressOf,
         op_span: span(),
         expr: Box::new(Expr::IntLiteral {
@@ -2125,7 +2106,7 @@ fn accepts_assignment_through_pointer_dereference() {
                 "p",
                 span(),
             )],
-            body: vec![Statement::Return(Expr::Assign {
+            body: vec![return_stmt(Expr::Assign {
                 target: Box::new(Expr::Unary {
                     op: UnaryOp::Dereference,
                     op_span: span(),
@@ -2145,7 +2126,7 @@ fn accepts_assignment_through_pointer_dereference() {
         },
         function(
             "main",
-            vec![Statement::Return(Expr::IntLiteral {
+            vec![return_stmt(Expr::IntLiteral {
                 value: 0,
                 suffix: IntLiteralSuffix::None,
                 base: IntLiteralBase::Decimal,
@@ -2156,9 +2137,7 @@ fn accepts_assignment_through_pointer_dereference() {
 
     let typed_program = check(&program).expect("semantic check should succeed");
 
-    let TypedStatement::Return(expr) = &first_typed_function(&typed_program).body[0] else {
-        panic!("expected return statement");
-    };
+    let expr = typed_return_expr(&first_typed_function(&typed_program).body[0]);
     let TypedExprKind::Assign { target, .. } = &expr.kind else {
         panic!("expected assignment expression");
     };
@@ -2186,7 +2165,7 @@ fn accepts_compound_assignment_through_pointer_dereference() {
                 "p",
                 span(),
             )],
-            body: vec![Statement::Return(Expr::CompoundAssign {
+            body: vec![return_stmt(Expr::CompoundAssign {
                 target: Box::new(Expr::Unary {
                     op: UnaryOp::Dereference,
                     op_span: span(),
@@ -2207,7 +2186,7 @@ fn accepts_compound_assignment_through_pointer_dereference() {
         },
         function(
             "main",
-            vec![Statement::Return(Expr::IntLiteral {
+            vec![return_stmt(Expr::IntLiteral {
                 value: 0,
                 suffix: IntLiteralSuffix::None,
                 base: IntLiteralBase::Decimal,
@@ -2218,9 +2197,7 @@ fn accepts_compound_assignment_through_pointer_dereference() {
 
     let typed_program = check(&program).expect("semantic check should succeed");
 
-    let TypedStatement::Return(expr) = &first_typed_function(&typed_program).body[0] else {
-        panic!("expected return statement");
-    };
+    let expr = typed_return_expr(&first_typed_function(&typed_program).body[0]);
     let TypedExprKind::CompoundAssign {
         target, operand_ty, ..
     } = &expr.kind
@@ -2230,7 +2207,7 @@ fn accepts_compound_assignment_through_pointer_dereference() {
 
     assert_eq!(expr.ty, Type::Int);
     assert_eq!(target.ty, Type::Int);
-    assert_eq!(*operand_ty, Type::Int);
+    assert_eq!(operand_ty, &Type::Int);
 }
 
 #[test]
@@ -2245,7 +2222,7 @@ fn accepts_increment_through_pointer_dereference() {
                 "p",
                 span(),
             )],
-            body: vec![Statement::Return(Expr::PostfixInc {
+            body: vec![return_stmt(Expr::PostfixInc {
                 expr: Box::new(Expr::Unary {
                     op: UnaryOp::Dereference,
                     op_span: span(),
@@ -2259,7 +2236,7 @@ fn accepts_increment_through_pointer_dereference() {
         },
         function(
             "main",
-            vec![Statement::Return(Expr::IntLiteral {
+            vec![return_stmt(Expr::IntLiteral {
                 value: 0,
                 suffix: IntLiteralSuffix::None,
                 base: IntLiteralBase::Decimal,
@@ -2270,9 +2247,7 @@ fn accepts_increment_through_pointer_dereference() {
 
     let typed_program = check(&program).expect("semantic check should succeed");
 
-    let TypedStatement::Return(expr) = &first_typed_function(&typed_program).body[0] else {
-        panic!("expected return statement");
-    };
+    let expr = typed_return_expr(&first_typed_function(&typed_program).body[0]);
     let TypedExprKind::PostfixInc { expr: target, .. } = &expr.kind else {
         panic!("expected postfix increment expression");
     };
@@ -2290,7 +2265,7 @@ fn typed_pointer_arithmetic_has_pointer_operand_and_result_type() {
             name_span: span(),
             name: "advance".to_string(),
             params: vec![param_with_span(pointer_to_int.clone(), "p", span())],
-            body: vec![Statement::Return(Expr::Binary {
+            body: vec![return_stmt(Expr::Binary {
                 op: BinaryOp::Add,
                 op_span: span(),
                 left: Box::new(Expr::Variable {
@@ -2307,7 +2282,7 @@ fn typed_pointer_arithmetic_has_pointer_operand_and_result_type() {
         },
         function(
             "main",
-            vec![Statement::Return(Expr::IntLiteral {
+            vec![return_stmt(Expr::IntLiteral {
                 value: 0,
                 suffix: IntLiteralSuffix::None,
                 base: IntLiteralBase::Decimal,
@@ -2318,16 +2293,14 @@ fn typed_pointer_arithmetic_has_pointer_operand_and_result_type() {
 
     let typed_program = check(&program).expect("semantic check should succeed");
 
-    let TypedStatement::Return(expr) = &first_typed_function(&typed_program).body[0] else {
-        panic!("expected return statement");
-    };
+    let expr = typed_return_expr(&first_typed_function(&typed_program).body[0]);
 
     let TypedExprKind::Binary { operand_ty, .. } = &expr.kind else {
         panic!("expected binary expression");
     };
 
     assert_eq!(expr.ty, pointer_to_int);
-    assert_eq!(*operand_ty, pointer_to_int);
+    assert_eq!(operand_ty, &pointer_to_int);
 }
 
 #[test]
@@ -2353,7 +2326,7 @@ fn accepts_pointer_compound_assignment_by_integer() {
                 span: span(),
             }),
         }),
-        Statement::Return(Expr::IntLiteral {
+        return_stmt(Expr::IntLiteral {
             value: 0,
             suffix: IntLiteralSuffix::None,
             base: IntLiteralBase::Decimal,
@@ -2394,6 +2367,40 @@ fn accepts_void_pointer_comparison_with_object_pointer() {
 }
 
 #[test]
+fn accepts_bare_return_from_void_function() {
+    check_source(
+        "void set(int *p) { *p = 7; return; } int main() { int x = 0; set(&x); return x; }",
+    );
+}
+
+#[test]
+fn accepts_void_parameter_lists_as_no_parameters() {
+    check_source(
+        "int helper(void); int helper(void) { return 3; } int main(void) { return helper(); }",
+    );
+}
+
+#[test]
+fn rejects_return_value_from_void_function() {
+    let err = check_source_err("void f() { return 1; } int main() { return 0; }");
+
+    assert_eq!(
+        err.message,
+        "function returning 'void' cannot have a return value"
+    );
+}
+
+#[test]
+fn rejects_bare_return_from_non_void_function() {
+    let err = check_source_err("int main() { return; }");
+
+    assert_eq!(
+        err.message,
+        "function returning 'int' requires a return value"
+    );
+}
+
+#[test]
 fn rejects_plain_void_local_object() {
     let source = "int main() { void x; return 0; }";
     let tokens = lex(source, DUMMY_FILE_ID).expect("lexing should succeed");
@@ -2406,7 +2413,7 @@ fn rejects_plain_void_local_object() {
 
 #[test]
 fn rejects_dereference_of_non_pointer_expression() {
-    let program = main_program(vec![Statement::Return(Expr::Unary {
+    let program = main_program(vec![return_stmt(Expr::Unary {
         op: UnaryOp::Dereference,
         op_span: span(),
         expr: Box::new(Expr::IntLiteral {
@@ -2437,7 +2444,7 @@ fn rejects_assignment_through_non_pointer_dereference() {
                 span: span(),
             })),
         }]),
-        Statement::Return(Expr::Assign {
+        return_stmt(Expr::Assign {
             target: Box::new(Expr::Unary {
                 op: UnaryOp::Dereference,
                 op_span,
@@ -2477,7 +2484,7 @@ fn rejects_pointer_plus_pointer() {
             name: "right".to_string(),
             init: None,
         }]),
-        Statement::Return(Expr::Binary {
+        return_stmt(Expr::Binary {
             op: BinaryOp::Add,
             op_span: span(),
             left: Box::new(Expr::Variable {
@@ -2557,7 +2564,7 @@ fn rejects_assignment_between_different_pointer_types() {
                 span: span(),
             }),
         }),
-        Statement::Return(Expr::IntLiteral {
+        return_stmt(Expr::IntLiteral {
             value: 0,
             suffix: IntLiteralSuffix::None,
             base: IntLiteralBase::Decimal,
@@ -2587,7 +2594,7 @@ fn typed_char_compound_assignment_has_target_type() {
                 span: span(),
             })),
         }]),
-        Statement::Return(Expr::CompoundAssign {
+        return_stmt(Expr::CompoundAssign {
             target: Box::new(Expr::Variable {
                 name: "c".to_string(),
                 span: span(),
@@ -2605,9 +2612,7 @@ fn typed_char_compound_assignment_has_target_type() {
 
     let typed_program = check(&program).expect("semantic check should succeed");
 
-    let TypedStatement::Return(expr) = &first_typed_function(&typed_program).body[1] else {
-        panic!("expected return statement");
-    };
+    let expr = typed_return_expr(&first_typed_function(&typed_program).body[1]);
 
     assert_eq!(expr.ty, Type::Char);
     assert!(matches!(expr.kind, TypedExprKind::CompoundAssign { .. }));
@@ -2627,7 +2632,7 @@ fn typed_postfix_increment_preserves_postfix_kind() {
                 span: span(),
             })),
         }]),
-        Statement::Return(Expr::PostfixInc {
+        return_stmt(Expr::PostfixInc {
             expr: Box::new(Expr::Variable {
                 name: "x".to_string(),
                 span: span(),
@@ -2638,9 +2643,7 @@ fn typed_postfix_increment_preserves_postfix_kind() {
 
     let typed_program = check(&program).expect("semantic check should succeed");
 
-    let TypedStatement::Return(expr) = &first_typed_function(&typed_program).body[1] else {
-        panic!("expected return statement");
-    };
+    let expr = typed_return_expr(&first_typed_function(&typed_program).body[1]);
 
     assert_eq!(expr.ty, Type::Int);
     assert!(matches!(expr.kind, TypedExprKind::PostfixInc { .. }));
@@ -2654,7 +2657,7 @@ fn typed_call_preserves_typed_arguments() {
             name_span: span(),
             name: "id".to_string(),
             params: vec![param_with_span(Type::Char, "c", span())],
-            body: vec![Statement::Return(Expr::Variable {
+            body: vec![return_stmt(Expr::Variable {
                 name: "c".to_string(),
                 span: span(),
             })],
@@ -2664,7 +2667,7 @@ fn typed_call_preserves_typed_arguments() {
             name_span: span(),
             name: "main".to_string(),
             params: vec![],
-            body: vec![Statement::Return(call_expr(
+            body: vec![return_stmt(call_expr(
                 "id",
                 vec![Expr::IntLiteral {
                     value: 65,
@@ -2678,9 +2681,7 @@ fn typed_call_preserves_typed_arguments() {
 
     let typed_program = check(&program).expect("semantic check should succeed");
 
-    let TypedStatement::Return(expr) = &typed_function_at(&typed_program, 1).body[0] else {
-        panic!("expected return statement");
-    };
+    let expr = typed_return_expr(&typed_function_at(&typed_program, 1).body[0]);
 
     let TypedExprKind::Call { args, .. } = &expr.kind else {
         panic!("expected call expression");
@@ -2694,7 +2695,7 @@ fn typed_call_preserves_typed_arguments() {
 
 #[test]
 fn rejects_assignment_expression_to_undeclared_local() {
-    let program = main_program(vec![Statement::Return(Expr::Assign {
+    let program = main_program(vec![return_stmt(Expr::Assign {
         op_span: span(),
         target: Box::new(Expr::Variable {
             name: "x".to_string(),
@@ -2716,7 +2717,7 @@ fn rejects_assignment_expression_to_undeclared_local() {
 #[test]
 fn rejects_assignment_to_non_lvalue_expression() {
     let op_span = span_from(10, 11);
-    let program = main_program(vec![Statement::Return(Expr::Assign {
+    let program = main_program(vec![return_stmt(Expr::Assign {
         target: Box::new(Expr::Binary {
             op: BinaryOp::Add,
             op_span: span(),
@@ -2751,7 +2752,7 @@ fn rejects_assignment_to_non_lvalue_expression() {
 #[test]
 fn rejects_compound_assignment_to_non_lvalue_expression() {
     let op_span = span_from(10, 12);
-    let program = main_program(vec![Statement::Return(Expr::CompoundAssign {
+    let program = main_program(vec![return_stmt(Expr::CompoundAssign {
         target: Box::new(Expr::Binary {
             op: BinaryOp::Add,
             op_span: span(),
@@ -2819,7 +2820,7 @@ fn accepts_prefix_and_postfix_increment_decrement() {
             }),
             op_span: span(),
         }),
-        Statement::Return(Expr::PostfixDec {
+        return_stmt(Expr::PostfixDec {
             expr: Box::new(Expr::Variable {
                 name: "x".to_string(),
                 span: span(),
@@ -2834,7 +2835,7 @@ fn accepts_prefix_and_postfix_increment_decrement() {
 #[test]
 fn rejects_increment_of_non_lvalue_expression() {
     let op_span = span_from(10, 12);
-    let program = main_program(vec![Statement::Return(Expr::PostfixInc {
+    let program = main_program(vec![return_stmt(Expr::PostfixInc {
         expr: Box::new(Expr::Binary {
             op: BinaryOp::Add,
             op_span: span(),
@@ -2883,7 +2884,7 @@ fn accepts_initializer_using_earlier_local() {
                 span: span(),
             })),
         }]),
-        Statement::Return(Expr::Variable {
+        return_stmt(Expr::Variable {
             name: "y".to_string(),
             span: span(),
         }),
@@ -2927,7 +2928,7 @@ fn accepts_multiple_local_declarators_left_to_right() {
                 })),
             },
         ]),
-        Statement::Return(Expr::Variable {
+        return_stmt(Expr::Variable {
             name: "b".to_string(),
             span: span(),
         }),
@@ -2948,7 +2949,7 @@ fn accepts_initializer_using_declared_name_itself() {
                 span: span(),
             })),
         }]),
-        Statement::Return(Expr::Variable {
+        return_stmt(Expr::Variable {
             name: "x".to_string(),
             span: span(),
         }),
@@ -2980,7 +2981,7 @@ fn accepts_local_array_declaration_without_value_use() {
                 span: span(),
             })),
         }]),
-        Statement::Return(Expr::Variable {
+        return_stmt(Expr::Variable {
             name: "x".to_string(),
             span: span(),
         }),
@@ -3001,7 +3002,7 @@ fn typed_array_variable_expression_decays_to_pointer_argument() {
                 "p",
                 span(),
             )],
-            body: vec![Statement::Return(Expr::Unary {
+            body: vec![return_stmt(Expr::Unary {
                 op: UnaryOp::Dereference,
                 op_span: span(),
                 expr: Box::new(Expr::Variable {
@@ -3025,7 +3026,7 @@ fn typed_array_variable_expression_decays_to_pointer_argument() {
                     name: "buf".to_string(),
                     init: None,
                 }]),
-                Statement::Return(call_expr(
+                return_stmt(call_expr(
                     "takes_char_pointer",
                     vec![Expr::Variable {
                         name: "buf".to_string(),
@@ -3037,9 +3038,7 @@ fn typed_array_variable_expression_decays_to_pointer_argument() {
     ]);
 
     let typed_program = check(&program).expect("semantic check should succeed");
-    let TypedStatement::Return(expr) = &typed_function_at(&typed_program, 1).body[1] else {
-        panic!("expected return statement");
-    };
+    let expr = typed_return_expr(&typed_function_at(&typed_program, 1).body[1]);
     let TypedExprKind::Call { args, .. } = &expr.kind else {
         panic!("expected call expression");
     };
@@ -3097,7 +3096,7 @@ fn typed_string_literal_has_raw_char_array_type() {
             bytes: b"abc".to_vec(),
             span: span(),
         }),
-        Statement::Return(int_literal(0)),
+        return_stmt(int_literal(0)),
     ]);
 
     let typed_program = check(&program).expect("semantic check should succeed");
@@ -3125,9 +3124,7 @@ fn typed_string_literal_has_raw_char_array_type() {
 #[test]
 fn sizeof_string_literal_uses_raw_array_type_without_decay() {
     let typed_program = check_source("int main() { return sizeof(\"abc\"); }");
-    let TypedStatement::Return(expr) = &first_typed_function(&typed_program).body[0] else {
-        panic!("expected typed return statement");
-    };
+    let expr = typed_return_expr(&first_typed_function(&typed_program).body[0]);
 
     assert_eq!(expr.ty, Type::UnsignedLong);
     assert!(matches!(
@@ -3139,9 +3136,7 @@ fn sizeof_string_literal_uses_raw_array_type_without_decay() {
 #[test]
 fn sizeof_adjacent_string_literals_uses_concatenated_array_size() {
     let typed_program = check_source("int main() { return sizeof(\"foo\" \"bar\"); }");
-    let TypedStatement::Return(expr) = &first_typed_function(&typed_program).body[0] else {
-        panic!("expected typed return statement");
-    };
+    let expr = typed_return_expr(&first_typed_function(&typed_program).body[0]);
 
     assert_eq!(expr.ty, Type::UnsignedLong);
     assert!(matches!(
@@ -3326,9 +3321,7 @@ fn typed_array_variable_expression_decays_to_pointer_binary_operand() {
     let typed_program = check_source("int main() { char buf[3]; char *p = buf; return p == buf; }");
     let main = typed_function_at(&typed_program, 0);
 
-    let TypedStatement::Return(expr) = &main.body[2] else {
-        panic!("expected return statement");
-    };
+    let expr = typed_return_expr(&main.body[2]);
     let TypedExprKind::Binary { right, .. } = &expr.kind else {
         panic!("expected binary expression");
     };
@@ -3381,7 +3374,7 @@ fn accepts_local_array_initializer_list() {
                 },
             ])),
         }]),
-        Statement::Return(Expr::IntLiteral {
+        return_stmt(Expr::IntLiteral {
             value: 0,
             suffix: IntLiteralSuffix::None,
             base: IntLiteralBase::Decimal,
@@ -3417,7 +3410,7 @@ fn accepts_local_array_initializer_list_with_shorter_length() {
                 },
             ])),
         }]),
-        Statement::Return(Expr::IntLiteral {
+        return_stmt(Expr::IntLiteral {
             value: 0,
             suffix: IntLiteralSuffix::None,
             base: IntLiteralBase::Decimal,
@@ -3440,7 +3433,7 @@ fn accepts_empty_local_array_initializer_list() {
             name: "nums".to_string(),
             init: Some(Initializer::List(vec![])),
         }]),
-        Statement::Return(Expr::IntLiteral {
+        return_stmt(Expr::IntLiteral {
             value: 0,
             suffix: IntLiteralSuffix::None,
             base: IntLiteralBase::Decimal,
@@ -3488,7 +3481,7 @@ fn rejects_array_initializer_list_with_larger_length() {
                 },
             ])),
         }]),
-        Statement::Return(Expr::IntLiteral {
+        return_stmt(Expr::IntLiteral {
             value: 0,
             suffix: IntLiteralSuffix::None,
             base: IntLiteralBase::Decimal,
@@ -3521,7 +3514,7 @@ fn rejects_array_initializer_expression() {
                 span: span(),
             })),
         }]),
-        Statement::Return(Expr::IntLiteral {
+        return_stmt(Expr::IntLiteral {
             value: 0,
             suffix: IntLiteralSuffix::None,
             base: IntLiteralBase::Decimal,
@@ -3548,7 +3541,7 @@ fn rejects_scalar_initializer_list() {
                 span: span(),
             }])),
         }]),
-        Statement::Return(Expr::IntLiteral {
+        return_stmt(Expr::IntLiteral {
             value: 0,
             suffix: IntLiteralSuffix::None,
             base: IntLiteralBase::Decimal,
@@ -3586,7 +3579,7 @@ fn rejects_duplicate_local_declaration() {
                 span: span(),
             })),
         }]),
-        Statement::Return(Expr::Variable {
+        return_stmt(Expr::Variable {
             name: "x".to_string(),
             span: span(),
         }),
@@ -3613,7 +3606,7 @@ fn rejects_assignment_to_undeclared_local() {
                 span: span(),
             }),
         }),
-        Statement::Return(Expr::IntLiteral {
+        return_stmt(Expr::IntLiteral {
             value: 0,
             suffix: IntLiteralSuffix::None,
             base: IntLiteralBase::Decimal,
@@ -3628,7 +3621,7 @@ fn rejects_assignment_to_undeclared_local() {
 
 #[test]
 fn rejects_returning_undeclared_local() {
-    let program = main_program(vec![Statement::Return(Expr::Variable {
+    let program = main_program(vec![return_stmt(Expr::Variable {
         name: "x".to_string(),
         span: span(),
     })]);
@@ -3661,7 +3654,7 @@ fn rejects_initializer_using_later_local() {
                 span: span(),
             })),
         }]),
-        Statement::Return(Expr::Variable {
+        return_stmt(Expr::Variable {
             name: "y".to_string(),
             span: span(),
         }),
@@ -3727,7 +3720,7 @@ fn rejects_mixed_declaration_initializer_using_later_local() {
                 span: span(),
             })),
         }]),
-        Statement::Return(Expr::Variable {
+        return_stmt(Expr::Variable {
             name: "y".to_string(),
             span: span(),
         }),
@@ -3763,7 +3756,7 @@ fn rejects_multiple_local_declarator_initializer_using_later_name() {
                 })),
             },
         ]),
-        Statement::Return(Expr::Variable {
+        return_stmt(Expr::Variable {
             name: "a".to_string(),
             span: span(),
         }),
@@ -3788,7 +3781,7 @@ fn rejects_undeclared_local_inside_nested_expression() {
                 span: span(),
             })),
         }]),
-        Statement::Return(Expr::Binary {
+        return_stmt(Expr::Binary {
             op: BinaryOp::Multiply,
             op_span: span(),
             left: Box::new(Expr::Variable {
@@ -3815,7 +3808,7 @@ fn accepts_char_function_return_used_as_char_initializer() {
             name_span: span(),
             name: "id".to_string(),
             params: vec![param_with_span(Type::Char, "x", span())],
-            body: vec![Statement::Return(Expr::Variable {
+            body: vec![return_stmt(Expr::Variable {
                 name: "x".to_string(),
                 span: span(),
             })],
@@ -3838,7 +3831,7 @@ fn accepts_char_function_return_used_as_char_initializer() {
                         }],
                     ))),
                 }]),
-                Statement::Return(Expr::IntLiteral {
+                return_stmt(Expr::IntLiteral {
                     value: 0,
                     suffix: IntLiteralSuffix::None,
                     base: IntLiteralBase::Decimal,
@@ -3865,7 +3858,7 @@ fn accepts_char_initializer_from_int_literal() {
                 span: span(),
             })),
         }]),
-        Statement::Return(Expr::IntLiteral {
+        return_stmt(Expr::IntLiteral {
             value: 0,
             suffix: IntLiteralSuffix::None,
             base: IntLiteralBase::Decimal,
@@ -3900,7 +3893,7 @@ fn accepts_char_initializer_from_int_expression() {
                 }),
             })),
         }]),
-        Statement::Return(Expr::IntLiteral {
+        return_stmt(Expr::IntLiteral {
             value: 0,
             suffix: IntLiteralSuffix::None,
             base: IntLiteralBase::Decimal,
@@ -3937,7 +3930,7 @@ fn accepts_char_assignment_from_int_expression() {
                 span: span(),
             }),
         }),
-        Statement::Return(Expr::IntLiteral {
+        return_stmt(Expr::IntLiteral {
             value: 0,
             suffix: IntLiteralSuffix::None,
             base: IntLiteralBase::Decimal,
@@ -3971,7 +3964,7 @@ fn accepts_int_initializer_from_char_expression() {
                 span: span(),
             })),
         }]),
-        Statement::Return(Expr::Variable {
+        return_stmt(Expr::Variable {
             name: "i".to_string(),
             span: span(),
         }),
@@ -3988,7 +3981,7 @@ fn accepts_char_argument_from_int_expression() {
             name_span: span(),
             name: "takes_char".to_string(),
             params: vec![param_with_span(Type::Char, "x", span())],
-            body: vec![Statement::Return(Expr::IntLiteral {
+            body: vec![return_stmt(Expr::IntLiteral {
                 value: 0,
                 suffix: IntLiteralSuffix::None,
                 base: IntLiteralBase::Decimal,
@@ -4007,7 +4000,7 @@ fn accepts_char_argument_from_int_expression() {
                     name: "i".to_string(),
                     init: None,
                 }]),
-                Statement::Return(call_expr(
+                return_stmt(call_expr(
                     "takes_char",
                     vec![Expr::Variable {
                         name: "i".to_string(),
@@ -4029,7 +4022,7 @@ fn accepts_int_argument_from_char_expression() {
             name_span: span(),
             name: "takes_int".to_string(),
             params: vec![param_with_span(Type::Int, "x", span())],
-            body: vec![Statement::Return(Expr::Variable {
+            body: vec![return_stmt(Expr::Variable {
                 name: "x".to_string(),
                 span: span(),
             })],
@@ -4051,7 +4044,7 @@ fn accepts_int_argument_from_char_expression() {
                         span: span(),
                     })),
                 }]),
-                Statement::Return(call_expr(
+                return_stmt(call_expr(
                     "takes_int",
                     vec![Expr::Variable {
                         name: "c".to_string(),
@@ -4072,7 +4065,7 @@ fn accepts_char_return_from_int_expression() {
         name_span: span(),
         name: "main".to_string(),
         params: vec![],
-        body: vec![Statement::Return(Expr::Binary {
+        body: vec![return_stmt(Expr::Binary {
             op: BinaryOp::Add,
             op_span: span(),
             left: Box::new(Expr::IntLiteral {
@@ -4100,7 +4093,7 @@ fn accepts_int_return_from_char_expression() {
         name_span: span(),
         name: "main".to_string(),
         params: vec![param_with_span(Type::Char, "c", span())],
-        body: vec![Statement::Return(Expr::Variable {
+        body: vec![return_stmt(Expr::Variable {
             name: "c".to_string(),
             span: span(),
         })],
@@ -4124,7 +4117,7 @@ fn accepts_binary_expression_between_char_and_int() {
             name: "i".to_string(),
             init: None,
         }]),
-        Statement::Return(Expr::Binary {
+        return_stmt(Expr::Binary {
             op: BinaryOp::Add,
             op_span: span(),
             left: Box::new(Expr::Variable {
@@ -4155,7 +4148,7 @@ fn accepts_block_using_outer_local() {
                 span: span(),
             })),
         }]),
-        Statement::Block(vec![Statement::Return(Expr::Variable {
+        Statement::Block(vec![return_stmt(Expr::Variable {
             name: "x".to_string(),
             span: span(),
         })]),
@@ -4178,7 +4171,7 @@ fn rejects_use_of_local_after_block_scope_ends() {
                 span: span(),
             })),
         }])]),
-        Statement::Return(Expr::Variable {
+        return_stmt(Expr::Variable {
             name: "x".to_string(),
             span: span(),
         }),
@@ -4215,7 +4208,7 @@ fn accepts_shadowing_in_inner_block() {
                     span: span(),
                 })),
             }]),
-            Statement::Return(Expr::Variable {
+            return_stmt(Expr::Variable {
                 name: "x".to_string(),
                 span: span(),
             }),
@@ -4252,7 +4245,7 @@ fn rejects_duplicate_local_in_same_block() {
                 })),
             }]),
         ]),
-        Statement::Return(Expr::IntLiteral {
+        return_stmt(Expr::IntLiteral {
             value: 0,
             suffix: IntLiteralSuffix::None,
             base: IntLiteralBase::Decimal,
@@ -4304,7 +4297,7 @@ fn accepts_if_else_with_locals_in_branches() {
                         span: span(),
                     })),
                 }]),
-                Statement::Return(Expr::Variable {
+                return_stmt(Expr::Variable {
                     name: "y".to_string(),
                     span: span(),
                 }),
@@ -4319,7 +4312,7 @@ fn accepts_if_else_with_locals_in_branches() {
                         span: span(),
                     })),
                 }]),
-                Statement::Return(Expr::Variable {
+                return_stmt(Expr::Variable {
                     name: "z".to_string(),
                     span: span(),
                 }),
@@ -4373,7 +4366,7 @@ fn accepts_while_with_local_condition_and_body() {
                 },
             )])),
         },
-        Statement::Return(Expr::Variable {
+        return_stmt(Expr::Variable {
             name: "x".to_string(),
             span: span(),
         }),
@@ -4397,7 +4390,7 @@ fn accepts_break_and_continue_inside_loop() {
                 Statement::Break { span: span() },
             ])),
         },
-        Statement::Return(Expr::IntLiteral {
+        return_stmt(Expr::IntLiteral {
             value: 0,
             suffix: IntLiteralSuffix::None,
             base: IntLiteralBase::Decimal,
@@ -4423,7 +4416,7 @@ fn accepts_break_and_continue_inside_do_while_loop() {
                 span: span(),
             },
         },
-        Statement::Return(Expr::IntLiteral {
+        return_stmt(Expr::IntLiteral {
             value: 0,
             suffix: IntLiteralSuffix::None,
             base: IntLiteralBase::Decimal,
@@ -4455,7 +4448,7 @@ fn accepts_break_inside_nested_if_in_loop() {
                 else_branch: None,
             }),
         },
-        Statement::Return(Expr::IntLiteral {
+        return_stmt(Expr::IntLiteral {
             value: 0,
             suffix: IntLiteralSuffix::None,
             base: IntLiteralBase::Decimal,
@@ -4492,14 +4485,14 @@ fn rejects_while_condition_using_undeclared_local() {
                 name: "x".to_string(),
                 span: span(),
             },
-            body: Box::new(Statement::Return(Expr::IntLiteral {
+            body: Box::new(return_stmt(Expr::IntLiteral {
                 value: 0,
                 suffix: IntLiteralSuffix::None,
                 base: IntLiteralBase::Decimal,
                 span: span(),
             })),
         },
-        Statement::Return(Expr::IntLiteral {
+        return_stmt(Expr::IntLiteral {
             value: 0,
             suffix: IntLiteralSuffix::None,
             base: IntLiteralBase::Decimal,
@@ -4522,7 +4515,7 @@ fn rejects_do_while_condition_using_undeclared_local() {
                 span: span(),
             },
         },
-        Statement::Return(Expr::IntLiteral {
+        return_stmt(Expr::IntLiteral {
             value: 0,
             suffix: IntLiteralSuffix::None,
             base: IntLiteralBase::Decimal,
@@ -4537,7 +4530,7 @@ fn rejects_do_while_condition_using_undeclared_local() {
 
 #[test]
 fn rejects_indexing_non_array_non_pointer() {
-    let program = main_program(vec![Statement::Return(Expr::Index {
+    let program = main_program(vec![return_stmt(Expr::Index {
         base: Box::new(Expr::IntLiteral {
             value: 42,
             suffix: IntLiteralSuffix::None,
@@ -4581,7 +4574,7 @@ fn rejects_non_integer_array_index() {
                 ty: Type::Pointer(Box::new(Type::Int)),
                 init: None,
             }]),
-            Statement::Return(Expr::Index {
+            return_stmt(Expr::Index {
                 base: Box::new(Expr::Variable {
                     name: "buf".to_string(),
                     span: span(),
@@ -4628,7 +4621,7 @@ fn rejects_assigning_to_array_variable() {
                 span: span(),
             }),
         }),
-        Statement::Return(Expr::IntLiteral {
+        return_stmt(Expr::IntLiteral {
             value: 0,
             suffix: IntLiteralSuffix::None,
             base: IntLiteralBase::Decimal,
@@ -4651,7 +4644,7 @@ fn typed_integer_literal_suffixes_choose_literal_type() {
     ];
 
     for (suffix, expected_ty) in cases {
-        let program = main_program(vec![Statement::Return(Expr::IntLiteral {
+        let program = main_program(vec![return_stmt(Expr::IntLiteral {
             value: 1,
             suffix,
             base: IntLiteralBase::Decimal,
@@ -4659,9 +4652,7 @@ fn typed_integer_literal_suffixes_choose_literal_type() {
         })]);
 
         let typed_program = check(&program).expect("semantic check should succeed");
-        let TypedStatement::Return(expr) = &first_typed_function(&typed_program).body[0] else {
-            panic!("expected typed return statement");
-        };
+        let expr = typed_return_expr(&first_typed_function(&typed_program).body[0]);
 
         assert_eq!(expr.ty, expected_ty);
     }
@@ -4677,7 +4668,7 @@ fn accepts_integer_literal_suffix_boundary_values() {
     ];
 
     for (value, suffix) in cases {
-        let program = main_program(vec![Statement::Return(Expr::IntLiteral {
+        let program = main_program(vec![return_stmt(Expr::IntLiteral {
             value,
             suffix,
             base: IntLiteralBase::Decimal,
@@ -4714,7 +4705,7 @@ fn rejects_integer_literals_that_do_not_fit_suffix_type() {
     ];
 
     for (value, suffix, expected_message) in cases {
-        let program = main_program(vec![Statement::Return(Expr::IntLiteral {
+        let program = main_program(vec![return_stmt(Expr::IntLiteral {
             value,
             suffix,
             base: IntLiteralBase::Decimal,
@@ -4736,7 +4727,7 @@ fn typed_unsuffixed_hex_literals_use_hex_candidate_types() {
     ];
 
     for (value, expected_ty) in cases {
-        let program = main_program(vec![Statement::Return(Expr::IntLiteral {
+        let program = main_program(vec![return_stmt(Expr::IntLiteral {
             value,
             suffix: IntLiteralSuffix::None,
             base: IntLiteralBase::Hex,
@@ -4744,9 +4735,7 @@ fn typed_unsuffixed_hex_literals_use_hex_candidate_types() {
         })]);
 
         let typed_program = check(&program).expect("semantic check should succeed");
-        let TypedStatement::Return(expr) = &first_typed_function(&typed_program).body[0] else {
-            panic!("expected typed return statement");
-        };
+        let expr = typed_return_expr(&first_typed_function(&typed_program).body[0]);
 
         assert_eq!(expr.ty, expected_ty);
     }
@@ -4754,7 +4743,7 @@ fn typed_unsuffixed_hex_literals_use_hex_candidate_types() {
 
 #[test]
 fn rejects_unsuffixed_hex_literals_that_do_not_fit_current_integer_types() {
-    let program = main_program(vec![Statement::Return(Expr::IntLiteral {
+    let program = main_program(vec![return_stmt(Expr::IntLiteral {
         value: u64::from(u32::MAX) + 1,
         suffix: IntLiteralSuffix::None,
         base: IntLiteralBase::Hex,
@@ -4771,7 +4760,7 @@ fn rejects_unsuffixed_hex_literals_that_do_not_fit_current_integer_types() {
 
 #[test]
 fn typed_scalar_cast_has_target_type() {
-    let program = main_program(vec![Statement::Return(Expr::Cast {
+    let program = main_program(vec![return_stmt(Expr::Cast {
         ty: Type::UnsignedLong,
         span: span(),
         expr: Box::new(Expr::IntLiteral {
@@ -4783,9 +4772,7 @@ fn typed_scalar_cast_has_target_type() {
     })]);
 
     let typed_program = check(&program).expect("semantic check should succeed");
-    let TypedStatement::Return(expr) = &first_typed_function(&typed_program).body[0] else {
-        panic!("expected typed return statement");
-    };
+    let expr = typed_return_expr(&first_typed_function(&typed_program).body[0]);
 
     assert_eq!(expr.ty, Type::UnsignedLong);
 
@@ -4798,21 +4785,19 @@ fn typed_scalar_cast_has_target_type() {
         panic!("expected typed cast expression");
     };
 
-    assert_eq!(*target_ty, Type::UnsignedLong);
+    assert_eq!(target_ty, &Type::UnsignedLong);
     assert_eq!(inner.ty, Type::Int);
 }
 
 #[test]
 fn sizeof_type_folds_to_unsigned_long_literal() {
-    let program = main_program(vec![Statement::Return(Expr::SizeOfType {
+    let program = main_program(vec![return_stmt(Expr::SizeOfType {
         ty: Type::Int,
         span: span(),
     })]);
 
     let typed_program = check(&program).expect("semantic check should succeed");
-    let TypedStatement::Return(expr) = &first_typed_function(&typed_program).body[0] else {
-        panic!("expected typed return statement");
-    };
+    let expr = typed_return_expr(&first_typed_function(&typed_program).body[0]);
 
     assert_eq!(expr.ty, Type::UnsignedLong);
     assert!(matches!(
@@ -4823,15 +4808,13 @@ fn sizeof_type_folds_to_unsigned_long_literal() {
 
 #[test]
 fn sizeof_pointer_type_folds_to_unsigned_long_literal() {
-    let program = main_program(vec![Statement::Return(Expr::SizeOfType {
+    let program = main_program(vec![return_stmt(Expr::SizeOfType {
         ty: Type::Pointer(Box::new(Type::Char)),
         span: span(),
     })]);
 
     let typed_program = check(&program).expect("semantic check should succeed");
-    let TypedStatement::Return(expr) = &first_typed_function(&typed_program).body[0] else {
-        panic!("expected typed return statement");
-    };
+    let expr = typed_return_expr(&first_typed_function(&typed_program).body[0]);
 
     assert_eq!(expr.ty, Type::UnsignedLong);
     assert!(matches!(
@@ -4843,9 +4826,7 @@ fn sizeof_pointer_type_folds_to_unsigned_long_literal() {
 #[test]
 fn sizeof_expression_uses_raw_array_type_without_decay() {
     let typed_program = check_source("int main() { int nums[3]; return sizeof(nums); }");
-    let TypedStatement::Return(expr) = &first_typed_function(&typed_program).body[1] else {
-        panic!("expected typed return statement");
-    };
+    let expr = typed_return_expr(&first_typed_function(&typed_program).body[1]);
 
     assert_eq!(expr.ty, Type::UnsignedLong);
     assert!(matches!(
@@ -4857,9 +4838,7 @@ fn sizeof_expression_uses_raw_array_type_without_decay() {
 #[test]
 fn sizeof_pointer_dereference_uses_pointee_type() {
     let typed_program = check_source("int main() { char *p; return sizeof(*p); }");
-    let TypedStatement::Return(expr) = &first_typed_function(&typed_program).body[1] else {
-        panic!("expected typed return statement");
-    };
+    let expr = typed_return_expr(&first_typed_function(&typed_program).body[1]);
 
     assert_eq!(expr.ty, Type::UnsignedLong);
     assert!(matches!(
@@ -4870,7 +4849,7 @@ fn sizeof_pointer_dereference_uses_pointee_type() {
 
 #[test]
 fn accepts_casts_between_integer_types() {
-    let program = main_program(vec![Statement::Return(Expr::Cast {
+    let program = main_program(vec![return_stmt(Expr::Cast {
         ty: Type::UnsignedChar,
         span: span(),
         expr: Box::new(Expr::Cast {

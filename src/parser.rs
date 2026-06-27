@@ -852,12 +852,34 @@ impl Parser {
                 TokenKind::LParen => {
                     // Function declaration
                     self.expect(&TokenKind::LParen)?;
-                    let params = self.parse_comma_separated_until_terminator(
-                        Self::parse_raw_param,
-                        &TokenKind::RParen,
-                        false,
-                    )?;
+                    let params = if self.peek_kind() == &TokenKind::KwVoid
+                        && self.peek_nth_kind(1) == &TokenKind::RParen
+                    {
+                        self.expect(&TokenKind::KwVoid)?;
+                        vec![]
+                    } else {
+                        let params = self.parse_comma_separated_until_terminator(
+                            Self::parse_raw_param,
+                            &TokenKind::RParen,
+                            false,
+                        )?;
+
+                        params.iter().try_for_each(|p| {
+                            if matches!(p.ty, Type::Void) {
+                                Err(ParseError {
+                                    message: "cannot have 'void' parameter type".to_string(),
+                                    span: p.ty_span,
+                                })
+                            } else {
+                                Ok(())
+                            }
+                        })?;
+
+                        params
+                    };
+
                     self.expect(&TokenKind::RParen)?;
+
                     declarator = Declarator {
                         kind: DeclaratorKind::Function {
                             inner: Box::new(declarator),
@@ -1557,10 +1579,17 @@ impl Parser {
         match self.peek_kind() {
             // Control flow
             TokenKind::KwReturn => {
-                self.expect(&TokenKind::KwReturn)?;
-                let expr = self.parse_expr()?;
+                let token = self.expect(&TokenKind::KwReturn)?;
+                let expr = if self.peek_kind() == &TokenKind::Semicolon {
+                    None
+                } else {
+                    Some(self.parse_expr()?)
+                };
                 self.expect(&TokenKind::Semicolon)?;
-                Ok(Statement::Return(expr))
+                Ok(Statement::Return {
+                    expr,
+                    span: token.span,
+                })
             }
             TokenKind::KwIf => self.parse_if_statement(),
             TokenKind::KwWhile => self.parse_while_statement(),

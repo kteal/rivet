@@ -77,7 +77,10 @@ pub struct LocalDecl {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Statement {
     Decl(Vec<LocalDecl>),
-    Return(Expr),
+    Return {
+        expr: Option<Expr>,
+        span: Span,
+    },
     Block(Vec<Self>),
     If {
         cond: Expr,

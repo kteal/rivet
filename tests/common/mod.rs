@@ -58,6 +58,13 @@ pub fn decl(ty: Type, name: &str, init: Option<Initializer>) -> Statement {
     Statement::Decl(vec![local_decl(ty, name, init)])
 }
 
+pub const fn return_stmt(expr: Expr) -> Statement {
+    Statement::Return {
+        expr: Some(expr),
+        span: span(),
+    }
+}
+
 pub fn variable_expr(name: &str) -> Expr {
     Expr::Variable {
         name: name.to_string(),

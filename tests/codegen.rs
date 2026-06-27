@@ -1,6 +1,6 @@
 mod common;
 
-use common::{call_expr, param, param_with_span, program_with_functions, span};
+use common::{call_expr, param, param_with_span, program_with_functions, return_stmt, span};
 use rivet::ast::{
     BinaryOp, Expr, ExternalDecl, FunctionDef, GlobalDecl, Initializer, IntLiteralBase,
     IntLiteralSuffix, Program, Statement, Type, UnaryOp,
@@ -38,7 +38,7 @@ fn empty_main_function() -> FunctionDef {
         name_span: span(),
         name: "main".to_string(),
         params: vec![],
-        body: vec![Statement::Return(Expr::IntLiteral {
+        body: vec![return_stmt(Expr::IntLiteral {
             value: 0,
             suffix: IntLiteralSuffix::None,
             base: IntLiteralBase::Decimal,
@@ -71,7 +71,7 @@ fn add_function() -> FunctionDef {
         name_span: span(),
         name: "add".to_string(),
         params: vec![param("x"), param("y")],
-        body: vec![Statement::Return(Expr::Binary {
+        body: vec![return_stmt(Expr::Binary {
             op: BinaryOp::Add,
             op_span: span(),
             left: Box::new(Expr::Variable {
@@ -92,7 +92,7 @@ fn right_function() -> FunctionDef {
         name_span: span(),
         name: "right".to_string(),
         params: vec![],
-        body: vec![Statement::Return(Expr::IntLiteral {
+        body: vec![return_stmt(Expr::IntLiteral {
             value: 1,
             suffix: IntLiteralSuffix::None,
             base: IntLiteralBase::Decimal,
@@ -109,7 +109,7 @@ fn generates_multiple_functions() {
             name_span: span(),
             name: "helper".to_string(),
             params: vec![],
-            body: vec![Statement::Return(Expr::IntLiteral {
+            body: vec![return_stmt(Expr::IntLiteral {
                 value: 3,
                 suffix: IntLiteralSuffix::None,
                 base: IntLiteralBase::Decimal,
@@ -121,7 +121,7 @@ fn generates_multiple_functions() {
             name_span: span(),
             name: "main".to_string(),
             params: vec![],
-            body: vec![Statement::Return(Expr::IntLiteral {
+            body: vec![return_stmt(Expr::IntLiteral {
                 value: 0,
                 suffix: IntLiteralSuffix::None,
                 base: IntLiteralBase::Decimal,
@@ -158,7 +158,7 @@ fn resets_local_offsets_between_functions() {
                         span: span(),
                     })),
                 }]),
-                Statement::Return(Expr::Variable {
+                return_stmt(Expr::Variable {
                     name: "x".to_string(),
                     span: span(),
                 }),
@@ -181,7 +181,7 @@ fn resets_local_offsets_between_functions() {
                         span: span(),
                     })),
                 }]),
-                Statement::Return(Expr::Variable {
+                return_stmt(Expr::Variable {
                     name: "x".to_string(),
                     span: span(),
                 }),
@@ -204,7 +204,7 @@ fn computes_frame_layout_per_function() {
             name_span: span(),
             name: "helper".to_string(),
             params: vec![],
-            body: vec![Statement::Return(Expr::IntLiteral {
+            body: vec![return_stmt(Expr::IntLiteral {
                 value: 1,
                 suffix: IntLiteralSuffix::None,
                 base: IntLiteralBase::Decimal,
@@ -250,7 +250,7 @@ fn computes_frame_layout_per_function() {
                         span: span(),
                     })),
                 }]),
-                Statement::Return(Expr::Variable {
+                return_stmt(Expr::Variable {
                     name: "c".to_string(),
                     span: span(),
                 }),
@@ -272,7 +272,7 @@ fn generates_zero_argument_function_call() {
             name_span: span(),
             name: "helper".to_string(),
             params: vec![],
-            body: vec![Statement::Return(Expr::IntLiteral {
+            body: vec![return_stmt(Expr::IntLiteral {
                 value: 3,
                 suffix: IntLiteralSuffix::None,
                 base: IntLiteralBase::Decimal,
@@ -284,7 +284,7 @@ fn generates_zero_argument_function_call() {
             name_span: span(),
             name: "main".to_string(),
             params: vec![],
-            body: vec![Statement::Return(call_expr("helper", vec![]))],
+            body: vec![return_stmt(call_expr("helper", vec![]))],
         },
     ]);
 
@@ -302,7 +302,7 @@ fn uses_call_result_as_expression_operand() {
             name_span: span(),
             name: "helper".to_string(),
             params: vec![],
-            body: vec![Statement::Return(Expr::IntLiteral {
+            body: vec![return_stmt(Expr::IntLiteral {
                 value: 3,
                 suffix: IntLiteralSuffix::None,
                 base: IntLiteralBase::Decimal,
@@ -314,7 +314,7 @@ fn uses_call_result_as_expression_operand() {
             name_span: span(),
             name: "main".to_string(),
             params: vec![],
-            body: vec![Statement::Return(Expr::Binary {
+            body: vec![return_stmt(Expr::Binary {
                 op: BinaryOp::Add,
                 op_span: span(),
                 left: Box::new(call_expr("helper", vec![])),
@@ -342,7 +342,7 @@ fn stores_single_parameter_in_function_frame() {
             name_span: span(),
             name: "id".to_string(),
             params: vec![param("x")],
-            body: vec![Statement::Return(Expr::Variable {
+            body: vec![return_stmt(Expr::Variable {
                 name: "x".to_string(),
                 span: span(),
             })],
@@ -378,7 +378,7 @@ fn generates_function_call_with_arguments() {
             name_span: span(),
             name: "main".to_string(),
             params: vec![],
-            body: vec![Statement::Return(call_expr(
+            body: vec![return_stmt(call_expr(
                 "add",
                 vec![
                     Expr::IntLiteral {
@@ -414,7 +414,7 @@ fn generates_function_call_with_expression_arguments() {
             name_span: span(),
             name: "main".to_string(),
             params: vec![],
-            body: vec![Statement::Return(call_expr(
+            body: vec![return_stmt(call_expr(
                 "add",
                 vec![
                     Expr::Binary {
@@ -499,7 +499,7 @@ fn emits_nothing_for_empty_statement() {
         params: vec![],
         body: vec![
             Statement::Empty,
-            Statement::Return(Expr::IntLiteral {
+            return_stmt(Expr::IntLiteral {
                 value: 7,
                 suffix: IntLiteralSuffix::None,
                 base: IntLiteralBase::Decimal,
@@ -524,7 +524,7 @@ fn emits_expression_statement_and_discards_result() {
             name_span: span(),
             name: "helper".to_string(),
             params: vec![],
-            body: vec![Statement::Return(Expr::IntLiteral {
+            body: vec![return_stmt(Expr::IntLiteral {
                 value: 3,
                 suffix: IntLiteralSuffix::None,
                 base: IntLiteralBase::Decimal,
@@ -538,7 +538,7 @@ fn emits_expression_statement_and_discards_result() {
             params: vec![],
             body: vec![
                 Statement::ExprStatement(call_expr("helper", vec![])),
-                Statement::Return(Expr::IntLiteral {
+                return_stmt(Expr::IntLiteral {
                     value: 7,
                     suffix: IntLiteralSuffix::None,
                     base: IntLiteralBase::Decimal,
@@ -561,7 +561,7 @@ fn generates_return_jump_to_shared_epilogue() {
         name_span: span(),
         name: "main".to_string(),
         params: vec![],
-        body: vec![Statement::Return(Expr::IntLiteral {
+        body: vec![return_stmt(Expr::IntLiteral {
             value: 42,
             suffix: IntLiteralSuffix::None,
             base: IntLiteralBase::Decimal,
@@ -583,7 +583,7 @@ fn generates_logical_and_with_short_circuit_branch() {
             name_span: span(),
             name: "main".to_string(),
             params: vec![],
-            body: vec![Statement::Return(Expr::Binary {
+            body: vec![return_stmt(Expr::Binary {
                 op: BinaryOp::LogicalAnd,
                 op_span: span(),
                 left: Box::new(Expr::IntLiteral {
@@ -618,7 +618,7 @@ fn generates_logical_or_with_short_circuit_branch() {
             name_span: span(),
             name: "main".to_string(),
             params: vec![],
-            body: vec![Statement::Return(Expr::Binary {
+            body: vec![return_stmt(Expr::Binary {
                 op: BinaryOp::LogicalOr,
                 op_span: span(),
                 left: Box::new(Expr::IntLiteral {
@@ -663,7 +663,7 @@ fn generates_single_local_variable() {
                     span: span(),
                 })),
             }]),
-            Statement::Return(Expr::Variable {
+            return_stmt(Expr::Variable {
                 name: "x".to_string(),
                 span: span(),
             }),
@@ -705,7 +705,7 @@ fn generates_local_variable_without_initializer() {
                     span: span(),
                 }),
             }),
-            Statement::Return(Expr::Variable {
+            return_stmt(Expr::Variable {
                 name: "x".to_string(),
                 span: span(),
             }),
@@ -797,7 +797,7 @@ fn generates_load_from_int_global() {
                 name_span: span(),
                 name: "main".to_string(),
                 params: vec![],
-                body: vec![Statement::Return(Expr::Variable {
+                body: vec![return_stmt(Expr::Variable {
                     name: "g".to_string(),
                     span: span(),
                 })],
@@ -830,7 +830,7 @@ fn generates_store_to_int_global() {
                         }),
                         value: Box::new(int_literal(9)),
                     }),
-                    Statement::Return(Expr::Variable {
+                    return_stmt(Expr::Variable {
                         name: "g".to_string(),
                         span: span(),
                     }),
@@ -959,7 +959,7 @@ fn array_local_reserves_full_frame_slot_and_aligns_next_local() {
                     span: span(),
                 })),
             }]),
-            Statement::Return(Expr::Variable {
+            return_stmt(Expr::Variable {
                 name: "x".to_string(),
                 span: span(),
             }),
@@ -1031,7 +1031,7 @@ fn generates_array_initializer_element_stores() {
                     },
                 ])),
             }]),
-            Statement::Return(Expr::IntLiteral {
+            return_stmt(Expr::IntLiteral {
                 value: 0,
                 suffix: IntLiteralSuffix::None,
                 base: IntLiteralBase::Decimal,
@@ -1075,7 +1075,7 @@ fn generates_zero_stores_for_empty_array_initializer_list() {
                 name: "nums".to_string(),
                 init: Some(Initializer::List(vec![])),
             }]),
-            Statement::Return(Expr::IntLiteral {
+            return_stmt(Expr::IntLiteral {
                 value: 0,
                 suffix: IntLiteralSuffix::None,
                 base: IntLiteralBase::Decimal,
@@ -1111,7 +1111,7 @@ fn narrows_char_local_initializer() {
                     span: span(),
                 })),
             }]),
-            Statement::Return(Expr::Variable {
+            return_stmt(Expr::Variable {
                 name: "c".to_string(),
                 span: span(),
             }),
@@ -1142,7 +1142,7 @@ fn loads_char_local_with_unsigned_byte_load() {
                     span: span(),
                 })),
             }]),
-            Statement::Return(Expr::Variable {
+            return_stmt(Expr::Variable {
                 name: "c".to_string(),
                 span: span(),
             }),
@@ -1181,7 +1181,7 @@ fn narrows_char_assignment_through_address() {
                     span: span(),
                 }),
             }),
-            Statement::Return(Expr::Variable {
+            return_stmt(Expr::Variable {
                 name: "c".to_string(),
                 span: span(),
             }),
@@ -1228,7 +1228,7 @@ fn generates_compound_assignment() {
                     span: span(),
                 }),
             }),
-            Statement::Return(Expr::Variable {
+            return_stmt(Expr::Variable {
                 name: "x".to_string(),
                 span: span(),
             }),
@@ -1261,7 +1261,7 @@ fn generates_compound_assignment_expression_result() {
                     span: span(),
                 })),
             }]),
-            Statement::Return(Expr::CompoundAssign {
+            return_stmt(Expr::CompoundAssign {
                 target: Box::new(Expr::Variable {
                     name: "x".to_string(),
                     span: span(),
@@ -1318,7 +1318,7 @@ fn narrows_char_compound_assignment() {
                     span: span(),
                 }),
             }),
-            Statement::Return(Expr::Variable {
+            return_stmt(Expr::Variable {
                 name: "c".to_string(),
                 span: span(),
             }),
@@ -1339,7 +1339,7 @@ fn narrows_char_return_value() {
         name_span: span(),
         name: "main".to_string(),
         params: vec![],
-        body: vec![Statement::Return(Expr::IntLiteral {
+        body: vec![return_stmt(Expr::IntLiteral {
             value: 300,
             suffix: IntLiteralSuffix::None,
             base: IntLiteralBase::Decimal,
@@ -1360,7 +1360,7 @@ fn narrows_char_parameter_on_function_entry() {
             name_span: span(),
             name: "id".to_string(),
             params: vec![param_with_span(Type::Char, "x", span())],
-            body: vec![Statement::Return(Expr::Variable {
+            body: vec![return_stmt(Expr::Variable {
                 name: "x".to_string(),
                 span: span(),
             })],
@@ -1370,7 +1370,7 @@ fn narrows_char_parameter_on_function_entry() {
             name_span: span(),
             name: "main".to_string(),
             params: vec![],
-            body: vec![Statement::Return(call_expr(
+            body: vec![return_stmt(call_expr(
                 "id",
                 vec![Expr::IntLiteral {
                     value: 300,
@@ -1414,7 +1414,7 @@ fn narrows_char_increment_store() {
                 }),
                 op_span: span(),
             }),
-            Statement::Return(Expr::Variable {
+            return_stmt(Expr::Variable {
                 name: "c".to_string(),
                 span: span(),
             }),
@@ -1468,7 +1468,7 @@ fn generates_chained_assignment_expression_right_associative() {
                     }),
                 }),
             }),
-            Statement::Return(Expr::Binary {
+            return_stmt(Expr::Binary {
                 op: BinaryOp::Add,
                 op_span: span(),
                 left: Box::new(Expr::Variable {
@@ -1505,7 +1505,7 @@ fn generates_if_without_else() {
                     base: IntLiteralBase::Decimal,
                     span: span(),
                 },
-                then_branch: Box::new(Statement::Return(Expr::IntLiteral {
+                then_branch: Box::new(return_stmt(Expr::IntLiteral {
                     value: 2,
                     suffix: IntLiteralSuffix::None,
                     base: IntLiteralBase::Decimal,
@@ -1513,7 +1513,7 @@ fn generates_if_without_else() {
                 })),
                 else_branch: None,
             },
-            Statement::Return(Expr::IntLiteral {
+            return_stmt(Expr::IntLiteral {
                 value: 3,
                 suffix: IntLiteralSuffix::None,
                 base: IntLiteralBase::Decimal,
@@ -1544,13 +1544,13 @@ fn generates_if_else() {
                 base: IntLiteralBase::Decimal,
                 span: span(),
             },
-            then_branch: Box::new(Statement::Return(Expr::IntLiteral {
+            then_branch: Box::new(return_stmt(Expr::IntLiteral {
                 value: 2,
                 suffix: IntLiteralSuffix::None,
                 base: IntLiteralBase::Decimal,
                 span: span(),
             })),
-            else_branch: Some(Box::new(Statement::Return(Expr::IntLiteral {
+            else_branch: Some(Box::new(return_stmt(Expr::IntLiteral {
                 value: 3,
                 suffix: IntLiteralSuffix::None,
                 base: IntLiteralBase::Decimal,
@@ -1616,7 +1616,7 @@ fn generates_while_loop() {
                     },
                 )])),
             },
-            Statement::Return(Expr::Variable {
+            return_stmt(Expr::Variable {
                 name: "x".to_string(),
                 span: span(),
             }),
@@ -1648,7 +1648,7 @@ fn generates_break_jump_to_loop_end() {
                 },
                 body: Box::new(Statement::Block(vec![Statement::Break { span: span() }])),
             },
-            Statement::Return(Expr::IntLiteral {
+            return_stmt(Expr::IntLiteral {
                 value: 0,
                 suffix: IntLiteralSuffix::None,
                 base: IntLiteralBase::Decimal,
@@ -1680,7 +1680,7 @@ fn generates_continue_jump_to_loop_start() {
                 },
                 body: Box::new(Statement::Block(vec![Statement::Continue { span: span() }])),
             },
-            Statement::Return(Expr::IntLiteral {
+            return_stmt(Expr::IntLiteral {
                 value: 0,
                 suffix: IntLiteralSuffix::None,
                 base: IntLiteralBase::Decimal,
@@ -1746,7 +1746,7 @@ fn generates_do_while_loop_with_body_before_condition() {
                     span: span(),
                 },
             },
-            Statement::Return(Expr::Variable {
+            return_stmt(Expr::Variable {
                 name: "x".to_string(),
                 span: span(),
             }),
@@ -1782,7 +1782,7 @@ fn generates_continue_in_do_while_to_condition() {
                     span: span(),
                 },
             },
-            Statement::Return(Expr::IntLiteral {
+            return_stmt(Expr::IntLiteral {
                 value: 0,
                 suffix: IntLiteralSuffix::None,
                 base: IntLiteralBase::Decimal,
@@ -1848,7 +1848,7 @@ fn counts_locals_inside_do_while_body_for_frame_size() {
                     span: span(),
                 },
             },
-            Statement::Return(Expr::IntLiteral {
+            return_stmt(Expr::IntLiteral {
                 value: 0,
                 suffix: IntLiteralSuffix::None,
                 base: IntLiteralBase::Decimal,
@@ -1887,7 +1887,7 @@ fn nested_loop_break_uses_inner_loop_end() {
                     body: Box::new(Statement::Block(vec![Statement::Break { span: span() }])),
                 }])),
             },
-            Statement::Return(Expr::IntLiteral {
+            return_stmt(Expr::IntLiteral {
                 value: 0,
                 suffix: IntLiteralSuffix::None,
                 base: IntLiteralBase::Decimal,
@@ -1971,7 +1971,7 @@ fn generates_for_loop_with_init_condition_and_post() {
                 }),
                 body: Box::new(Statement::Block(vec![Statement::Empty])),
             },
-            Statement::Return(Expr::Variable {
+            return_stmt(Expr::Variable {
                 name: "i".to_string(),
                 span: span(),
             }),
@@ -2001,7 +2001,7 @@ fn generates_for_loop_without_condition_as_unconditional_loop() {
                 post: None,
                 body: Box::new(Statement::Block(vec![Statement::Break { span: span() }])),
             },
-            Statement::Return(Expr::IntLiteral {
+            return_stmt(Expr::IntLiteral {
                 value: 0,
                 suffix: IntLiteralSuffix::None,
                 base: IntLiteralBase::Decimal,
@@ -2076,7 +2076,7 @@ fn generates_continue_in_for_loop_to_post_clause() {
                 }),
                 body: Box::new(Statement::Block(vec![Statement::Continue { span: span() }])),
             },
-            Statement::Return(Expr::Variable {
+            return_stmt(Expr::Variable {
                 name: "i".to_string(),
                 span: span(),
             }),
@@ -2161,7 +2161,7 @@ fn counts_locals_inside_for_init_and_body_for_frame_size() {
                     Statement::Break { span: span() },
                 ])),
             },
-            Statement::Return(Expr::IntLiteral {
+            return_stmt(Expr::IntLiteral {
                 value: 0,
                 suffix: IntLiteralSuffix::None,
                 base: IntLiteralBase::Decimal,
@@ -2243,7 +2243,7 @@ fn for_init_scope_can_shadow_outer_local_without_replacing_it() {
                 }),
                 body: Box::new(Statement::Block(vec![Statement::Empty])),
             },
-            Statement::Return(Expr::Variable {
+            return_stmt(Expr::Variable {
                 name: "i".to_string(),
                 span: span(),
             }),
@@ -2317,7 +2317,7 @@ fn counts_locals_inside_while_body_for_frame_size() {
                             span: span(),
                         })),
                     }]),
-                    Statement::Return(Expr::Binary {
+                    return_stmt(Expr::Binary {
                         op: BinaryOp::Add,
                         op_span: span(),
                         left: Box::new(Expr::Binary {
@@ -2339,7 +2339,7 @@ fn counts_locals_inside_while_body_for_frame_size() {
                     }),
                 ])),
             },
-            Statement::Return(Expr::IntLiteral {
+            return_stmt(Expr::IntLiteral {
                 value: 0,
                 suffix: IntLiteralSuffix::None,
                 base: IntLiteralBase::Decimal,
@@ -2365,7 +2365,7 @@ fn loads_char_pointer_dereference_with_byte_load() {
                 "p",
                 span(),
             )],
-            body: vec![Statement::Return(Expr::Unary {
+            body: vec![return_stmt(Expr::Unary {
                 op: UnaryOp::Dereference,
                 op_span: span(),
                 expr: Box::new(Expr::Variable {
@@ -2395,7 +2395,7 @@ fn loads_int_pointer_dereference_with_word_load() {
                 "p",
                 span(),
             )],
-            body: vec![Statement::Return(Expr::Unary {
+            body: vec![return_stmt(Expr::Unary {
                 op: UnaryOp::Dereference,
                 op_span: span(),
                 expr: Box::new(Expr::Variable {
@@ -2442,7 +2442,7 @@ fn stores_through_int_pointer_dereference() {
                         span: span(),
                     }),
                 }),
-                Statement::Return(Expr::IntLiteral {
+                return_stmt(Expr::IntLiteral {
                     value: 0,
                     suffix: IntLiteralSuffix::None,
                     base: IntLiteralBase::Decimal,
@@ -2490,7 +2490,7 @@ fn stores_through_char_pointer_dereference_with_byte_store() {
                         span: span(),
                     }),
                 }),
-                Statement::Return(Expr::IntLiteral {
+                return_stmt(Expr::IntLiteral {
                     value: 0,
                     suffix: IntLiteralSuffix::None,
                     base: IntLiteralBase::Decimal,
@@ -2539,7 +2539,7 @@ fn generates_compound_assignment_through_pointer_dereference() {
                         span: span(),
                     }),
                 }),
-                Statement::Return(Expr::IntLiteral {
+                return_stmt(Expr::IntLiteral {
                     value: 0,
                     suffix: IntLiteralSuffix::None,
                     base: IntLiteralBase::Decimal,
@@ -2569,7 +2569,7 @@ fn generates_postfix_increment_through_pointer_dereference() {
                 "p",
                 span(),
             )],
-            body: vec![Statement::Return(Expr::PostfixInc {
+            body: vec![return_stmt(Expr::PostfixInc {
                 expr: Box::new(Expr::Unary {
                     op: UnaryOp::Dereference,
                     op_span: span(),
@@ -2619,7 +2619,7 @@ fn scales_int_pointer_compound_assignment_by_pointee_size() {
                     span: span(),
                 }),
             }),
-            Statement::Return(Expr::IntLiteral {
+            return_stmt(Expr::IntLiteral {
                 value: 0,
                 suffix: IntLiteralSuffix::None,
                 base: IntLiteralBase::Decimal,
@@ -2656,7 +2656,7 @@ fn scales_int_pointer_increment_by_pointee_size() {
                 }),
                 op_span: span(),
             }),
-            Statement::Return(Expr::IntLiteral {
+            return_stmt(Expr::IntLiteral {
                 value: 0,
                 suffix: IntLiteralSuffix::None,
                 base: IntLiteralBase::Decimal,
@@ -2693,7 +2693,7 @@ fn leaves_char_pointer_increment_unscaled() {
                 }),
                 op_span: span(),
             }),
-            Statement::Return(Expr::IntLiteral {
+            return_stmt(Expr::IntLiteral {
                 value: 0,
                 suffix: IntLiteralSuffix::None,
                 base: IntLiteralBase::Decimal,
