@@ -1,7 +1,8 @@
 use rivet::ast::{IntLiteralBase, IntLiteralSuffix};
 use rivet::lexer::{Token, TokenKind, lex};
-use rivet::preprocess::{PreprocessError, preprocess, splice_escaped_newlines};
+use rivet::preprocess::{PreprocessError, preprocess, preprocess_file, splice_escaped_newlines};
 use rivet::source::DUMMY_FILE_ID;
+use std::fs;
 
 fn preprocess_kinds(source: &str) -> Vec<TokenKind> {
     preprocess_source(source)
@@ -15,6 +16,19 @@ fn preprocess_source(source: &str) -> Result<Vec<Token>, PreprocessError> {
     let source = splice_escaped_newlines(source);
     let tokens = lex(&source, DUMMY_FILE_ID).expect("lexing should succeed");
     preprocess(tokens)
+}
+
+fn preprocess_file_kinds(source: &str) -> Vec<TokenKind> {
+    let tempdir = tempfile::tempdir().expect("failed to create temporary directory");
+    let path = tempdir.path().join("source.c");
+    fs::write(&path, source).expect("failed to write temporary source file");
+
+    preprocess_file(&path)
+        .expect("preprocessing file should succeed")
+        .tokens
+        .into_iter()
+        .map(|token| token.kind)
+        .collect()
 }
 
 #[test]
@@ -382,6 +396,22 @@ fn inactive_unsupported_directive_is_skipped() {
         vec![
             TokenKind::KwInt,
             TokenKind::Ident("x".to_string()),
+            TokenKind::Semicolon,
+            TokenKind::Eof,
+        ]
+    );
+}
+
+#[test]
+fn angle_include_uses_reduced_include_directory() {
+    assert_eq!(
+        preprocess_file_kinds("#include <angle_test.h>\nint y;\n"),
+        vec![
+            TokenKind::KwInt,
+            TokenKind::Ident("included".to_string()),
+            TokenKind::Semicolon,
+            TokenKind::KwInt,
+            TokenKind::Ident("y".to_string()),
             TokenKind::Semicolon,
             TokenKind::Eof,
         ]

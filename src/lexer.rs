@@ -76,6 +76,7 @@ pub enum TokenKind {
     Eof,
     Hash,
     Newline,
+    Dot,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -205,6 +206,7 @@ impl<'a> Lexer<'a> {
                     let token = self.lex_string_literal()?;
                     self.push_token(token);
                 }
+                '.' => self.advance_and_push(TokenKind::Dot),
                 _ => {
                     let start = self.offset;
                     let ch = self.advance().unwrap();

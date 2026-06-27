@@ -184,11 +184,12 @@ Lexing and preprocessing:
 - [x] simple function-like `#define` macros with argument substitution and nested expansion
 - [x] conditional compilation with `#ifdef`, `#ifndef`, `#else`, and `#endif`
 - [x] local quoted `#include "file.h"` handling
+- [x] angle `#include <file.h>` handling through the reduced test include directory
 - [x] string literal preprocessing tokens for quoted include paths
 - [x] file-aware token spans with `SourceMap` / `FileId`
 - [x] byte-backed string literal tokens with basic escape decoding
 - [ ] full macro expansion semantics: hide sets, stringification, token pasting, variadics, and exact whitespace-sensitive function-like macro definition rules
-- [ ] full `#include` behavior: system includes and include search paths
+- [ ] full `#include` behavior: configurable include paths, real system headers, and macro-expanded include names
 
 Program structure and declarations:
 
@@ -325,6 +326,7 @@ Toolchain and library compatibility:
 - [x] diagnostics with source-map-backed file, line, and column locations
 - [x] full Adler-32 compatibility fixture with reduced local `zutil.h`
 - [x] RV32 dynamic-libc QEMU runner using the Nix-provided cross GCC/glibc toolchain
+- [x] reduced standard header fixtures for hosted C compatibility tests
 - [ ] macro expansion provenance in diagnostics
 - [ ] standard header strategy
 - [ ] minimal hosted C runtime integration

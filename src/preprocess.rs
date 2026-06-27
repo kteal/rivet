@@ -174,6 +174,17 @@ impl TokenScanner {
     }
 }
 
+enum IncludeKind {
+    Quoted,
+    Angle,
+}
+
+struct IncludeName {
+    kind: IncludeKind,
+    name: String,
+    span: Span,
+}
+
 struct InputScanner {
     tokens: Vec<Token>,
     pos: usize,
@@ -250,9 +261,8 @@ impl InputScanner {
         }
     }
 
-    fn expect_str_literal(&mut self) -> Result<(String, Span), PreprocessError> {
+    fn expect_include_name(&mut self) -> Result<IncludeName, PreprocessError> {
         let token = self.advance();
-
         match token {
             Token {
                 kind: TokenKind::StringLiteral(bytes),
@@ -262,13 +272,80 @@ impl InputScanner {
                     message: "failed to convert bytes to string".to_string(),
                     span,
                 })?;
-                Ok((name, token.span))
+                return Ok(IncludeName {
+                    kind: IncludeKind::Quoted,
+                    name,
+                    span,
+                });
             }
-
-            token => Err(PreprocessError {
-                message: format!("expected string literal token, got '{:?}'", token.kind),
-                span: token.span,
-            }),
+            Token {
+                kind: TokenKind::Less,
+                span,
+            } => {
+                let mut include_path = String::new();
+                loop {
+                    match self.peek() {
+                        Token {
+                            kind: TokenKind::Ident(name),
+                            ..
+                        } => {
+                            include_path.push_str(name);
+                            self.advance();
+                        }
+                        Token {
+                            kind: TokenKind::Dot,
+                            ..
+                        } => {
+                            include_path.push('.');
+                            self.advance();
+                        }
+                        Token {
+                            kind: TokenKind::IntLiteral { value, .. },
+                            ..
+                        } => {
+                            include_path.push_str(&value.to_string());
+                            self.advance();
+                        }
+                        Token {
+                            kind: TokenKind::Slash,
+                            ..
+                        } => {
+                            include_path.push('/');
+                            self.advance();
+                        }
+                        Token {
+                            kind: TokenKind::Greater,
+                            ..
+                        } => {
+                            self.advance();
+                            break;
+                        }
+                        token => {
+                            return Err(PreprocessError {
+                                message: format!("unexpected '{:?}' in include path", token.kind),
+                                span: token.span,
+                            });
+                        }
+                    }
+                }
+                if include_path.is_empty() {
+                    return Err(PreprocessError {
+                        message: "empty angle include path".to_string(),
+                        span,
+                    });
+                }
+                Ok(IncludeName {
+                    kind: IncludeKind::Angle,
+                    name: include_path,
+                    span,
+                })
+            }
+            token => {
+                return Err(PreprocessError {
+                    message: "expected include path".to_string(),
+                    span: token.span,
+                });
+            }
         }
     }
 
@@ -301,7 +378,7 @@ impl InputScanner {
         output
     }
 
-    fn resolve_include_path(
+    fn resolve_quoted_include_path(
         &self,
         file_name: &str,
         span: Span,
@@ -327,6 +404,7 @@ struct Preprocessor {
     macros: HashMap<String, MacroDef>,
     conditionals: Vec<ConditionalFrame>,
     source_map: SourceMap,
+    include_dirs: Vec<PathBuf>,
 }
 
 impl Preprocessor {
@@ -335,6 +413,7 @@ impl Preprocessor {
             macros: HashMap::new(),
             conditionals: vec![],
             source_map: SourceMap::new(),
+            include_dirs: vec![PathBuf::from("tests/programs/include")],
         }
     }
 
@@ -342,6 +421,23 @@ impl Preprocessor {
         self.conditionals
             .last()
             .is_none_or(|frame| frame.current_active)
+    }
+
+    fn resolve_angle_include_path(
+        &self,
+        file_name: &str,
+        span: Span,
+    ) -> Result<PathBuf, PreprocessError> {
+        for dir in &self.include_dirs {
+            let candidate = dir.join(file_name);
+            if candidate.exists() {
+                return Ok(candidate);
+            }
+        }
+        Err(PreprocessError {
+            message: format!("cannot resolve angle include '<{file_name}>'"),
+            span,
+        })
     }
 
     fn parse_macro_params(scanner: &mut InputScanner) -> Result<Vec<String>, PreprocessError> {
@@ -472,10 +568,15 @@ impl Preprocessor {
 
         scanner.expect(&TokenKind::Hash)?;
         scanner.expect_ident()?; // "include"
-        let (file_name, file_name_span) = scanner.expect_str_literal()?;
+        let include = scanner.expect_include_name()?;
         scanner.skip_until_newline();
 
-        let resolved_path = scanner.resolve_include_path(&file_name, file_name_span)?;
+        let resolved_path = match include.kind {
+            IncludeKind::Quoted => {
+                scanner.resolve_quoted_include_path(&include.name, include.span)?
+            }
+            IncludeKind::Angle => self.resolve_angle_include_path(&include.name, include.span)?,
+        };
         let mut included_tokens = self.process_file(&resolved_path)?;
         if included_tokens.last().expect("got no included tokens").kind == TokenKind::Eof {
             included_tokens.pop();
