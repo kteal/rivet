@@ -4889,36 +4889,36 @@ fn accepts_casts_between_integer_types() {
 }
 
 #[test]
-fn rejects_cast_from_pointer_to_integer() {
-    let program = program_with_functions(vec![FunctionDef {
-        return_type: Type::Int,
-        name_span: span(),
-        name: "main".to_string(),
-        params: vec![],
-        body: vec![
-            Statement::Decl(vec![rivet::ast::LocalDecl {
-                ty: Type::Pointer(Box::new(Type::Char)),
-                name: "p".to_string(),
-                name_span: span(),
-                init: Some(Initializer::Expr(Expr::IntLiteral {
-                    value: 0,
-                    suffix: IntLiteralSuffix::None,
-                    base: IntLiteralBase::Decimal,
-                    span: span(),
-                })),
-            }]),
-            Statement::Return(Expr::Cast {
-                ty: Type::Int,
-                span: span(),
-                expr: Box::new(Expr::Variable {
-                    name: "p".to_string(),
-                    span: span(),
-                }),
-            }),
-        ],
-    }]);
+fn accepts_explicit_pointer_to_integer_cast() {
+    check_source("int main() { char *p = \"abc\"; return (unsigned long)p != 0; }");
+}
 
-    let err = check(&program).expect_err("semantic check should fail");
+#[test]
+fn accepts_explicit_integer_to_pointer_cast() {
+    check_source("int main() { unsigned long x = 0; char *p = (char *)x; return p == 0; }");
+}
 
-    assert_eq!(err.message, "cannot cast type 'char *' to 'int'");
+#[test]
+fn accepts_explicit_pointer_to_pointer_cast_between_different_object_pointers() {
+    check_source("int main() { int x = 0; int *ip = &x; char *cp = (char *)ip; return cp != 0; }");
+}
+
+#[test]
+fn still_rejects_implicit_pointer_to_integer_assignment() {
+    let err = check_source_err("int main() { char *p = \"abc\"; unsigned long x = p; return 0; }");
+
+    assert_eq!(
+        err.message,
+        "cannot assign value of type 'char *' to variable of type 'unsigned long'"
+    );
+}
+
+#[test]
+fn still_rejects_implicit_nonzero_integer_to_pointer_assignment() {
+    let err = check_source_err("int main() { char *p = 123; return 0; }");
+
+    assert_eq!(
+        err.message,
+        "cannot assign value of type 'int' to variable of type 'char *'"
+    );
 }

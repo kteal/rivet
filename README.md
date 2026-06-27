@@ -224,6 +224,7 @@ Expressions and operators:
 - [ ] conditional operator `?:`
 - [ ] comma operator
 - [x] scalar casts
+- [x] explicit pointer/integer and pointer/pointer casts
 - [x] `sizeof` for supported scalar, pointer, array, and function-designator expression types
 - [ ] `_Alignof` / `alignof`
 - [x] address-of: `&`
@@ -248,6 +249,7 @@ Types and semantic analysis:
 - [x] `void *` compatibility with object pointers in assignments, calls, returns, and comparisons
 - [x] pointer dereference type checking
 - [x] pointer arithmetic with integer offsets
+- [x] explicit pointer/integer casts while keeping implicit pointer/integer assignments restricted
 - [ ] full integer conversion rules
 - [ ] remaining signedness spelling and combinations
 - [ ] other non-`int` scalar types: `short`, `unsigned short`

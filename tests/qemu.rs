@@ -160,6 +160,21 @@ fn qemu_cast_programs_return_expected_values() {
         "int main() {\n    return (const unsigned char)511;\n}\n",
         255,
     );
+    run_qemu_case(
+        "pointer-integer-pointer-cast-round-trip",
+        "int main() {\n    char *p = \"abc\";\n    unsigned long x = (unsigned long)p;\n    char *q = (char *)x;\n    return q[1];\n}\n",
+        98,
+    );
+    run_qemu_case(
+        "zero-integer-cast-to-null-pointer",
+        "int main() {\n    unsigned long x = 0;\n    char *p = (char *)x;\n    return p == 0;\n}\n",
+        1,
+    );
+    run_qemu_case(
+        "object-pointer-to-object-pointer-cast",
+        "int main() {\n    int value = 0;\n    int *ip = &value;\n    char *cp = (char *)ip;\n    return cp != 0;\n}\n",
+        1,
+    );
 }
 
 #[test]

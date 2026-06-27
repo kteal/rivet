@@ -871,6 +871,10 @@ impl Checker {
         })
     }
 
+    const fn is_valid_cast(target: &Type, source: &Type) -> bool {
+        (target.is_integer() || target.is_pointer()) && (source.is_integer() || source.is_pointer())
+    }
+
     fn check_cast_expr(
         &self,
         ty: &Type,
@@ -879,7 +883,7 @@ impl Checker {
     ) -> Result<TypedExpr, SemanticError> {
         let typed_expr = self.check_expr(expr)?;
 
-        if !ty.is_integer() || !typed_expr.ty.is_integer() {
+        if !Self::is_valid_cast(ty, &typed_expr.ty) {
             return Err(SemanticError {
                 message: format!("cannot cast type '{}' to '{ty}'", typed_expr.ty),
                 span,
