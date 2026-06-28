@@ -412,6 +412,80 @@ fn if_treats_empty_object_like_macro_as_zero() {
 }
 
 #[test]
+fn if_supports_logical_not() {
+    assert_eq!(
+        preprocess_kinds("#define A 0\n#if !A\nint x;\n#endif\n#if !1\nint y;\n#endif\n"),
+        vec![
+            TokenKind::KwInt,
+            TokenKind::Ident("x".to_string()),
+            TokenKind::Semicolon,
+            TokenKind::Eof,
+        ]
+    );
+}
+
+#[test]
+fn if_supports_logical_and_or() {
+    assert_eq!(
+        preprocess_kinds(
+            "#define A 1\n#define B 0\n#if A && !B\nint x;\n#endif\n#if B || MISSING\nint y;\n#endif\n"
+        ),
+        vec![
+            TokenKind::KwInt,
+            TokenKind::Ident("x".to_string()),
+            TokenKind::Semicolon,
+            TokenKind::Eof,
+        ]
+    );
+}
+
+#[test]
+fn if_supports_relational_and_equality_operators() {
+    assert_eq!(
+        preprocess_kinds(
+            "#define VERSION 4\n#if VERSION >= 4 && VERSION != 0\nint x;\n#endif\n#if VERSION < 4 || VERSION == 0\nint y;\n#endif\n"
+        ),
+        vec![
+            TokenKind::KwInt,
+            TokenKind::Ident("x".to_string()),
+            TokenKind::Semicolon,
+            TokenKind::Eof,
+        ]
+    );
+}
+
+#[test]
+fn if_supports_parenthesized_expressions() {
+    assert_eq!(
+        preprocess_kinds("#define A 1\n#define B 0\n#if (A || B) && !MISSING\nint x;\n#endif\n"),
+        vec![
+            TokenKind::KwInt,
+            TokenKind::Ident("x".to_string()),
+            TokenKind::Semicolon,
+            TokenKind::Eof,
+        ]
+    );
+}
+
+#[test]
+fn if_supports_defined_operator_forms() {
+    assert_eq!(
+        preprocess_kinds(
+            "#define A 1\n#if defined(A) && !defined(MISSING)\nint x;\n#endif\n#if defined A || defined MISSING\nint y;\n#endif\n"
+        ),
+        vec![
+            TokenKind::KwInt,
+            TokenKind::Ident("x".to_string()),
+            TokenKind::Semicolon,
+            TokenKind::KwInt,
+            TokenKind::Ident("y".to_string()),
+            TokenKind::Semicolon,
+            TokenKind::Eof,
+        ]
+    );
+}
+
+#[test]
 fn else_switches_to_untaken_branch() {
     assert_eq!(
         preprocess_kinds("#ifdef A\nint x;\n#else\nint y;\n#endif\n"),

@@ -185,6 +185,252 @@ struct IncludeName {
     span: Span,
 }
 
+struct IfExprParser<'a> {
+    tokens: &'a [Token],
+    pos: usize,
+    macros: &'a HashMap<String, MacroDef>,
+    fallback_span: Span,
+}
+
+impl<'a> IfExprParser<'a> {
+    const fn new(
+        tokens: &'a [Token],
+        macros: &'a HashMap<String, MacroDef>,
+        fallback_span: Span,
+    ) -> Self {
+        Self {
+            tokens,
+            pos: 0,
+            macros,
+            fallback_span,
+        }
+    }
+
+    const fn is_done(&self) -> bool {
+        self.pos == self.tokens.len()
+    }
+
+    fn peek(&self) -> Option<&'a Token> {
+        if self.is_done() {
+            None
+        } else {
+            Some(&self.tokens[self.pos])
+        }
+    }
+
+    fn peek_kind(&self) -> Option<&'a TokenKind> {
+        self.peek().map(|token| &token.kind)
+    }
+
+    fn advance(&mut self) -> Option<&'a Token> {
+        if self.is_done() {
+            None
+        } else {
+            let token = &self.tokens[self.pos];
+            self.pos += 1;
+            Some(token)
+        }
+    }
+
+    fn expect(&mut self, expected: &TokenKind, span: Span) -> Result<(), PreprocessError> {
+        let Some(token) = self.advance() else {
+            return Err(PreprocessError {
+                message: format!("expected {expected:?}, reached end of #if expression"),
+                span,
+            });
+        };
+
+        if &token.kind == expected {
+            Ok(())
+        } else {
+            Err(PreprocessError {
+                message: format!("expected {expected:?}, found {:?}", token.kind),
+                span: token.span,
+            })
+        }
+    }
+
+    fn parse(mut self) -> Result<u64, PreprocessError> {
+        if self.is_done() {
+            return Err(PreprocessError {
+                message: "expected #if expression".to_string(),
+                span: self.fallback_span,
+            });
+        }
+
+        let value = self.parse_logical_or()?;
+        if let Some(token) = self.peek() {
+            return Err(PreprocessError {
+                message: format!("unexpected token in #if expression: {:?}", token.kind),
+                span: token.span,
+            });
+        }
+        Ok(value)
+    }
+
+    fn parse_logical_or(&mut self) -> Result<u64, PreprocessError> {
+        let mut value = self.parse_logical_and()?;
+        while self.peek_kind() == Some(&TokenKind::PipePipe) {
+            self.advance();
+            let right = self.parse_logical_and()?;
+            value = u64::from(value != 0 || right != 0);
+        }
+        Ok(value)
+    }
+
+    fn parse_logical_and(&mut self) -> Result<u64, PreprocessError> {
+        let mut value = self.parse_equality()?;
+        while self.peek_kind() == Some(&TokenKind::AmpersandAmpersand) {
+            self.advance();
+            let right = self.parse_equality()?;
+            value = u64::from(value != 0 && right != 0);
+        }
+        Ok(value)
+    }
+
+    fn parse_equality(&mut self) -> Result<u64, PreprocessError> {
+        let mut value = self.parse_relational()?;
+        loop {
+            match self.peek_kind() {
+                Some(TokenKind::EqualEqual) => {
+                    self.advance();
+                    let right = self.parse_relational()?;
+                    value = u64::from(value == right);
+                }
+                Some(TokenKind::BangEqual) => {
+                    self.advance();
+                    let right = self.parse_relational()?;
+                    value = u64::from(value != right);
+                }
+                _ => return Ok(value),
+            }
+        }
+    }
+
+    fn parse_relational(&mut self) -> Result<u64, PreprocessError> {
+        let mut value = self.parse_unary()?;
+        loop {
+            match self.peek_kind() {
+                Some(TokenKind::Less) => {
+                    self.advance();
+                    let right = self.parse_unary()?;
+                    value = u64::from(value < right);
+                }
+                Some(TokenKind::LessEqual) => {
+                    self.advance();
+                    let right = self.parse_unary()?;
+                    value = u64::from(value <= right);
+                }
+                Some(TokenKind::Greater) => {
+                    self.advance();
+                    let right = self.parse_unary()?;
+                    value = u64::from(value > right);
+                }
+                Some(TokenKind::GreaterEqual) => {
+                    self.advance();
+                    let right = self.parse_unary()?;
+                    value = u64::from(value >= right);
+                }
+                _ => return Ok(value),
+            }
+        }
+    }
+
+    fn parse_unary(&mut self) -> Result<u64, PreprocessError> {
+        if self.peek_kind() == Some(&TokenKind::Bang) {
+            self.advance();
+            let value = self.parse_unary()?;
+            return Ok(u64::from(value == 0));
+        }
+        self.parse_primary()
+    }
+
+    fn parse_primary(&mut self) -> Result<u64, PreprocessError> {
+        let Some(token) = self.advance() else {
+            return Err(PreprocessError {
+                message: "expected #if expression".to_string(),
+                span: self.fallback_span,
+            });
+        };
+
+        match &token.kind {
+            TokenKind::IntLiteral { value, .. } => Ok(*value),
+            TokenKind::Ident(name) if name == "defined" => self.parse_defined(token.span),
+            TokenKind::Ident(name) => self.eval_identifier(name, token.span),
+            TokenKind::LParen => {
+                let value = self.parse_logical_or()?;
+                self.expect(&TokenKind::RParen, token.span)?;
+                Ok(value)
+            }
+            _ => Err(PreprocessError {
+                message: format!("unexpected token in #if expression: {:?}", token.kind),
+                span: token.span,
+            }),
+        }
+    }
+
+    fn parse_defined(&mut self, defined_span: Span) -> Result<u64, PreprocessError> {
+        if self.peek_kind() == Some(&TokenKind::LParen) {
+            self.advance();
+            let Some(token) = self.advance() else {
+                return Err(PreprocessError {
+                    message: "expected macro name after 'defined('".to_string(),
+                    span: defined_span,
+                });
+            };
+            let TokenKind::Ident(name) = &token.kind else {
+                return Err(PreprocessError {
+                    message: "expected macro name after 'defined('".to_string(),
+                    span: token.span,
+                });
+            };
+            let is_defined = self.macros.contains_key(name);
+            self.expect(&TokenKind::RParen, token.span)?;
+            return Ok(u64::from(is_defined));
+        }
+
+        let Some(token) = self.advance() else {
+            return Err(PreprocessError {
+                message: "expected macro name after 'defined'".to_string(),
+                span: defined_span,
+            });
+        };
+        let TokenKind::Ident(name) = &token.kind else {
+            return Err(PreprocessError {
+                message: "expected macro name after 'defined'".to_string(),
+                span: token.span,
+            });
+        };
+        Ok(u64::from(self.macros.contains_key(name)))
+    }
+
+    fn eval_identifier(&self, name: &str, span: Span) -> Result<u64, PreprocessError> {
+        let Some(macro_def) = self.macros.get(name) else {
+            return Ok(0);
+        };
+
+        match macro_def {
+            MacroDef::ObjectLike(replacement) => match replacement.as_slice() {
+                [
+                    Token {
+                        kind: TokenKind::IntLiteral { value, .. },
+                        ..
+                    },
+                ] => Ok(*value),
+                [] => Ok(0),
+                _ => Err(PreprocessError {
+                    message: "unsupported #if macro replacement".to_string(),
+                    span,
+                }),
+            },
+            MacroDef::FunctionLike { .. } => Err(PreprocessError {
+                message: "unsupported #if expression".to_string(),
+                span,
+            }),
+        }
+    }
+}
+
 struct InputScanner {
     tokens: Vec<Token>,
     pos: usize,
@@ -583,48 +829,7 @@ impl Preprocessor {
     }
 
     fn eval_if_expr(&self, tokens: &[Token], span: Span) -> Result<u64, PreprocessError> {
-        match tokens {
-            [
-                Token {
-                    kind: TokenKind::IntLiteral { value, .. },
-                    ..
-                },
-            ] => Ok(*value),
-            [
-                Token {
-                    kind: TokenKind::Ident(name),
-                    span,
-                },
-            ] => {
-                let Some(macro_def) = self.macros.get(name) else {
-                    return Ok(0);
-                };
-                if let MacroDef::ObjectLike(replacement) = macro_def {
-                    match replacement.as_slice() {
-                        [
-                            Token {
-                                kind: TokenKind::IntLiteral { value, .. },
-                                ..
-                            },
-                        ] => Ok(*value),
-                        [] => Ok(0),
-                        _ => Err(PreprocessError {
-                            message: "unsupported #if macro replacement".to_string(),
-                            span: *span,
-                        }),
-                    }
-                } else {
-                    Err(PreprocessError {
-                        message: "unsupported #if expression".to_string(),
-                        span: *span,
-                    })
-                }
-            }
-            _ => Err(PreprocessError {
-                message: "unsupported #if expression".to_string(),
-                span,
-            }),
-        }
+        IfExprParser::new(tokens, &self.macros, span).parse()
     }
 
     fn parse_if(&mut self, scanner: &mut InputScanner) -> Result<(), PreprocessError> {
