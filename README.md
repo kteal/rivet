@@ -184,12 +184,12 @@ Lexing and preprocessing:
 - [x] simple function-like `#define` macros with argument substitution and nested expansion
 - [x] conditional compilation with `#ifdef`, `#ifndef`, `#else`, and `#endif`
 - [x] `#if` expression evaluation for integer macros, `defined`, logical operators, and comparisons
+- [x] `#elif` conditional branches
 - [x] local quoted `#include "file.h"` handling
 - [x] angle `#include <file.h>` handling through the reduced test include directory
 - [x] string literal preprocessing tokens for quoted include paths
 - [x] file-aware token spans with `SourceMap` / `FileId`
 - [x] byte-backed string literal tokens with basic escape decoding
-- [ ] `#elif` conditional branches
 - [ ] full macro expansion semantics: hide sets, stringification, token pasting, variadics, and exact whitespace-sensitive function-like macro definition rules
 - [ ] full `#include` behavior: configurable include paths, real system headers, and macro-expanded include names
 

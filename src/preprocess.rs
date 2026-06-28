@@ -828,16 +828,12 @@ impl Preprocessor {
         Ok(included_tokens)
     }
 
-    fn eval_if_expr(&self, tokens: &[Token], span: Span) -> Result<u64, PreprocessError> {
-        IfExprParser::new(tokens, &self.macros, span).parse()
-    }
-
     fn parse_if(&mut self, scanner: &mut InputScanner) -> Result<(), PreprocessError> {
         scanner.expect(&TokenKind::Hash)?;
         let if_token = scanner.expect(&TokenKind::KwIf)?;
         let tokens = scanner.collect_until_newline();
 
-        let condition_met = self.eval_if_expr(&tokens, if_token.span)? != 0;
+        let condition_met = IfExprParser::new(&tokens, &self.macros, if_token.span).parse()? != 0;
         let parent_active = self.is_active();
         self.conditionals.push(ConditionalFrame {
             parent_active,
@@ -845,6 +841,43 @@ impl Preprocessor {
             branch_taken: condition_met,
             saw_else: false,
         });
+        Ok(())
+    }
+
+    fn parse_elif(&mut self, scanner: &mut InputScanner) -> Result<(), PreprocessError> {
+        scanner.expect(&TokenKind::Hash)?;
+        let (_, elif_span) = scanner.expect_ident()?; // "elif"
+
+        if self.conditionals.is_empty() {
+            scanner.skip_until_newline();
+            return Err(PreprocessError {
+                message: "cannot use #elif without opening conditional macro".to_string(),
+                span: elif_span,
+            });
+        }
+        if let Some(frame) = self.conditionals.last()
+            && frame.saw_else
+        {
+            scanner.skip_until_newline();
+            return Err(PreprocessError {
+                message: "cannot use #elif after #else".to_string(),
+                span: elif_span,
+            });
+        }
+        let tokens = scanner.collect_until_newline();
+        let frame = self.conditionals.last().expect("checked non-empty");
+        let parent_active = frame.parent_active;
+        let branch_taken = frame.branch_taken;
+
+        let condition_met = if branch_taken {
+            false
+        } else {
+            IfExprParser::new(&tokens, &self.macros, elif_span).parse()? != 0
+        };
+
+        let frame = self.conditionals.last_mut().expect("checked non-empty");
+        frame.current_active = parent_active && !branch_taken && condition_met;
+        frame.branch_taken = branch_taken || condition_met;
         Ok(())
     }
 
@@ -952,6 +985,7 @@ impl Preprocessor {
                                 let included = self.parse_include(scanner)?;
                                 output.extend(included);
                             }
+                            "elif" => self.parse_elif(scanner)?,
                             _ => {
                                 if self.is_active() {
                                     return Err(ProcessError::Local(PreprocessError {

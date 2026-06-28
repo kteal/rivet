@@ -486,6 +486,45 @@ fn if_supports_defined_operator_forms() {
 }
 
 #[test]
+fn elif_keeps_first_matching_branch() {
+    assert_eq!(
+        preprocess_kinds("#if 0\nint x;\n#elif 1\nint y;\n#endif\n"),
+        vec![
+            TokenKind::KwInt,
+            TokenKind::Ident("y".to_string()),
+            TokenKind::Semicolon,
+            TokenKind::Eof,
+        ]
+    );
+}
+
+#[test]
+fn elif_skips_after_taken_if_branch() {
+    assert_eq!(
+        preprocess_kinds("#if 1\nint x;\n#elif 1\nint y;\n#endif\n"),
+        vec![
+            TokenKind::KwInt,
+            TokenKind::Ident("x".to_string()),
+            TokenKind::Semicolon,
+            TokenKind::Eof,
+        ]
+    );
+}
+
+#[test]
+fn else_runs_after_untaken_elif_branch() {
+    assert_eq!(
+        preprocess_kinds("#if 0\nint x;\n#elif 0\nint y;\n#else\nint z;\n#endif\n"),
+        vec![
+            TokenKind::KwInt,
+            TokenKind::Ident("z".to_string()),
+            TokenKind::Semicolon,
+            TokenKind::Eof,
+        ]
+    );
+}
+
+#[test]
 fn else_switches_to_untaken_branch() {
     assert_eq!(
         preprocess_kinds("#ifdef A\nint x;\n#else\nint y;\n#endif\n"),
@@ -588,6 +627,24 @@ fn rejects_endif_without_open_conditional() {
         err.message,
         "cannot use #endif without opening conditional macro"
     );
+}
+
+#[test]
+fn rejects_elif_without_open_conditional() {
+    let err = preprocess_source("#elif 1\nint x;\n").expect_err("preprocessing should fail");
+
+    assert_eq!(
+        err.message,
+        "cannot use #elif without opening conditional macro"
+    );
+}
+
+#[test]
+fn rejects_elif_after_else() {
+    let err = preprocess_source("#if 0\nint x;\n#else\nint y;\n#elif 1\nint z;\n#endif\n")
+        .expect_err("preprocessing should fail");
+
+    assert_eq!(err.message, "cannot use #elif after #else");
 }
 
 #[test]
