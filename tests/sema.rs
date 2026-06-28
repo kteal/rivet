@@ -6,7 +6,7 @@ use common::{
 };
 use rivet::ast::{
     BinaryOp, Expr, ExternalDecl, FunctionDecl, FunctionDef, GlobalDecl, Initializer,
-    IntLiteralBase, IntLiteralSuffix, Program, Statement, Type, UnaryOp,
+    IntLiteralBase, IntLiteralSuffix, MemberAccessKind, Program, Statement, Type, UnaryOp,
 };
 use rivet::lexer::lex;
 use rivet::parser::parse;
@@ -4962,4 +4962,135 @@ fn still_rejects_implicit_nonzero_integer_to_pointer_assignment() {
         err.message,
         "cannot assign value of type 'int' to variable of type 'char *'"
     );
+}
+
+#[test]
+fn direct_struct_member_access_resolves_field_type_and_offset() {
+    let typed_program =
+        check_source("int main() { struct { char tag; int value; } item; return item.value; }");
+    let expr = typed_return_expr(&first_typed_function(&typed_program).body[1]);
+
+    let TypedExprKind::LvalueToRvalue { expr: member, .. } = &expr.kind else {
+        panic!("expected member access to decay through lvalue-to-rvalue");
+    };
+    let TypedExprKind::Member {
+        access,
+        field,
+        offset,
+        ..
+    } = &member.kind
+    else {
+        panic!("expected typed member expression");
+    };
+
+    assert_eq!(expr.ty, Type::Int);
+    assert_eq!(member.ty, Type::Int);
+    assert_eq!(*access, MemberAccessKind::Direct);
+    assert_eq!(field, "value");
+    assert_eq!(*offset, 4);
+}
+
+#[test]
+fn pointer_struct_member_access_resolves_field_type_and_offset() {
+    let typed_program = check_source(
+        "typedef struct { char *ptr; unsigned long num_left; } Ctx; int main() { Ctx ctx; Ctx *p = &ctx; return p->num_left; }",
+    );
+    let expr = typed_return_expr(&first_typed_function(&typed_program).body[2]);
+
+    let TypedExprKind::LvalueToRvalue { expr: member, .. } = &expr.kind else {
+        panic!("expected member access to decay through lvalue-to-rvalue");
+    };
+    let TypedExprKind::Member {
+        access,
+        field,
+        offset,
+        ..
+    } = &member.kind
+    else {
+        panic!("expected typed member expression");
+    };
+
+    assert_eq!(expr.ty, Type::UnsignedLong);
+    assert_eq!(member.ty, Type::UnsignedLong);
+    assert_eq!(*access, MemberAccessKind::Pointer);
+    assert_eq!(field, "num_left");
+    assert_eq!(*offset, 4);
+}
+
+#[test]
+fn struct_member_access_is_assignable_lvalue() {
+    let typed_program =
+        check_source("int main() { struct { int x; char y; } item; item.x = 7; return item.x; }");
+    let expr_statement = &first_typed_function(&typed_program).body[1];
+    let TypedStatement::ExprStatement(expr) = expr_statement else {
+        panic!("expected expression statement");
+    };
+    let TypedExprKind::Assign { target, .. } = &expr.kind else {
+        panic!("expected assignment");
+    };
+
+    assert!(matches!(
+        target.kind,
+        TypedExprKind::Member {
+            access: MemberAccessKind::Direct,
+            ..
+        }
+    ));
+}
+
+#[test]
+fn pointer_struct_member_access_is_assignable_lvalue() {
+    let typed_program = check_source(
+        "typedef struct { int x; char y; } Item; int main() { Item item; Item *p = &item; p->y = 9; return p->y; }",
+    );
+    let expr_statement = &first_typed_function(&typed_program).body[2];
+    let TypedStatement::ExprStatement(expr) = expr_statement else {
+        panic!("expected expression statement");
+    };
+    let TypedExprKind::Assign { target, .. } = &expr.kind else {
+        panic!("expected assignment");
+    };
+
+    assert!(matches!(
+        target.kind,
+        TypedExprKind::Member {
+            access: MemberAccessKind::Pointer,
+            ..
+        }
+    ));
+}
+
+#[test]
+fn rejects_direct_member_access_on_non_struct_type() {
+    let err = check_source_err("int main() { int x; return x.value; }");
+
+    assert_eq!(err.message, "type 'int' has no field named 'value'");
+}
+
+#[test]
+fn rejects_pointer_member_access_on_non_pointer_type() {
+    let err = check_source_err("int main() { int x; return x->value; }");
+
+    assert_eq!(
+        err.message,
+        "cannot access field 'value' through non-pointer type 'int'"
+    );
+}
+
+#[test]
+fn rejects_pointer_member_access_through_pointer_to_non_struct_type() {
+    let err = check_source_err("int main() { int x; int *p = &x; return p->value; }");
+
+    assert_eq!(
+        err.message,
+        "cannot access field 'value' through pointer to non-struct type 'int'"
+    );
+}
+
+#[test]
+fn rejects_unknown_struct_member_name() {
+    let err = check_source_err("int main() { struct { int x; } item; return item.y; }");
+
+    assert!(err.message.starts_with("type 'struct"));
+    assert!(err.message.ends_with("has no field named 'y'"));
 }

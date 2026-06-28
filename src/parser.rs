@@ -2,8 +2,8 @@ use std::collections::HashMap;
 
 use crate::ast::{
     BinaryOp, Expr, ExternalDecl, FunctionDecl, FunctionDef, FunctionType, GlobalDecl, Initializer,
-    IntLiteralBase, IntLiteralSuffix, Linkage, LocalDecl, Param, ParamDecl, Program, Statement,
-    Type, Typedef, UnaryOp,
+    IntLiteralBase, IntLiteralSuffix, Linkage, LocalDecl, MemberAccessKind, Param, ParamDecl,
+    Program, Statement, StructField, Type, Typedef, UnaryOp,
 };
 use crate::lexer::{Token, TokenKind};
 use crate::source::Span;
@@ -83,6 +83,7 @@ enum TypeSpecifier {
     Long,
     TypedefName { name: String, span: Span },
     Void,
+    Struct { fields: Vec<StructField> },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -553,7 +554,8 @@ impl Parser {
             | TokenKind::KwTypedef
             | TokenKind::KwVoid
             | TokenKind::KwStatic
-            | TokenKind::KwExtern => true,
+            | TokenKind::KwExtern
+            | TokenKind::KwStruct => true,
             TokenKind::Ident(name) => self.is_typedef_name(name),
             _ => false,
         }
@@ -567,6 +569,69 @@ impl Parser {
     fn parse_type_name(&mut self) -> Result<Type, ParseError> {
         let base = self.parse_specifier_type()?;
         self.parse_abstract_pointer_type(&base)
+    }
+
+    fn parse_struct_field_decl(&mut self) -> Result<Vec<StructField>, ParseError> {
+        let (spec, spec_span) = self.parse_decl_spec()?;
+        let base_ty = self.lower_decl_spec(&spec, spec_span)?;
+        let declaration = self.parse_declaration_after_spec(spec, spec_span)?;
+
+        let mut fields = vec![];
+
+        for init_decl in declaration.declarators {
+            let lowered = Self::lower_declarator(&base_ty, &init_decl.declarator)?;
+            match lowered {
+                LoweredDeclarator::Object {
+                    ty,
+                    name,
+                    name_span,
+                } => {
+                    if init_decl.initializer.is_some() {
+                        return Err(ParseError {
+                            message: "struct field cannot have initializer".to_string(),
+                            span: name_span,
+                        });
+                    }
+                    if !ty.is_object_type() {
+                        return Err(ParseError {
+                            message: format!("struct field cannot have non-object type '{ty}'"),
+                            span: name_span,
+                        });
+                    }
+                    fields.push(StructField {
+                        name,
+                        ty,
+                        span: name_span,
+                    });
+                }
+                LoweredDeclarator::Function { name_span, .. } => {
+                    return Err(ParseError {
+                        message: "struct field cannot be function declarator".to_string(),
+                        span: name_span,
+                    });
+                }
+            }
+        }
+        Ok(fields)
+    }
+
+    fn parse_struct_specifier(&mut self) -> Result<TypeSpecifier, ParseError> {
+        self.expect(&TokenKind::KwStruct)?;
+        self.expect(&TokenKind::LBrace)?;
+        let mut fields = vec![];
+
+        while self.peek_kind() != &TokenKind::RBrace {
+            fields.extend(self.parse_struct_field_decl()?);
+        }
+        let close = self.expect(&TokenKind::RBrace)?;
+
+        if fields.is_empty() {
+            return Err(ParseError {
+                message: "struct must have at least one field".to_string(),
+                span: close.span,
+            });
+        }
+        Ok(TypeSpecifier::Struct { fields })
     }
 
     #[allow(clippy::too_many_lines)]
@@ -668,6 +733,19 @@ impl Parser {
                     saw_any = true;
                     saw_type = true;
                 }
+                TokenKind::KwStruct => {
+                    if saw_type {
+                        return Err(ParseError {
+                            message: "cannot combine struct with other type specifiers".to_string(),
+                            span: self.peek().span,
+                        });
+                    }
+
+                    let struct_spec = self.parse_struct_specifier()?;
+                    spec.type_specifiers.push(struct_spec);
+                    saw_any = true;
+                    saw_type = true;
+                }
 
                 TokenKind::Ident(name) if !saw_type && self.is_typedef_name(name) => {
                     let name = name.clone();
@@ -696,6 +774,7 @@ impl Parser {
     fn lower_decl_spec(&self, spec: &DeclSpec, span: Span) -> Result<Type, ParseError> {
         let mut typedef_name = None;
         let mut type_spec = TypeSpec::default();
+        let mut struct_fields = None;
 
         for type_specifier in &spec.type_specifiers {
             match type_specifier {
@@ -715,6 +794,15 @@ impl Parser {
                 TypeSpecifier::Int => type_spec.int_count += 1,
                 TypeSpecifier::Char => type_spec.char_count += 1,
                 TypeSpecifier::Long => type_spec.long_count += 1,
+                TypeSpecifier::Struct { fields } => {
+                    if struct_fields.is_some() {
+                        return Err(ParseError {
+                            message: "multiple struct specifiers".to_string(),
+                            span,
+                        });
+                    }
+                    struct_fields = Some(fields.clone());
+                }
             }
         }
 
@@ -724,7 +812,15 @@ impl Parser {
             || type_spec.int_count > 0
             || type_spec.char_count > 0
             || type_spec.long_count > 0;
-
+        if let Some(fields) = struct_fields {
+            if saw_builtin || typedef_name.is_some() {
+                return Err(ParseError {
+                    message: "cannot combine struct with other type specifiers".to_string(),
+                    span,
+                });
+            }
+            return Ok(Type::Struct { fields });
+        }
         if let Some((name, name_span)) = typedef_name {
             if saw_builtin {
                 return Err(ParseError {
@@ -1254,6 +1350,28 @@ impl Parser {
                     expr = Expr::PostfixDec {
                         expr: Box::new(expr),
                         op_span: op.span,
+                    }
+                }
+                TokenKind::Dot => {
+                    let op_span = self.expect(&TokenKind::Dot)?.span;
+                    let (field, field_span) = self.expect_ident()?;
+                    expr = Expr::Member {
+                        base: Box::new(expr),
+                        access: MemberAccessKind::Direct,
+                        field,
+                        field_span,
+                        op_span,
+                    }
+                }
+                TokenKind::Arrow => {
+                    let op_span = self.expect(&TokenKind::Arrow)?.span;
+                    let (field, field_span) = self.expect_ident()?;
+                    expr = Expr::Member {
+                        base: Box::new(expr),
+                        access: MemberAccessKind::Pointer,
+                        field,
+                        field_span,
+                        op_span,
                     }
                 }
                 _ => break,

@@ -1,4 +1,4 @@
-use crate::ast::{BinaryOp, Linkage, Type, UnaryOp};
+use crate::ast::{BinaryOp, Linkage, MemberAccessKind, Type, UnaryOp};
 use crate::typed_ast::{
     GlobalId, LocalId, ObjectId, TypedExpr, TypedExprKind, TypedExternalDecl, TypedFunction,
     TypedGlobalDecl, TypedInitializer, TypedProgram, TypedStatement,
@@ -329,11 +329,13 @@ impl Codegen {
                 self.emit_line(format_args!("andi a0, a0, 255"));
             }
             Type::Array { .. } => unreachable!("array rvalues should have decayed before codegen"),
+            Type::Function(_) => unreachable!("function values should have decayed before codegen"),
             Type::IncompleteArray { .. } => {
                 unreachable!("incomplete arrays should have been handled before codegen")
             }
-            Type::Function(_) => unreachable!("function values should have decayed before codegen"),
-            Type::Void => unreachable!("void types should be rejected before codegen"),
+            Type::Void | Type::Struct { .. } => {
+                unreachable!("{ty} types should be rejected before codegen")
+            }
         }
     }
 
@@ -355,7 +357,9 @@ impl Codegen {
                 unreachable!("incomplete arrays should have been handled before codegen")
             }
             Type::Function(_) => unreachable!("function values should have decayed before codegen"),
-            Type::Void => unreachable!("void types should be rejected before codegen"),
+            Type::Void | Type::Struct { .. } => {
+                unreachable!("{} types should be rejected before codegen", local.ty)
+            }
         }
     }
 
@@ -417,6 +421,21 @@ impl Codegen {
                 let label = self.add_string_literal(bytes);
                 self.emit_line(format_args!("la a0, {label}"));
             }
+            TypedExprKind::Member {
+                base,
+                access,
+                offset,
+                ..
+            } => {
+                match access {
+                    MemberAccessKind::Direct => self.emit_addr(base),
+                    MemberAccessKind::Pointer => self.emit_expr(base),
+                }
+
+                if *offset != 0 {
+                    self.emit_line(format_args!("addi a0, a0, {offset}"));
+                }
+            }
             _ => unreachable!("semantic analysis should reject non-lvalue expression"),
         }
     }
@@ -433,7 +452,9 @@ impl Codegen {
                 unreachable!("incomplete arrays should have been handled before codegen")
             }
             Type::Function(_) => unreachable!("function values should have decayed before codegen"),
-            Type::Void => unreachable!("void types should be rejected before codegen"),
+            Type::Void | Type::Struct { .. } => {
+                unreachable!("{ty} types should be rejected before codegen")
+            }
         }
     }
 
@@ -455,7 +476,9 @@ impl Codegen {
                 unreachable!("incomplete arrays should have been handled before codegen")
             }
             Type::Function(_) => unreachable!("function values should have decayed before codegen"),
-            Type::Void => unreachable!("void types should be rejected before codegen"),
+            Type::Void | Type::Struct { .. } => {
+                unreachable!("{ty} types should be rejected before codegen")
+            }
         }
     }
 
@@ -518,7 +541,9 @@ impl Codegen {
                 Type::Function(_) => {
                     unreachable!("function values should have decayed before codegen")
                 }
-                Type::Void => unreachable!("void types should be rejected before codegen"),
+                Type::Void | Type::Struct { .. } => {
+                    unreachable!("{ty} types should be rejected before codegen")
+                }
             },
             BinaryOp::Remainder => match ty {
                 Type::Int | Type::Char | Type::Long | Type::SignedChar => {
@@ -539,7 +564,9 @@ impl Codegen {
                 Type::Function(_) => {
                     unreachable!("function values should have decayed before codegen")
                 }
-                Type::Void => unreachable!("void types should be rejected before codegen"),
+                Type::Void | Type::Struct { .. } => {
+                    unreachable!("{ty} types should be rejected before codegen")
+                }
             },
             BinaryOp::Equal => {
                 self.emit_line(format_args!("xor a0, t0, a0"));
@@ -568,7 +595,9 @@ impl Codegen {
                 Type::Function(_) => {
                     unreachable!("function values should have decayed before codegen")
                 }
-                Type::Void => unreachable!("void types should be rejected before codegen"),
+                Type::Void | Type::Struct { .. } => {
+                    unreachable!("{ty} types should be rejected before codegen")
+                }
             },
             BinaryOp::LessEqual => match ty {
                 Type::Int | Type::Char | Type::Long | Type::SignedChar => {
@@ -591,7 +620,9 @@ impl Codegen {
                 Type::Function(_) => {
                     unreachable!("function values should have decayed before codegen")
                 }
-                Type::Void => unreachable!("void types should be rejected before codegen"),
+                Type::Void | Type::Struct { .. } => {
+                    unreachable!("{ty} types should be rejected before codegen")
+                }
             },
             BinaryOp::Greater => match ty {
                 Type::Int | Type::Char | Type::Long | Type::SignedChar => {
@@ -612,7 +643,9 @@ impl Codegen {
                 Type::Function(_) => {
                     unreachable!("function values should have decayed before codegen")
                 }
-                Type::Void => unreachable!("void types should be rejected before codegen"),
+                Type::Void | Type::Struct { .. } => {
+                    unreachable!("{ty} types should be rejected before codegen")
+                }
             },
             BinaryOp::GreaterEqual => match ty {
                 Type::Int | Type::Char | Type::Long | Type::SignedChar => {
@@ -635,7 +668,9 @@ impl Codegen {
                 Type::Function(_) => {
                     unreachable!("function values should have decayed before codegen")
                 }
-                Type::Void => unreachable!("void types should be rejected before codegen"),
+                Type::Void | Type::Struct { .. } => {
+                    unreachable!("{ty} types should be rejected before codegen")
+                }
             },
             BinaryOp::BitAnd => self.emit_line(format_args!("and a0, a0, t0")),
             BinaryOp::BitXor => self.emit_line(format_args!("xor a0, a0, t0")),
@@ -660,7 +695,9 @@ impl Codegen {
                 Type::Function(_) => {
                     unreachable!("function values should have decayed before codegen")
                 }
-                Type::Void => unreachable!("void types should be rejected before codegen"),
+                Type::Void | Type::Struct { .. } => {
+                    unreachable!("{ty} types should be rejected before codegen")
+                }
             },
             BinaryOp::LogicalAnd | BinaryOp::LogicalOr => unreachable!(),
         }
@@ -817,9 +854,6 @@ impl Codegen {
                 right,
                 ..
             } => self.emit_binary(*op, operand_ty, left, right),
-            TypedExprKind::Variable { .. } => {
-                unreachable!("lvalue variable should be converted before value codegen")
-            }
             TypedExprKind::Unary {
                 op: UnaryOp::AddressOf,
                 expr: operand,
@@ -835,7 +869,9 @@ impl Codegen {
                     UnaryOp::Negate => self.emit_line(format_args!("neg a0, a0")),
                     UnaryOp::LogicalNot => self.emit_line(format_args!("seqz a0, a0")),
                     UnaryOp::BitwiseNot => self.emit_line(format_args!("not a0, a0")),
-                    UnaryOp::Dereference => self.emit_load_from_addr(&expr.ty),
+                    UnaryOp::Dereference => {
+                        unreachable!("lvalue dereference should be converted before value codegen")
+                    }
                     UnaryOp::AddressOf => unreachable!("handled above"),
                 }
             }
@@ -875,10 +911,6 @@ impl Codegen {
             TypedExprKind::PrefixDec { expr, .. } => self.emit_inc_dec(expr, -1, false),
             TypedExprKind::PostfixInc { expr, .. } => self.emit_inc_dec(expr, 1, true),
             TypedExprKind::PostfixDec { expr, .. } => self.emit_inc_dec(expr, -1, true),
-            TypedExprKind::Index { .. } => {
-                self.emit_addr(expr);
-                self.emit_load_from_addr(&expr.ty);
-            }
             TypedExprKind::Cast {
                 target_ty, expr, ..
             } => {
@@ -903,6 +935,14 @@ impl Codegen {
             }
             TypedExprKind::StringLiteral { .. } => {
                 self.emit_addr(expr);
+            }
+            TypedExprKind::Variable { .. }
+            | TypedExprKind::Index { .. }
+            | TypedExprKind::Member { .. } => {
+                unreachable!(
+                    "lvalue {:?} should be converted before value codegen",
+                    expr.kind
+                )
             }
         }
     }

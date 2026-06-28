@@ -6,7 +6,7 @@
 
 `rivet` is a C compiler written in Rust that targets RV32IM assembly. It is working toward C23 by growing a small, tested C subset.
 
-The current subset covers integer and character types, `void`, pointers, arrays, globals, functions, typedefs, string literals, `sizeof`, common control flow, and C-like expression precedence. It emits RV32IM assembly and reports lexer, parser, and semantic errors with source-map-backed file, line, and column locations.
+The current subset covers integer and character types, `void`, pointers, arrays, anonymous structs, globals, functions, typedefs, string literals, `sizeof`, common control flow, and C-like expression precedence. It emits RV32IM assembly and reports lexer, parser, and semantic errors with source-map-backed file, line, and column locations.
 
 The current language subset supports programs shaped like:
 
@@ -318,9 +318,11 @@ Objects, aggregate types, and declarators:
 - [x] string literal initialization for explicit-size character arrays: `char buf[4] = "abc"`
 - [x] inferred-size local and global character arrays from string literals: `char buf[] = "abc"`
 - [x] adjacent string literal concatenation: `"foo" "bar"`
+- [x] anonymous struct object types: `struct { int x; char y; }`
+- [x] direct and pointer member access: `obj.field` and `ptr->field`
 - [ ] full C declarator grammar
-- [ ] structs and unions
-- [ ] member access: `.` and `->`
+- [ ] tagged structs, unions, forward declarations, and incomplete aggregate types
+- [ ] struct assignment, struct-by-value parameters/returns, and aggregate initializers
 - [ ] compound literals
 
 Toolchain and library compatibility:

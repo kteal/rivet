@@ -24,6 +24,7 @@ pub enum TokenKind {
     KwVoid,
     KwStatic,
     KwExtern,
+    KwStruct,
     Ident(String),
     IntLiteral {
         value: u64,
@@ -77,6 +78,7 @@ pub enum TokenKind {
     Hash,
     Newline,
     Dot,
+    Arrow,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -139,6 +141,10 @@ impl<'a> Lexer<'a> {
                     TokenKind::Plus,
                     &[('=', TokenKind::PlusEqual), ('+', TokenKind::PlusPlus)],
                 ),
+                '-' if self.peek_second() == Some('>') => {
+                    self.advance();
+                    self.advance_and_push(TokenKind::Arrow);
+                }
                 '-' => self.lex_one_or_two_char_operator(
                     TokenKind::Minus,
                     &[('=', TokenKind::MinusEqual), ('-', TokenKind::MinusMinus)],
@@ -439,6 +445,7 @@ impl<'a> Lexer<'a> {
             "void" => TokenKind::KwVoid,
             "static" => TokenKind::KwStatic,
             "extern" => TokenKind::KwExtern,
+            "struct" => TokenKind::KwStruct,
             _ => TokenKind::Ident(text),
         };
 

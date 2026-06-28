@@ -126,6 +126,12 @@ pub enum Initializer {
     List(Vec<Expr>),
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MemberAccessKind {
+    Direct,
+    Pointer,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Expr {
     IntLiteral {
@@ -203,6 +209,13 @@ pub enum Expr {
         bytes: Vec<u8>,
         span: Span,
     },
+    Member {
+        base: Box<Self>,
+        access: MemberAccessKind,
+        field: String,
+        field_span: Span,
+        op_span: Span,
+    },
 }
 
 impl Expr {
@@ -224,7 +237,8 @@ impl Expr {
             | Self::PrefixInc { op_span, .. }
             | Self::PrefixDec { op_span, .. }
             | Self::PostfixInc { op_span, .. }
-            | Self::PostfixDec { op_span, .. } => *op_span,
+            | Self::PostfixDec { op_span, .. }
+            | Self::Member { op_span, .. } => *op_span,
         }
     }
 }
@@ -326,6 +340,13 @@ impl IntLiteralBase {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StructField {
+    pub name: String,
+    pub ty: Type,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Type {
     Int,
     UnsignedInt,
@@ -339,6 +360,7 @@ pub enum Type {
     IncompleteArray { element: Box<Self> },
     Function(Box<FunctionType>),
     Void,
+    Struct { fields: Vec<StructField> },
 }
 
 impl Type {
@@ -372,6 +394,17 @@ impl Type {
             Self::Char | Self::SignedChar | Self::UnsignedChar => 1,
             Self::Int | Self::UnsignedInt | Self::Pointer(_) | Self::Long | Self::UnsignedLong => 4,
             Self::Array { element, len } => element.size() * len,
+            Self::Struct { fields } => {
+                let mut offset = 0;
+                let mut max_align = 1;
+                for field in fields {
+                    let field_align = field.ty.align();
+                    offset = align_to(offset, field_align);
+                    offset += field.ty.size();
+                    max_align = max_align.max(field_align);
+                }
+                align_to(offset, max_align)
+            }
             Self::Function(_) | Self::IncompleteArray { .. } | Self::Void => {
                 panic!("cannot calculate size of '{self}' type")
             }
@@ -395,6 +428,11 @@ impl Type {
             | Self::Long
             | Self::UnsignedLong => self.size(),
             Self::Array { element, .. } => element.align(),
+            Self::Struct { fields } => fields
+                .iter()
+                .map(|field| field.ty.align())
+                .max()
+                .unwrap_or(1),
             Self::Function(_) | Self::IncompleteArray { .. } | Self::Void => {
                 panic!("cannot calculate alignment of '{self}' type")
             }
@@ -419,7 +457,8 @@ impl Type {
             | Self::Array { .. }
             | Self::IncompleteArray { .. }
             | Self::Function(_)
-            | Self::Void => None,
+            | Self::Void
+            | Self::Struct { .. } => None,
         }
     }
 
@@ -464,6 +503,35 @@ impl Type {
                 || (right.as_ref() == &Self::Void && left.as_ref().is_object_type())
         )
     }
+
+    #[must_use]
+    pub fn field_info(&self, name: &str) -> Option<(Self, usize)> {
+        let Self::Struct { fields } = self else {
+            return None;
+        };
+
+        let mut offset = 0;
+
+        for field in fields {
+            offset = align_to(offset, field.ty.align());
+
+            if field.name == name {
+                return Some((field.ty.clone(), offset));
+            }
+
+            offset += field.ty.size();
+        }
+
+        None
+    }
+
+    #[must_use]
+    pub fn pointee(&self) -> Option<&Self> {
+        match self {
+            Self::Pointer(inner) => Some(inner),
+            _ => None,
+        }
+    }
 }
 
 impl std::fmt::Display for Type {
@@ -494,6 +562,16 @@ impl std::fmt::Display for Type {
                 }
                 write!(f, ")")
             }
+            Self::Struct { fields } => {
+                write!(f, "struct {{ ")?;
+                for (i, field) in fields.iter().enumerate() {
+                    if i > 0 {
+                        write!(f, " ")?;
+                    }
+                    write!(f, "{} {};", field.ty, field.name)?;
+                }
+                write!(f, " }}")
+            }
         }
     }
 }
@@ -504,4 +582,9 @@ pub fn format_type_list(types: &[Type]) -> String {
         .map(ToString::to_string)
         .collect::<Vec<_>>()
         .join(", ")
+}
+
+#[must_use]
+pub const fn align_to(value: usize, align: usize) -> usize {
+    value.div_ceil(align) * align
 }

@@ -249,6 +249,40 @@ fn qemu_sizeof_programs_return_expected_values() {
         "int main() {\n    int x;\n    return sizeof x + 1;\n}\n",
         5,
     );
+    run_qemu_case(
+        "sizeof-local-anonymous-struct",
+        "int main() {\n    struct { int x; char y; } value;\n    return sizeof(value);\n}\n",
+        8,
+    );
+    run_qemu_case(
+        "sizeof-pointer-to-struct-typedef",
+        "typedef struct { char *ptr; unsigned long num_left; } Ctx;\n\nint main() {\n    Ctx *p;\n    return sizeof(p);\n}\n",
+        4,
+    );
+}
+
+#[test]
+fn qemu_struct_member_programs_return_expected_values() {
+    run_qemu_case(
+        "direct-struct-int-field-read-write",
+        "int main() {\n    struct { int x; char y; } item;\n    item.x = 37;\n    return item.x;\n}\n",
+        37,
+    );
+    run_qemu_case(
+        "direct-struct-padded-field-offset",
+        "int main() {\n    struct { char tag; int value; } item;\n    item.tag = 5;\n    item.value = 37;\n    return item.tag + item.value;\n}\n",
+        42,
+    );
+    run_qemu_case(
+        "pointer-struct-member-read-write",
+        "typedef struct { int x; char y; } Item;\n\nint main() {\n    Item item;\n    Item *p = &item;\n    p->x = 40;\n    p->y = 2;\n    return p->x + p->y;\n}\n",
+        42,
+    );
+    run_qemu_case(
+        "inih-shaped-struct-pointer-fields",
+        "typedef struct { char *ptr; unsigned long num_left; } Ctx;\n\nint main() {\n    Ctx ctx;\n    Ctx *p = &ctx;\n    p->ptr = \"abc\";\n    p->num_left = 3;\n    return p->ptr[1] + p->num_left;\n}\n",
+        101,
+    );
 }
 
 #[test]

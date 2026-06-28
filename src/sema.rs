@@ -2,7 +2,8 @@ use std::collections::HashMap;
 
 use crate::ast::{
     BinaryOp, Expr, ExternalDecl, FunctionDef, FunctionType, GlobalDecl, Initializer,
-    IntLiteralBase, IntLiteralSuffix, Linkage, Program, Statement, Type, UnaryOp, format_type_list,
+    IntLiteralBase, IntLiteralSuffix, Linkage, MemberAccessKind, Program, Statement, Type, UnaryOp,
+    format_type_list,
 };
 use crate::source::Span;
 
@@ -348,6 +349,7 @@ impl Checker {
                     ..
                 }
                 | TypedExprKind::Index { .. }
+                | TypedExprKind::Member { .. }
         )
     }
 
@@ -550,6 +552,13 @@ impl Checker {
                 })
             }
             Expr::Index { base, index, span } => self.check_index_expr(base, index, *span),
+            Expr::Member {
+                base,
+                access,
+                field,
+                field_span,
+                op_span,
+            } => self.check_member_expr(base, *access, field, *field_span, *op_span),
             _ => Err(SemanticError {
                 message: "cannot assign to non-lvalue expression".to_string(),
                 span: op_span,
@@ -935,6 +944,80 @@ impl Checker {
         Ok(Self::check_sizeof_type_expr(&typed_operand.ty, span))
     }
 
+    fn check_member_expr(
+        &self,
+        base: &Expr,
+        access: MemberAccessKind,
+        field: &str,
+        field_span: Span,
+        op_span: Span,
+    ) -> Result<TypedExpr, SemanticError> {
+        match access {
+            MemberAccessKind::Direct => {
+                let typed_base = self.check_expr_raw(base)?;
+                let Some((field_ty, offset)) = typed_base.ty.field_info(field) else {
+                    return Err(SemanticError {
+                        message: format!("type '{}' has no field named '{field}'", typed_base.ty),
+                        span: field_span,
+                    });
+                };
+
+                Ok(TypedExpr {
+                    ty: field_ty,
+                    kind: TypedExprKind::Member {
+                        base: Box::new(typed_base),
+                        access,
+                        field: field.to_string(),
+                        field_span,
+                        op_span,
+                        offset,
+                    },
+                })
+            }
+            MemberAccessKind::Pointer => {
+                let typed_base = self.check_expr(base)?;
+
+                let Some(pointee_ty) = typed_base.ty.pointee() else {
+                    return Err(SemanticError {
+                        message: format!(
+                            "cannot access field '{field}' through non-pointer type '{}'",
+                            typed_base.ty
+                        ),
+                        span: op_span,
+                    });
+                };
+
+                let Type::Struct { .. } = pointee_ty else {
+                    return Err(SemanticError {
+                        message: format!(
+                            "cannot access field '{field}' through pointer to non-struct type '{pointee_ty}'"
+                        ),
+                        span: op_span,
+                    });
+                };
+
+                let Some((field_ty, offset)) = pointee_ty.field_info(field) else {
+                    return Err(SemanticError {
+                        message: format!("struct type '{pointee_ty}' has no field named '{field}'"),
+                        span: field_span,
+                    });
+                };
+
+                Ok(TypedExpr {
+                    ty: field_ty,
+                    kind: TypedExprKind::Member {
+                        base: Box::new(typed_base),
+                        access,
+                        field: field.to_string(),
+                        field_span,
+                        op_span,
+                        offset,
+                    },
+                })
+            }
+        }
+    }
+
     #[allow(clippy::too_many_lines)]
     fn check_expr_raw(&self, expr: &Expr) -> Result<TypedExpr, SemanticError> {
         match expr {
@@ -1096,6 +1179,13 @@ impl Checker {
                     ty,
                 })
             }
+            Expr::Member {
+                base,
+                access,
+                field,
+                field_span,
+                op_span,
+            } => self.check_member_expr(base, *access, field, *field_span, *op_span),
         }
     }
 
@@ -1243,6 +1333,10 @@ impl Checker {
             }),
             (Type::Function(_) | Type::Void, _) => Err(SemanticError {
                 message: format!("'{target_ty}' type is not an object type"),
+                span: name_span,
+            }),
+            (Type::Struct { .. }, _) => Err(SemanticError {
+                message: "struct initializers are not supported".to_string(),
                 span: name_span,
             }),
         }

@@ -3,7 +3,7 @@ mod common;
 use common::{first_function, functions};
 use rivet::ast::{
     BinaryOp, Expr, ExternalDecl, FunctionType, Initializer, IntLiteralBase, IntLiteralSuffix,
-    LocalDecl, Statement, Type, UnaryOp,
+    LocalDecl, MemberAccessKind, Statement, Type, UnaryOp,
 };
 use rivet::lexer::lex;
 use rivet::parser::parse;
@@ -1409,6 +1409,132 @@ fn parses_function_pointer_typedef() {
 
     let function = first_function(&program);
     assert_eq!(function.name, "main");
+}
+
+#[test]
+fn parses_anonymous_struct_typedef() {
+    let program = parse_source("typedef struct { int x; char y; } Pair;\nint main() { return 0; }");
+
+    let ExternalDecl::Typedef(typedef) = &program.declarations[0] else {
+        panic!("expected typedef declaration");
+    };
+    assert_eq!(typedef.name, "Pair");
+
+    let Type::Struct { fields } = &typedef.ty else {
+        panic!("expected struct typedef type");
+    };
+    assert_eq!(fields.len(), 2);
+    assert_eq!(fields[0].name, "x");
+    assert_eq!(fields[0].ty, Type::Int);
+    assert_eq!(fields[1].name, "y");
+    assert_eq!(fields[1].ty, Type::Char);
+}
+
+#[test]
+fn parses_local_anonymous_struct_object() {
+    let body = main_body("int main() { struct { int x; char y; } value; return sizeof(value); }");
+    let decl = single_decl(&body[0]);
+
+    let Type::Struct { fields } = &decl.ty else {
+        panic!("expected local struct object type");
+    };
+    assert_eq!(decl.name, "value");
+    assert_eq!(fields.len(), 2);
+    assert_eq!(fields[0].name, "x");
+    assert_eq!(fields[0].ty, Type::Int);
+    assert_eq!(fields[1].name, "y");
+    assert_eq!(fields[1].ty, Type::Char);
+}
+
+#[test]
+fn parses_pointer_to_struct_typedef() {
+    let body = main_body(
+        "typedef struct { char *ptr; unsigned long num_left; } Ctx;\nint main() { Ctx *p; return sizeof(p); }",
+    );
+    let decl = single_decl(&body[0]);
+
+    let Type::Pointer(inner) = &decl.ty else {
+        panic!("expected pointer to struct type");
+    };
+    let Type::Struct { fields } = inner.as_ref() else {
+        panic!("expected pointer to struct type");
+    };
+    assert_eq!(decl.name, "p");
+    assert_eq!(fields.len(), 2);
+    assert_eq!(fields[0].name, "ptr");
+    assert_eq!(fields[0].ty, Type::Pointer(Box::new(Type::Char)));
+    assert_eq!(fields[1].name, "num_left");
+    assert_eq!(fields[1].ty, Type::UnsignedLong);
+}
+
+#[test]
+fn parses_direct_struct_member_access() {
+    let expr = only_return_expr("int main() { return value.x; }");
+
+    let Expr::Member {
+        base,
+        access,
+        field,
+        ..
+    } = expr
+    else {
+        panic!("expected member access expression");
+    };
+
+    assert!(matches!(
+        base.as_ref(),
+        Expr::Variable { name, .. } if name == "value"
+    ));
+    assert_eq!(access, MemberAccessKind::Direct);
+    assert_eq!(field, "x");
+}
+
+#[test]
+fn parses_pointer_struct_member_access() {
+    let expr = only_return_expr("int main() { return ctx->ptr; }");
+
+    let Expr::Member {
+        base,
+        access,
+        field,
+        ..
+    } = expr
+    else {
+        panic!("expected member access expression");
+    };
+
+    assert!(matches!(
+        base.as_ref(),
+        Expr::Variable { name, .. } if name == "ctx"
+    ));
+    assert_eq!(access, MemberAccessKind::Pointer);
+    assert_eq!(field, "ptr");
+}
+
+#[test]
+fn parses_member_access_as_postfix_expression() {
+    let expr = only_return_expr("int main() { return ctx->ptr[0]; }");
+
+    let Expr::Index { base, index, .. } = expr else {
+        panic!("expected indexed expression");
+    };
+    let Expr::Member {
+        base,
+        access,
+        field,
+        ..
+    } = base.as_ref()
+    else {
+        panic!("expected member access expression");
+    };
+
+    assert!(matches!(
+        base.as_ref(),
+        Expr::Variable { name, .. } if name == "ctx"
+    ));
+    assert_eq!(*access, MemberAccessKind::Pointer);
+    assert_eq!(field, "ptr");
+    assert!(matches!(index.as_ref(), Expr::IntLiteral { value: 0, .. }));
 }
 
 #[test]

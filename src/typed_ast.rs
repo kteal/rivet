@@ -1,4 +1,4 @@
-use crate::ast::{BinaryOp, Linkage, Type, UnaryOp};
+use crate::ast::{BinaryOp, Linkage, MemberAccessKind, Type, UnaryOp};
 use crate::source::Span;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -115,7 +115,8 @@ impl TypedExpr {
             | TypedExprKind::PrefixInc { op_span, .. }
             | TypedExprKind::PrefixDec { op_span, .. }
             | TypedExprKind::PostfixInc { op_span, .. }
-            | TypedExprKind::PostfixDec { op_span, .. } => *op_span,
+            | TypedExprKind::PostfixDec { op_span, .. }
+            | TypedExprKind::Member { op_span, .. } => *op_span,
             TypedExprKind::FunctionDesignator { name_span, .. } => *name_span,
         }
     }
@@ -250,6 +251,14 @@ pub enum TypedExprKind {
     StringLiteral {
         bytes: Vec<u8>,
         span: Span,
+    },
+    Member {
+        base: Box<TypedExpr>,
+        access: MemberAccessKind,
+        field: String,
+        field_span: Span,
+        op_span: Span,
+        offset: usize,
     },
 }
 
