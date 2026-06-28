@@ -117,6 +117,30 @@ fn qemu_comparison_programs_return_expected_values() {
 }
 
 #[test]
+fn qemu_pointer_comparison_programs_return_expected_values() {
+    run_qemu_case(
+        "pointer-greater-true",
+        "int main() {\n    char buf[4];\n    char *start = &buf[0];\n    char *end = &buf[3];\n    return end > start;\n}\n",
+        1,
+    );
+    run_qemu_case(
+        "pointer-less-equal-same-address",
+        "int main() {\n    char buf[4];\n    char *start = &buf[0];\n    return start <= start;\n}\n",
+        1,
+    );
+    run_qemu_case(
+        "pointer-less-false",
+        "int main() {\n    char buf[4];\n    char *start = &buf[0];\n    char *end = &buf[3];\n    return end < start;\n}\n",
+        0,
+    );
+    run_qemu_case(
+        "void-pointer-relational-comparison",
+        "int main() {\n    char buf[4];\n    char *start = &buf[0];\n    void *end = &buf[3];\n    return end >= start;\n}\n",
+        1,
+    );
+}
+
+#[test]
 fn qemu_unary_programs_return_expected_values() {
     run_qemu_case("unary-negation", "int main() {\n    return -5;\n}\n", 251);
     run_qemu_case("logical-not-zero", "int main() {\n    return !0;\n}\n", 1);

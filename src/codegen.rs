@@ -580,11 +580,8 @@ impl Codegen {
                 Type::Int | Type::Char | Type::Long | Type::SignedChar => {
                     self.emit_line(format_args!("slt a0, t0, a0"));
                 }
-                Type::UnsignedInt | Type::UnsignedLong | Type::UnsignedChar => {
+                Type::UnsignedInt | Type::UnsignedLong | Type::UnsignedChar | Type::Pointer(_) => {
                     self.emit_line(format_args!("sltu a0, t0, a0"));
-                }
-                Type::Pointer(_) => {
-                    unreachable!("pointer arithmetic should be handled before emit_binary_op")
                 }
                 Type::Array { .. } => {
                     unreachable!("array rvalues should have decayed before codegen")
@@ -604,12 +601,9 @@ impl Codegen {
                     self.emit_line(format_args!("slt a0, a0, t0"));
                     self.emit_line(format_args!("xori a0, a0, 1"));
                 }
-                Type::UnsignedInt | Type::UnsignedLong | Type::UnsignedChar => {
+                Type::UnsignedInt | Type::UnsignedLong | Type::UnsignedChar | Type::Pointer(_) => {
                     self.emit_line(format_args!("sltu a0, a0, t0"));
                     self.emit_line(format_args!("xori a0, a0, 1"));
-                }
-                Type::Pointer(_) => {
-                    unreachable!("pointer arithmetic should be handled before emit_binary_op")
                 }
                 Type::Array { .. } => {
                     unreachable!("array rvalues should have decayed before codegen")
@@ -628,11 +622,8 @@ impl Codegen {
                 Type::Int | Type::Char | Type::Long | Type::SignedChar => {
                     self.emit_line(format_args!("slt a0, a0, t0"));
                 }
-                Type::UnsignedInt | Type::UnsignedLong | Type::UnsignedChar => {
+                Type::UnsignedInt | Type::UnsignedLong | Type::UnsignedChar | Type::Pointer(_) => {
                     self.emit_line(format_args!("sltu a0, a0, t0"));
-                }
-                Type::Pointer(_) => {
-                    unreachable!("pointer arithmetic should be handled before emit_binary_op")
                 }
                 Type::Array { .. } => {
                     unreachable!("array rvalues should have decayed before codegen")
@@ -652,12 +643,9 @@ impl Codegen {
                     self.emit_line(format_args!("slt a0, t0, a0"));
                     self.emit_line(format_args!("xori a0, a0, 1"));
                 }
-                Type::UnsignedInt | Type::UnsignedLong | Type::UnsignedChar => {
+                Type::UnsignedInt | Type::UnsignedLong | Type::UnsignedChar | Type::Pointer(_) => {
                     self.emit_line(format_args!("sltu a0, t0, a0"));
                     self.emit_line(format_args!("xori a0, a0, 1"));
-                }
-                Type::Pointer(_) => {
-                    unreachable!("pointer arithmetic should be handled before emit_binary_op")
                 }
                 Type::Array { .. } => {
                     unreachable!("array rvalues should have decayed before codegen")

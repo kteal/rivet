@@ -237,6 +237,7 @@ Expressions and operators:
 - [x] array indexing as rvalue and lvalue: `a[i]`
 - [x] null pointer constants in pointer assignment, calls, returns, and comparisons
 - [x] compatible pointer equality and inequality
+- [x] compatible pointer relational comparisons: `< <= > >=`
 - [x] string literal expressions with array-to-pointer decay
 - [ ] conditional operator `?:`
 - [ ] comma operator

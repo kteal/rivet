@@ -439,24 +439,12 @@ impl Checker {
             });
         }
 
-        if let Type::Pointer(left_inner) = left_type
-            && let Type::Pointer(right_inner) = right_type
+        if Self::are_compatible_pointer_types(left_type, right_type)
+            && (matches!(op, BinaryOp::Equal | BinaryOp::NotEqual) || Self::is_relational_op(op))
         {
-            if (left_inner == right_inner || left_type.is_void_pointer_compatible_with(right_type))
-                && (op == BinaryOp::Equal || op == BinaryOp::NotEqual)
-            {
-                return Ok(BinaryTypeInfo {
-                    operand_ty: left_type.clone(),
-                    result_ty: Type::Int,
-                });
-            }
-            return Err(SemanticError {
-                message: format!(
-                    "invalid operands to binary operator '{op}'\n\
-                     left operand has type '{left_type}'\n\
-                     right operand has type '{right_type}'"
-                ),
-                span: op_span,
+            return Ok(BinaryTypeInfo {
+                operand_ty: left_type.clone(),
+                result_ty: Type::Int,
             });
         }
 
@@ -499,6 +487,20 @@ impl Checker {
             operand_ty,
             result_ty,
         })
+    }
+
+    const fn is_relational_op(op: BinaryOp) -> bool {
+        matches!(
+            op,
+            BinaryOp::Less | BinaryOp::LessEqual | BinaryOp::Greater | BinaryOp::GreaterEqual
+        )
+    }
+
+    #[allow(clippy::suspicious_operation_groupings)]
+    fn are_compatible_pointer_types(left: &Type, right: &Type) -> bool {
+        left.is_pointer()
+            && right.is_pointer()
+            && (left.is_assignable_from(right) || right.is_assignable_from(left))
     }
 
     fn is_assignable_expr(target_ty: &Type, value: &TypedExpr) -> bool {

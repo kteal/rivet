@@ -4965,6 +4965,37 @@ fn still_rejects_implicit_nonzero_integer_to_pointer_assignment() {
 }
 
 #[test]
+fn accepts_relational_comparison_between_compatible_pointers() {
+    let typed_program = check_source("int main() { char buf[2]; return &buf[1] > &buf[0]; }");
+    let expr = typed_return_expr(&first_typed_function(&typed_program).body[1]);
+
+    let TypedExprKind::Binary { operand_ty, .. } = &expr.kind else {
+        panic!("expected binary expression");
+    };
+
+    assert_eq!(expr.ty, Type::Int);
+    assert_eq!(*operand_ty, Type::Pointer(Box::new(Type::Char)));
+}
+
+#[test]
+fn accepts_relational_comparison_between_void_and_object_pointers() {
+    check_source("int main() { char c; char *p = &c; void *v = p; return v >= p; }");
+    check_source("int main() { char c; char *p = &c; void *v = p; return p <= v; }");
+}
+
+#[test]
+fn rejects_relational_comparison_between_incompatible_pointer_types() {
+    let err = check_source_err("int main() { char c; int i; return &c < &i; }");
+
+    assert_eq!(
+        err.message,
+        "invalid operands to binary operator '<'\n\
+         left operand has type 'char *'\n\
+         right operand has type 'int *'"
+    );
+}
+
+#[test]
 fn direct_struct_member_access_resolves_field_type_and_offset() {
     let typed_program =
         check_source("int main() { struct { char tag; int value; } item; return item.value; }");
