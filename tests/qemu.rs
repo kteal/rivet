@@ -28,6 +28,17 @@ fn run_qemu_file(path: &str, expected: i32) {
     assert!(status.success(), "qemu runner failed for {path}");
 }
 
+fn run_qemu_libc_file(path: &str, expected: i32) {
+    let status = Command::new("scripts/run-rv32-libc.sh")
+        .arg("--expect")
+        .arg(expected.to_string())
+        .arg(path)
+        .status()
+        .expect("failed to run scripts/run-rv32-libc.sh");
+
+    assert!(status.success(), "hosted qemu runner failed for {path}");
+}
+
 #[test]
 fn qemu_adler32_reduced_harness_returns_success() {
     run_qemu_file("tests/programs/adler/harness.c", 0);
@@ -46,6 +57,11 @@ fn qemu_adler32_do16_macro_ladder_returns_success() {
 #[test]
 fn qemu_adler32_full_harness_returns_success() {
     run_qemu_file("tests/programs/adler/full_harness.c", 0);
+}
+
+#[test]
+fn qemu_inih_harness_returns_success() {
+    run_qemu_libc_file("tests/programs/inih/harness.c", 0);
 }
 
 #[test]
@@ -433,6 +449,21 @@ fn qemu_logical_operator_programs_return_expected_values() {
     run_qemu_case(
         "logical-or-normalizes-right",
         "int main() {\n    return 0 || 42;\n}\n",
+        1,
+    );
+    run_qemu_case(
+        "logical-and-pointer-true",
+        "int main() {\n    char *p = \"abc\";\n    return 1 && p;\n}\n",
+        1,
+    );
+    run_qemu_case(
+        "logical-or-null-pointer-false",
+        "int main() {\n    char *p = 0;\n    return p || 0;\n}\n",
+        0,
+    );
+    run_qemu_case(
+        "logical-or-pointer-short-circuits",
+        "int main() {\n    char *p = \"abc\";\n    return p || *p;\n}\n",
         1,
     );
     run_qemu_case(

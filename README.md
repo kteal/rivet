@@ -229,7 +229,7 @@ Expressions and operators:
 - [x] C-style left-associative chained comparisons
 - [x] expression statements
 - [x] empty statements
-- [x] logical `&&` and `||` with short-circuiting
+- [x] logical `&&` and `||` with short-circuiting for integer and pointer operands
 - [x] compound assignments: `+= -= *= /= %= &= |= ^= <<= >>=`
 - [x] prefix and postfix `++` / `--`
 - [x] pointer dereference as an rvalue: `*p`
@@ -332,9 +332,11 @@ Toolchain and library compatibility:
 - [x] full Adler-32 compatibility fixture with reduced local `zutil.h`
 - [x] RV32 dynamic-libc QEMU runner using the Nix-provided cross GCC/glibc toolchain
 - [x] reduced standard header fixtures for hosted C compatibility tests
+- [x] hosted QEMU coverage for the current `inih` string-parsing harness
 - [ ] macro expansion provenance in diagnostics
 - [ ] standard header strategy
-- [ ] minimal hosted C runtime integration
+- [ ] file-backed `inih` parsing through `ini_parse`, `fopen`, `fgets`, and `fclose`
+- [ ] broader hosted C runtime integration
 - [ ] standard library calls through external symbols
 - [ ] warnings vs errors
 - [ ] separate compilation and object files

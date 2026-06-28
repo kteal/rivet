@@ -384,6 +384,11 @@ impl Type {
     }
 
     #[must_use]
+    pub const fn is_scalar(&self) -> bool {
+        self.is_integer() || self.is_pointer()
+    }
+
+    #[must_use]
     /// Returns the size of values of this type in bytes.
     ///
     /// # Panics

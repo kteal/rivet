@@ -405,6 +405,22 @@ impl Checker {
         left_type: &Type,
         right_type: &Type,
     ) -> Result<BinaryTypeInfo, SemanticError> {
+        if matches!(op, BinaryOp::LogicalAnd | BinaryOp::LogicalOr) {
+            if left_type.is_scalar() && right_type.is_scalar() {
+                return Ok(BinaryTypeInfo {
+                    operand_ty: Type::Int,
+                    result_ty: Type::Int,
+                });
+            }
+
+            return Err(SemanticError {
+                message: format!(
+                    "cannot perform operation {op} between non-scalar types '{left_type}' and '{right_type}'"
+                ),
+                span: op_span,
+            });
+        }
+
         if let Type::Pointer(inner) = left_type
             && right_type.is_integer()
         {

@@ -4996,6 +4996,18 @@ fn rejects_relational_comparison_between_incompatible_pointer_types() {
 }
 
 #[test]
+fn accepts_logical_operators_with_pointer_operands() {
+    let typed_program = check_source("int main() { char *p = \"abc\"; return 1 && p; }");
+    let expr = typed_return_expr(&first_typed_function(&typed_program).body[1]);
+
+    assert_eq!(expr.ty, Type::Int);
+    assert!(matches!(expr.kind, TypedExprKind::Binary { .. }));
+
+    check_source("int main() { char *p = \"abc\"; return p || 0; }");
+    check_source("int main() { char *p = 0; return p && p; }");
+}
+
+#[test]
 fn direct_struct_member_access_resolves_field_type_and_offset() {
     let typed_program =
         check_source("int main() { struct { char tag; int value; } item; return item.value; }");
