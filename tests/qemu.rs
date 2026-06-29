@@ -39,6 +39,25 @@ fn run_qemu_libc_file(path: &str, expected: i32) {
     assert!(status.success(), "hosted qemu runner failed for {path}");
 }
 
+fn run_qemu_libc_file_with_args(path: &str, expected: i32, args: &[&str]) -> String {
+    let output = Command::new("scripts/run-rv32-libc.sh")
+        .arg("--expect")
+        .arg(expected.to_string())
+        .arg(path)
+        .arg("--")
+        .args(args)
+        .output()
+        .expect("failed to run scripts/run-rv32-libc.sh");
+
+    assert!(
+        output.status.success(),
+        "hosted qemu runner failed for {path}: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    String::from_utf8(output.stdout).expect("hosted qemu output was not utf-8")
+}
+
 #[test]
 fn qemu_adler32_reduced_harness_returns_success() {
     run_qemu_file("tests/programs/adler/harness.c", 0);
@@ -67,6 +86,41 @@ fn qemu_inih_harness_returns_success() {
 #[test]
 fn qemu_inih_file_harness_returns_success() {
     run_qemu_libc_file("tests/programs/inih/file_harness.c", 0);
+}
+
+#[test]
+fn qemu_wc_default_counts_sample_file() {
+    let output = run_qemu_libc_file_with_args("tests/programs/wc/rivet_wc.c", 0, &[]);
+
+    assert!(output.contains("4 6 37 tests/programs/wc/sample.txt\n0\n"));
+}
+
+#[test]
+fn qemu_wc_accepts_line_count_option() {
+    let output = run_qemu_libc_file_with_args(
+        "tests/programs/wc/rivet_wc.c",
+        0,
+        &["-l", "tests/programs/wc/sample.txt"],
+    );
+
+    assert!(output.contains("4 tests/programs/wc/sample.txt\n0\n"));
+}
+
+#[test]
+fn qemu_wc_accepts_multiple_files_and_total() {
+    let output = run_qemu_libc_file_with_args(
+        "tests/programs/wc/rivet_wc.c",
+        0,
+        &[
+            "-lc",
+            "tests/programs/wc/sample.txt",
+            "tests/programs/wc/second.txt",
+        ],
+    );
+
+    assert!(output.contains("4 37 tests/programs/wc/sample.txt\n"));
+    assert!(output.contains("2 14 tests/programs/wc/second.txt\n"));
+    assert!(output.contains("6 51 total\n0\n"));
 }
 
 #[test]

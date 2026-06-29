@@ -719,13 +719,14 @@ impl Preprocessor {
             scanner.skip_until_newline();
             return Ok(());
         }
-
         scanner.expect(&TokenKind::Hash)?;
         scanner.expect_ident()?; // "define"
-        let (macro_name, _) = scanner.expect_ident()?;
+        let (macro_name, macro_name_span) = scanner.expect_ident()?;
 
         // FunctionLike macro definition
-        if scanner.peek_kind() == &TokenKind::LParen {
+        let is_function_like = matches!(scanner.peek_kind(), TokenKind::LParen)
+            && scanner.peek().span.start == macro_name_span.end;
+        if is_function_like {
             let params = Self::parse_macro_params(scanner)?;
             let replacement = scanner.collect_until_newline();
             self.macros.insert(

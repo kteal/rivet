@@ -130,6 +130,57 @@ fn expands_function_like_macro_tokens() {
 }
 
 #[test]
+fn define_with_space_before_paren_is_object_like() {
+    assert_eq!(
+        preprocess_kinds("#define VALUE (1)\nint main() { return VALUE; }\n"),
+        vec![
+            TokenKind::KwInt,
+            TokenKind::Ident("main".to_string()),
+            TokenKind::LParen,
+            TokenKind::RParen,
+            TokenKind::LBrace,
+            TokenKind::KwReturn,
+            TokenKind::LParen,
+            TokenKind::IntLiteral {
+                value: 1,
+                suffix: IntLiteralSuffix::None,
+                base: IntLiteralBase::Decimal,
+            },
+            TokenKind::RParen,
+            TokenKind::Semicolon,
+            TokenKind::RBrace,
+            TokenKind::Eof,
+        ]
+    );
+}
+
+#[test]
+fn define_negative_parenthesized_object_like_macro() {
+    assert_eq!(
+        preprocess_kinds("#define EOF (-1)\nint main() { return EOF; }\n"),
+        vec![
+            TokenKind::KwInt,
+            TokenKind::Ident("main".to_string()),
+            TokenKind::LParen,
+            TokenKind::RParen,
+            TokenKind::LBrace,
+            TokenKind::KwReturn,
+            TokenKind::LParen,
+            TokenKind::Minus,
+            TokenKind::IntLiteral {
+                value: 1,
+                suffix: IntLiteralSuffix::None,
+                base: IntLiteralBase::Decimal,
+            },
+            TokenKind::RParen,
+            TokenKind::Semicolon,
+            TokenKind::RBrace,
+            TokenKind::Eof,
+        ]
+    );
+}
+
+#[test]
 fn splices_escaped_newlines_before_macro_expansion() {
     assert_eq!(
         preprocess_kinds("#define VALUE \\\n7\nint main() { return VALUE; }\n"),

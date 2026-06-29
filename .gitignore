@@ -28,6 +28,8 @@ tests/*
 !tests/**/*.h
 !tests/programs/
 !tests/programs/**/*.c
+tests/programs/wc/wc.c
+tests/programs/wc/wc.h
 
 # Added by cargo
 

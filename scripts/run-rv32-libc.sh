@@ -3,17 +3,29 @@ set -euo pipefail
 
 expected_status=""
 
-if [ "$#" -eq 3 ] && [ "$1" = "--expect" ]; then
+if [ "$#" -ge 2 ] && [ "$1" = "--expect" ]; then
     expected_status="$2"
     shift 2
 fi
 
-if [ "$#" -ne 1 ]; then
-    echo "usage: $0 [--expect <exit-code>] <source.c>" >&2
+if [ "$#" -lt 1 ]; then
+    echo "usage: $0 [--expect <exit-code>] <source.c> [-- <program-arg>...]" >&2
     exit 2
 fi
 
 source_file="$1"
+shift
+
+if [ "$#" -gt 0 ]; then
+    if [ "$1" != "--" ]; then
+        echo "usage: $0 [--expect <exit-code>] <source.c> [-- <program-arg>...]" >&2
+        exit 2
+    fi
+
+    shift
+fi
+
+program_args=("$@")
 
 if [ ! -f "$source_file" ]; then
     echo "error: source file not found: $source_file" >&2
@@ -52,7 +64,7 @@ riscv32-unknown-linux-gnu-gcc \
     "$asm_file"
 
 set +e
-qemu-riscv32 -L "$glibc_root" "$exe_file"
+qemu-riscv32 -L "$glibc_root" "$exe_file" "${program_args[@]}"
 status="$?"
 set -e
 
