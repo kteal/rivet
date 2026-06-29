@@ -83,7 +83,7 @@ enum TypeSpecifier {
     Long,
     TypedefName { name: String, span: Span },
     Void,
-    Struct { fields: Vec<StructField> },
+    Struct(Type),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -382,6 +382,16 @@ impl Parser {
     #[allow(clippy::too_many_lines)]
     fn parse_external_decl(&mut self) -> Result<Vec<ExternalDecl>, ParseError> {
         let (spec, spec_span) = self.parse_decl_spec()?;
+
+        if self.peek_kind() == &TokenKind::Semicolon {
+            let declaration = self.parse_declaration_after_spec(spec, spec_span)?;
+            let ty = self.lower_decl_spec(&declaration.spec, declaration.spec_span)?;
+            return Ok(vec![ExternalDecl::TypeDecl {
+                ty,
+                span: declaration.spec_span,
+            }]);
+        }
+
         if spec.storage_class == Some(StorageClass::Typedef) {
             let declaration = self.parse_declaration_after_spec(spec, spec_span)?;
             return Ok(self
@@ -390,6 +400,7 @@ impl Parser {
                 .map(ExternalDecl::Typedef)
                 .collect());
         }
+
         let linkage = match spec.storage_class {
             Some(StorageClass::Static) => Linkage::Internal,
             Some(StorageClass::Extern) | None => Linkage::External,
@@ -561,6 +572,12 @@ impl Parser {
         }
     }
 
+    fn allows_empty_declarators(spec: &DeclSpec) -> bool {
+        spec.storage_class.is_none()
+            && spec.type_specifiers.len() == 1
+            && matches!(spec.type_specifiers[0], TypeSpecifier::Struct(_))
+    }
+
     fn parse_specifier_type(&mut self) -> Result<Type, ParseError> {
         let (spec, span) = self.parse_decl_spec()?;
         self.lower_decl_spec(&spec, span)
@@ -615,9 +632,7 @@ impl Parser {
         Ok(fields)
     }
 
-    fn parse_struct_specifier(&mut self) -> Result<TypeSpecifier, ParseError> {
-        self.expect(&TokenKind::KwStruct)?;
-        self.expect(&TokenKind::LBrace)?;
+    fn parse_struct_fields_after_lbrace(&mut self) -> Result<Vec<StructField>, ParseError> {
         let mut fields = vec![];
 
         while self.peek_kind() != &TokenKind::RBrace {
@@ -631,7 +646,39 @@ impl Parser {
                 span: close.span,
             });
         }
-        Ok(TypeSpecifier::Struct { fields })
+        Ok(fields)
+    }
+
+    fn parse_struct_specifier(&mut self) -> Result<TypeSpecifier, ParseError> {
+        self.expect(&TokenKind::KwStruct)?;
+        let token = self.peek();
+        match &token.kind {
+            TokenKind::LBrace => {
+                self.expect(&TokenKind::LBrace)?;
+                let fields = self.parse_struct_fields_after_lbrace()?;
+                Ok(TypeSpecifier::Struct(Type::Struct { fields }))
+            }
+            TokenKind::Ident(_) => {
+                let (name, _) = self.expect_ident()?;
+
+                if self.peek_kind() == &TokenKind::LBrace {
+                    self.expect(&TokenKind::LBrace)?;
+                    let fields = self.parse_struct_fields_after_lbrace()?;
+                    return Ok(TypeSpecifier::Struct(Type::StructTag {
+                        name,
+                        fields: Some(fields),
+                    }));
+                }
+                Ok(TypeSpecifier::Struct(Type::StructTag {
+                    name,
+                    fields: None,
+                }))
+            }
+            _ => Err(ParseError {
+                message: "expected struct tag name or '{' after 'struct'".to_string(),
+                span: token.span,
+            }),
+        }
     }
 
     #[allow(clippy::too_many_lines)]
@@ -774,7 +821,7 @@ impl Parser {
     fn lower_decl_spec(&self, spec: &DeclSpec, span: Span) -> Result<Type, ParseError> {
         let mut typedef_name = None;
         let mut type_spec = TypeSpec::default();
-        let mut struct_fields = None;
+        let mut struct_ty = None;
 
         for type_specifier in &spec.type_specifiers {
             match type_specifier {
@@ -794,14 +841,14 @@ impl Parser {
                 TypeSpecifier::Int => type_spec.int_count += 1,
                 TypeSpecifier::Char => type_spec.char_count += 1,
                 TypeSpecifier::Long => type_spec.long_count += 1,
-                TypeSpecifier::Struct { fields } => {
-                    if struct_fields.is_some() {
+                TypeSpecifier::Struct(ty) => {
+                    if struct_ty.is_some() {
                         return Err(ParseError {
                             message: "multiple struct specifiers".to_string(),
                             span,
                         });
                     }
-                    struct_fields = Some(fields.clone());
+                    struct_ty = Some(ty.clone());
                 }
             }
         }
@@ -812,14 +859,14 @@ impl Parser {
             || type_spec.int_count > 0
             || type_spec.char_count > 0
             || type_spec.long_count > 0;
-        if let Some(fields) = struct_fields {
+        if let Some(ty) = struct_ty {
             if saw_builtin || typedef_name.is_some() {
                 return Err(ParseError {
                     message: "cannot combine struct with other type specifiers".to_string(),
                     span,
                 });
             }
-            return Ok(Type::Struct { fields });
+            return Ok(ty);
         }
         if let Some((name, name_span)) = typedef_name {
             if saw_builtin {
@@ -891,6 +938,23 @@ impl Parser {
         spec: DeclSpec,
         spec_span: Span,
     ) -> Result<Declaration, ParseError> {
+        if self.peek_kind() == &TokenKind::Semicolon {
+            if !Self::allows_empty_declarators(&spec) {
+                return Err(ParseError {
+                    message: "expected declarator".to_string(),
+                    span: self.peek().span,
+                });
+            }
+
+            self.expect(&TokenKind::Semicolon)?;
+
+            return Ok(Declaration {
+                spec,
+                spec_span,
+                declarators: vec![],
+            });
+        }
+
         let mut declarators = vec![self.parse_init_declarator()?];
 
         while self.peek_kind() == &TokenKind::Comma {

@@ -2,8 +2,8 @@ use std::collections::HashMap;
 
 use crate::ast::{
     BinaryOp, Expr, ExternalDecl, FunctionDef, FunctionType, GlobalDecl, Initializer,
-    IntLiteralBase, IntLiteralSuffix, Linkage, MemberAccessKind, Program, Statement, Type, UnaryOp,
-    format_type_list,
+    IntLiteralBase, IntLiteralSuffix, Linkage, MemberAccessKind, Program, Statement, StructField,
+    Type, UnaryOp, format_type_list,
 };
 use crate::source::Span;
 
@@ -77,6 +77,11 @@ impl ObjectSymbol {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct StructTag {
+    fields: Option<Vec<StructField>>,
+}
+
 struct Checker {
     scopes: Vec<HashMap<String, LocalOrdinarySymbol>>,
     next_local_id: usize,
@@ -84,6 +89,7 @@ struct Checker {
     loop_depth: usize,
     current_function_return_type: Option<Type>,
     global_symbols: HashMap<String, GlobalOrdinarySymbol>,
+    struct_tags: HashMap<String, StructTag>,
 }
 
 impl Checker {
@@ -95,6 +101,7 @@ impl Checker {
             loop_depth: 0,
             current_function_return_type: None,
             global_symbols: HashMap::new(),
+            struct_tags: HashMap::new(),
         }
     }
 
@@ -144,16 +151,16 @@ impl Checker {
     }
 
     fn validate_object_type(ty: &Type, span: Span) -> Result<(), SemanticError> {
-        if matches!(ty, Type::Function(_) | Type::Void) {
-            return Err(SemanticError {
-                message: format!("'{ty}' type is not an object type"),
-                span,
-            });
-        }
         if matches!(ty, Type::IncompleteArray { .. }) {
             return Err(SemanticError {
                 message: "array size must be specified or inferred from string literal initializer"
                     .to_string(),
+                span,
+            });
+        }
+        if !ty.is_object_type() {
+            return Err(SemanticError {
+                message: format!("'{ty}' type is not an object type"),
                 span,
             });
         }
@@ -221,15 +228,112 @@ impl Checker {
         }
     }
 
+    fn resolve_type_tags(&mut self, ty: &Type, span: Span) -> Result<Type, SemanticError> {
+        match ty {
+            Type::StructTag { name, fields: None } => match self.struct_tags.get(name) {
+                Some(StructTag {
+                    fields: Some(known_fields),
+                }) => Ok(Type::StructTag {
+                    name: name.clone(),
+                    fields: Some(known_fields.clone()),
+                }),
+                Some(StructTag { fields: None }) => Ok(ty.clone()),
+                None => {
+                    self.struct_tags
+                        .insert(name.clone(), StructTag { fields: None });
+                    Ok(ty.clone())
+                }
+            },
+
+            Type::StructTag {
+                name,
+                fields: Some(fields),
+            } => {
+                let resolved_fields = fields
+                    .iter()
+                    .map(|field| {
+                        Ok(StructField {
+                            name: field.name.clone(),
+                            ty: self.resolve_type_tags(&field.ty, field.span)?,
+                            span: field.span,
+                        })
+                    })
+                    .collect::<Result<Vec<_>, SemanticError>>()?;
+
+                if let Some(StructTag { fields: Some(_) }) = self.struct_tags.get(name) {
+                    Err(SemanticError {
+                        message: format!("redefinition of struct '{name}'"),
+                        span,
+                    })
+                } else {
+                    self.struct_tags.insert(
+                        name.clone(),
+                        StructTag {
+                            fields: Some(resolved_fields.clone()),
+                        },
+                    );
+                    Ok(Type::StructTag {
+                        name: name.clone(),
+                        fields: Some(resolved_fields),
+                    })
+                }
+            }
+
+            Type::Pointer(inner) => Ok(Type::Pointer(Box::new(
+                self.resolve_type_tags(inner, span)?,
+            ))),
+
+            Type::Array { element, len } => Ok(Type::Array {
+                element: Box::new(self.resolve_type_tags(element, span)?),
+                len: *len,
+            }),
+
+            Type::IncompleteArray { element } => Ok(Type::IncompleteArray {
+                element: Box::new(self.resolve_type_tags(element, span)?),
+            }),
+
+            Type::Function(function) => Ok(Type::Function(Box::new(FunctionType {
+                return_type: Box::new(self.resolve_type_tags(&function.return_type, span)?),
+                params: function
+                    .params
+                    .iter()
+                    .map(|param| self.resolve_type_tags(param, span))
+                    .collect::<Result<Vec<_>, _>>()?,
+            }))),
+
+            Type::Struct { fields } => {
+                let fields = fields
+                    .iter()
+                    .map(|field| {
+                        Ok(StructField {
+                            name: field.name.clone(),
+                            ty: self.resolve_type_tags(&field.ty, field.span)?,
+                            span: field.span,
+                        })
+                    })
+                    .collect::<Result<Vec<_>, SemanticError>>()?;
+
+                Ok(Type::Struct { fields })
+            }
+
+            _ => Ok(ty.clone()),
+        }
+    }
+
     fn declare_function_signature(
         &mut self,
         name: &str,
         name_span: Span,
         return_type: &Type,
-        param_types: Vec<Type>,
+        param_types: &[Type],
         linkage: Linkage,
         has_body: bool,
     ) -> Result<(), SemanticError> {
+        let return_type = self.resolve_type_tags(return_type, name_span)?;
+        let param_types = param_types
+            .iter()
+            .map(|ty| self.resolve_type_tags(ty, name_span))
+            .collect::<Result<Vec<_>, _>>()?;
         match self.global_symbols.get_mut(name) {
             Some(GlobalOrdinarySymbol::GlobalObject(_)) => {
                 return Err(SemanticError {
@@ -240,7 +344,7 @@ impl Checker {
                 });
             }
             Some(GlobalOrdinarySymbol::Function(function)) => {
-                if function.return_type != *return_type {
+                if function.return_type != return_type {
                     return Err(SemanticError {
                         message: format!(
                             "function declaration and definition must have same return type, got '{}' and '{return_type}'",
@@ -291,7 +395,7 @@ impl Checker {
                 self.global_symbols.insert(
                     name.to_string(),
                     GlobalOrdinarySymbol::Function(FunctionInfo {
-                        return_type: return_type.clone(),
+                        return_type,
                         param_types,
                         defined: has_body,
                         linkage,
@@ -309,7 +413,8 @@ impl Checker {
         ty: &Type,
         linkage: Linkage,
     ) -> Result<(), SemanticError> {
-        Self::validate_object_type(ty, span)?;
+        let ty = self.resolve_type_tags(ty, span)?;
+        Self::validate_object_type(&ty, span)?;
         match self.global_symbols.get(name) {
             Some(GlobalOrdinarySymbol::GlobalObject(_)) => {
                 return Err(SemanticError {
@@ -329,11 +434,7 @@ impl Checker {
                 let id = self.new_global_id();
                 self.global_symbols.insert(
                     name.to_string(),
-                    GlobalOrdinarySymbol::GlobalObject(GlobalSymbol {
-                        id,
-                        ty: ty.clone(),
-                        linkage,
-                    }),
+                    GlobalOrdinarySymbol::GlobalObject(GlobalSymbol { id, ty, linkage }),
                 );
             }
         }
@@ -1005,14 +1106,21 @@ impl Checker {
                     });
                 };
 
-                let Type::Struct { .. } = pointee_ty else {
+                if !matches!(
+                    pointee_ty,
+                    Type::Struct { .. }
+                        | Type::StructTag {
+                            fields: Some(_),
+                            ..
+                        }
+                ) {
                     return Err(SemanticError {
                         message: format!(
                             "cannot access field '{field}' through pointer to non-struct type '{pointee_ty}'"
                         ),
                         span: op_span,
                     });
-                };
+                }
 
                 let Some((field_ty, offset)) = pointee_ty.field_info(field) else {
                     return Err(SemanticError {
@@ -1353,7 +1461,7 @@ impl Checker {
                 message: format!("'{target_ty}' type is not an object type"),
                 span: name_span,
             }),
-            (Type::Struct { .. }, _) => Err(SemanticError {
+            (Type::Struct { .. } | Type::StructTag { .. }, _) => Err(SemanticError {
                 message: "struct initializers are not supported".to_string(),
                 span: name_span,
             }),
@@ -1443,6 +1551,8 @@ impl Checker {
                         declaration.init.as_ref(),
                         declaration.name_span,
                     )?;
+                    let completed_ty =
+                        self.resolve_type_tags(&completed_ty, declaration.name_span)?;
                     let symbol = self.declare_local(
                         &completed_ty,
                         &declaration.name,
@@ -1600,14 +1710,17 @@ impl Checker {
         function: &FunctionDef,
     ) -> Result<TypedFunction, SemanticError> {
         self.enter_scope();
+        let function_symbol = self
+            .resolve_function(&function.name, function.name_span)?
+            .clone();
         let old_return_type = self
             .current_function_return_type
-            .replace(function.return_type.clone());
+            .replace(function_symbol.return_type.clone());
 
         let res = (|| -> Result<TypedFunction, SemanticError> {
             let mut typed_params = vec![];
-            for param in &function.params {
-                let symbol = self.declare_local(&param.ty, &param.name, param.name_span)?;
+            for (resolved_ty, param) in function_symbol.param_types.iter().zip(&function.params) {
+                let symbol = self.declare_local(resolved_ty, &param.name, param.name_span)?;
 
                 typed_params.push(TypedParam {
                     id: symbol.id,
@@ -1622,7 +1735,7 @@ impl Checker {
             }
 
             Ok(TypedFunction {
-                return_type: function.return_type.clone(),
+                return_type: function_symbol.return_type.clone(),
                 name: function.name.clone(),
                 name_span: function.name_span,
                 params: typed_params,
@@ -1677,21 +1790,31 @@ pub fn check(program: &Program) -> Result<TypedProgram, SemanticError> {
     for decl in &program.declarations {
         match decl {
             ExternalDecl::FunctionDecl(function) => {
+                let param_types = function
+                    .params
+                    .iter()
+                    .map(|p| p.ty.clone())
+                    .collect::<Vec<_>>();
                 checker.declare_function_signature(
                     &function.name,
                     function.name_span,
                     &function.return_type,
-                    function.params.iter().map(|p| p.ty.clone()).collect(),
+                    &param_types,
                     function.linkage,
                     false,
                 )?;
             }
             ExternalDecl::FunctionDef(function) => {
+                let param_types = function
+                    .params
+                    .iter()
+                    .map(|p| p.ty.clone())
+                    .collect::<Vec<_>>();
                 checker.declare_function_signature(
                     &function.name,
                     function.name_span,
                     &function.return_type,
-                    function.params.iter().map(|p| p.ty.clone()).collect(),
+                    &param_types,
                     function.linkage,
                     true,
                 )?;
@@ -1709,7 +1832,12 @@ pub fn check(program: &Program) -> Result<TypedProgram, SemanticError> {
                     global.linkage,
                 )?;
             }
-            ExternalDecl::Typedef(_) => (),
+            ExternalDecl::Typedef(typedef) => {
+                checker.resolve_type_tags(&typedef.ty, typedef.name_span)?;
+            }
+            ExternalDecl::TypeDecl { ty, span } => {
+                checker.resolve_type_tags(ty, *span)?;
+            }
         }
     }
 

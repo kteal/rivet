@@ -1431,6 +1431,41 @@ fn parses_anonymous_struct_typedef() {
 }
 
 #[test]
+fn parses_opaque_tagged_struct_typedef() {
+    let program = parse_source("typedef struct FILE FILE;\nint main() { return 0; }");
+
+    let ExternalDecl::Typedef(typedef) = &program.declarations[0] else {
+        panic!("expected typedef declaration");
+    };
+
+    assert_eq!(typedef.name, "FILE");
+    assert_eq!(
+        typedef.ty,
+        Type::StructTag {
+            name: "FILE".to_string(),
+            fields: None,
+        }
+    );
+}
+
+#[test]
+fn parses_standalone_opaque_struct_tag_declaration() {
+    let program = parse_source("struct FILE;\nint main() { return 0; }");
+
+    let ExternalDecl::TypeDecl { ty, .. } = &program.declarations[0] else {
+        panic!("expected type declaration");
+    };
+
+    assert_eq!(
+        ty,
+        &Type::StructTag {
+            name: "FILE".to_string(),
+            fields: None,
+        }
+    );
+}
+
+#[test]
 fn parses_local_anonymous_struct_object() {
     let body = main_body("int main() { struct { int x; char y; } value; return sizeof(value); }");
     let decl = single_decl(&body[0]);
@@ -1439,6 +1474,69 @@ fn parses_local_anonymous_struct_object() {
         panic!("expected local struct object type");
     };
     assert_eq!(decl.name, "value");
+    assert_eq!(fields.len(), 2);
+    assert_eq!(fields[0].name, "x");
+    assert_eq!(fields[0].ty, Type::Int);
+    assert_eq!(fields[1].name, "y");
+    assert_eq!(fields[1].ty, Type::Char);
+}
+
+#[test]
+fn parses_standalone_complete_struct_tag_definition() {
+    let program = parse_source("struct Point { int x; char y; };\nint main() { return 0; }");
+
+    let ExternalDecl::TypeDecl { ty, .. } = &program.declarations[0] else {
+        panic!("expected type declaration");
+    };
+
+    let Type::StructTag {
+        name,
+        fields: Some(fields),
+    } = ty
+    else {
+        panic!("expected complete tagged struct type declaration");
+    };
+
+    assert_eq!(name, "Point");
+    assert_eq!(fields.len(), 2);
+    assert_eq!(fields[0].name, "x");
+    assert_eq!(fields[0].ty, Type::Int);
+    assert_eq!(fields[1].name, "y");
+    assert_eq!(fields[1].ty, Type::Char);
+}
+
+#[test]
+fn parses_pointer_to_opaque_tagged_struct() {
+    let body = main_body("int main() { struct FILE *file; return sizeof(file); }");
+    let decl = single_decl(&body[0]);
+
+    assert_eq!(decl.name, "file");
+    assert_eq!(
+        decl.ty,
+        Type::Pointer(Box::new(Type::StructTag {
+            name: "FILE".to_string(),
+            fields: None,
+        }))
+    );
+}
+
+#[test]
+fn parses_complete_tagged_struct_object() {
+    let program = parse_source("struct Point { int x; char y; } point;\nint main() { return 0; }");
+
+    let ExternalDecl::Global(global) = &program.declarations[0] else {
+        panic!("expected global declaration");
+    };
+
+    assert_eq!(global.name, "point");
+    let Type::StructTag {
+        name,
+        fields: Some(fields),
+    } = &global.ty
+    else {
+        panic!("expected complete tagged struct type");
+    };
+    assert_eq!(name, "Point");
     assert_eq!(fields.len(), 2);
     assert_eq!(fields[0].name, "x");
     assert_eq!(fields[0].ty, Type::Int);

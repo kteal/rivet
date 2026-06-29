@@ -5104,6 +5104,88 @@ fn pointer_struct_member_access_is_assignable_lvalue() {
 }
 
 #[test]
+fn accepts_pointer_to_opaque_tagged_struct_typedef() {
+    check_source("typedef struct FILE FILE; FILE *file; int main() { return file != 0; }");
+}
+
+#[test]
+fn accepts_opaque_tagged_struct_pointer_as_void_pointer_argument() {
+    check_source(
+        "typedef struct FILE FILE; int takes_void(void *p) { return p != 0; } FILE *file; int main() { return takes_void(file); }",
+    );
+}
+
+#[test]
+fn rejects_direct_object_of_incomplete_tagged_struct_typedef() {
+    let err = check_source_err("typedef struct FILE FILE; FILE file; int main() { return 0; }");
+
+    assert_eq!(err.message, "'struct FILE' type is not an object type");
+}
+
+#[test]
+fn resolves_later_reference_to_completed_struct_tag() {
+    let typed_program = check_source(
+        "struct Point { char tag; int value; } first; struct Point second; int main() { return second.value; }",
+    );
+    let expr = typed_return_expr(&first_typed_function(&typed_program).body[0]);
+
+    let TypedExprKind::LvalueToRvalue { expr: member, .. } = &expr.kind else {
+        panic!("expected member access to decay through lvalue-to-rvalue");
+    };
+    let TypedExprKind::Member {
+        access,
+        field,
+        offset,
+        ..
+    } = &member.kind
+    else {
+        panic!("expected typed member expression");
+    };
+
+    assert_eq!(expr.ty, Type::Int);
+    assert_eq!(member.ty, Type::Int);
+    assert_eq!(*access, MemberAccessKind::Direct);
+    assert_eq!(field, "value");
+    assert_eq!(*offset, 4);
+}
+
+#[test]
+fn resolves_standalone_completed_struct_tag_for_pointer_member_access() {
+    let typed_program = check_source(
+        "struct Item { int x; char y; }; int main() { struct Item item; struct Item *p = &item; p->x = 30; return p->x; }",
+    );
+    let expr = typed_return_expr(&first_typed_function(&typed_program).body[3]);
+
+    let TypedExprKind::LvalueToRvalue { expr: member, .. } = &expr.kind else {
+        panic!("expected member access to decay through lvalue-to-rvalue");
+    };
+    let TypedExprKind::Member {
+        access,
+        field,
+        offset,
+        ..
+    } = &member.kind
+    else {
+        panic!("expected typed member expression");
+    };
+
+    assert_eq!(expr.ty, Type::Int);
+    assert_eq!(member.ty, Type::Int);
+    assert_eq!(*access, MemberAccessKind::Pointer);
+    assert_eq!(field, "x");
+    assert_eq!(*offset, 0);
+}
+
+#[test]
+fn rejects_duplicate_struct_tag_definition() {
+    let err = check_source_err(
+        "struct Point { int x; } first; struct Point { int y; } second; int main() { return 0; }",
+    );
+
+    assert_eq!(err.message, "redefinition of struct 'Point'");
+}
+
+#[test]
 fn rejects_direct_member_access_on_non_struct_type() {
     let err = check_source_err("int main() { int x; return x.value; }");
 

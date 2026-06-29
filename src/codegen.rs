@@ -287,6 +287,10 @@ impl Codegen {
             Type::Array { element, len } => {
                 self.emit_global_array(element, *len, global.init.as_ref());
             }
+            Type::Struct { .. }
+            | Type::StructTag {
+                fields: Some(_), ..
+            } => self.emit_line(format_args!(".zero {}", global.ty.size())),
             _ => unimplemented!("global codegen for {:?}", global.ty),
         }
     }
@@ -333,7 +337,7 @@ impl Codegen {
             Type::IncompleteArray { .. } => {
                 unreachable!("incomplete arrays should have been handled before codegen")
             }
-            Type::Void | Type::Struct { .. } => {
+            Type::Void | Type::Struct { .. } | Type::StructTag { .. } => {
                 unreachable!("{ty} types should be rejected before codegen")
             }
         }
@@ -357,7 +361,7 @@ impl Codegen {
                 unreachable!("incomplete arrays should have been handled before codegen")
             }
             Type::Function(_) => unreachable!("function values should have decayed before codegen"),
-            Type::Void | Type::Struct { .. } => {
+            Type::Void | Type::Struct { .. } | Type::StructTag { .. } => {
                 unreachable!("{} types should be rejected before codegen", local.ty)
             }
         }
@@ -452,7 +456,7 @@ impl Codegen {
                 unreachable!("incomplete arrays should have been handled before codegen")
             }
             Type::Function(_) => unreachable!("function values should have decayed before codegen"),
-            Type::Void | Type::Struct { .. } => {
+            Type::Void | Type::Struct { .. } | Type::StructTag { .. } => {
                 unreachable!("{ty} types should be rejected before codegen")
             }
         }
@@ -476,7 +480,7 @@ impl Codegen {
                 unreachable!("incomplete arrays should have been handled before codegen")
             }
             Type::Function(_) => unreachable!("function values should have decayed before codegen"),
-            Type::Void | Type::Struct { .. } => {
+            Type::Void | Type::Struct { .. } | Type::StructTag { .. } => {
                 unreachable!("{ty} types should be rejected before codegen")
             }
         }
@@ -541,7 +545,7 @@ impl Codegen {
                 Type::Function(_) => {
                     unreachable!("function values should have decayed before codegen")
                 }
-                Type::Void | Type::Struct { .. } => {
+                Type::Void | Type::Struct { .. } | Type::StructTag { .. } => {
                     unreachable!("{ty} types should be rejected before codegen")
                 }
             },
@@ -564,7 +568,7 @@ impl Codegen {
                 Type::Function(_) => {
                     unreachable!("function values should have decayed before codegen")
                 }
-                Type::Void | Type::Struct { .. } => {
+                Type::Void | Type::Struct { .. } | Type::StructTag { .. } => {
                     unreachable!("{ty} types should be rejected before codegen")
                 }
             },
@@ -592,7 +596,7 @@ impl Codegen {
                 Type::Function(_) => {
                     unreachable!("function values should have decayed before codegen")
                 }
-                Type::Void | Type::Struct { .. } => {
+                Type::Void | Type::Struct { .. } | Type::StructTag { .. } => {
                     unreachable!("{ty} types should be rejected before codegen")
                 }
             },
@@ -614,7 +618,7 @@ impl Codegen {
                 Type::Function(_) => {
                     unreachable!("function values should have decayed before codegen")
                 }
-                Type::Void | Type::Struct { .. } => {
+                Type::Void | Type::Struct { .. } | Type::StructTag { .. } => {
                     unreachable!("{ty} types should be rejected before codegen")
                 }
             },
@@ -634,7 +638,7 @@ impl Codegen {
                 Type::Function(_) => {
                     unreachable!("function values should have decayed before codegen")
                 }
-                Type::Void | Type::Struct { .. } => {
+                Type::Void | Type::Struct { .. } | Type::StructTag { .. } => {
                     unreachable!("{ty} types should be rejected before codegen")
                 }
             },
@@ -656,7 +660,7 @@ impl Codegen {
                 Type::Function(_) => {
                     unreachable!("function values should have decayed before codegen")
                 }
-                Type::Void | Type::Struct { .. } => {
+                Type::Void | Type::Struct { .. } | Type::StructTag { .. } => {
                     unreachable!("{ty} types should be rejected before codegen")
                 }
             },
@@ -683,7 +687,7 @@ impl Codegen {
                 Type::Function(_) => {
                     unreachable!("function values should have decayed before codegen")
                 }
-                Type::Void | Type::Struct { .. } => {
+                Type::Void | Type::Struct { .. } | Type::StructTag { .. } => {
                     unreachable!("{ty} types should be rejected before codegen")
                 }
             },

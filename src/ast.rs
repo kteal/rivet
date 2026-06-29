@@ -12,6 +12,7 @@ pub enum ExternalDecl {
     FunctionDef(FunctionDef),
     Typedef(Typedef),
     Global(GlobalDecl),
+    TypeDecl { ty: Type, span: Span },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -356,11 +357,22 @@ pub enum Type {
     Long,
     UnsignedLong,
     Pointer(Box<Self>),
-    Array { element: Box<Self>, len: usize },
-    IncompleteArray { element: Box<Self> },
+    Array {
+        element: Box<Self>,
+        len: usize,
+    },
+    IncompleteArray {
+        element: Box<Self>,
+    },
     Function(Box<FunctionType>),
     Void,
-    Struct { fields: Vec<StructField> },
+    Struct {
+        fields: Vec<StructField>,
+    },
+    StructTag {
+        name: String,
+        fields: Option<Vec<StructField>>,
+    },
 }
 
 impl Type {
@@ -388,28 +400,43 @@ impl Type {
         self.is_integer() || self.is_pointer()
     }
 
+    fn struct_size(fields: &[StructField]) -> usize {
+        let mut offset = 0;
+        let mut max_align = 1;
+        for field in fields {
+            let field_align = field.ty.align();
+            offset = align_to(offset, field_align);
+            offset += field.ty.size();
+            max_align = max_align.max(field_align);
+        }
+        align_to(offset, max_align)
+    }
+
+    fn struct_align(fields: &[StructField]) -> usize {
+        fields
+            .iter()
+            .map(|field| field.ty.align())
+            .max()
+            .unwrap_or(1)
+    }
+
     #[must_use]
     /// Returns the size of values of this type in bytes.
     ///
     /// # Panics
     ///
-    /// Panics for function types because functions are not object values.
+    /// Panics for function types, `void`, incomplete arrays, and incomplete
+    /// struct tags because none of those are complete object values.
     pub fn size(&self) -> usize {
         match self {
             Self::Char | Self::SignedChar | Self::UnsignedChar => 1,
             Self::Int | Self::UnsignedInt | Self::Pointer(_) | Self::Long | Self::UnsignedLong => 4,
             Self::Array { element, len } => element.size() * len,
-            Self::Struct { fields } => {
-                let mut offset = 0;
-                let mut max_align = 1;
-                for field in fields {
-                    let field_align = field.ty.align();
-                    offset = align_to(offset, field_align);
-                    offset += field.ty.size();
-                    max_align = max_align.max(field_align);
-                }
-                align_to(offset, max_align)
-            }
+            Self::Struct { fields } => Self::struct_size(fields),
+            Self::StructTag { fields, .. } => fields.as_ref().map_or_else(
+                || panic!("cannot calculate size of incomplete struct"),
+                |fields| Self::struct_size(fields),
+            ),
             Self::Function(_) | Self::IncompleteArray { .. } | Self::Void => {
                 panic!("cannot calculate size of '{self}' type")
             }
@@ -421,7 +448,8 @@ impl Type {
     ///
     /// # Panics
     ///
-    /// Panics for function types because functions are not object values.
+    /// Panics for function types, `void`, incomplete arrays, and incomplete
+    /// struct tags because none of those are complete object values.
     pub fn align(&self) -> usize {
         match self {
             Self::Char
@@ -433,11 +461,11 @@ impl Type {
             | Self::Long
             | Self::UnsignedLong => self.size(),
             Self::Array { element, .. } => element.align(),
-            Self::Struct { fields } => fields
-                .iter()
-                .map(|field| field.ty.align())
-                .max()
-                .unwrap_or(1),
+            Self::Struct { fields } => Self::struct_align(fields),
+            Self::StructTag { fields, .. } => fields.as_ref().map_or_else(
+                || panic!("cannot calculate alignment of incomplete struct"),
+                |fields| Self::struct_align(fields),
+            ),
             Self::Function(_) | Self::IncompleteArray { .. } | Self::Void => {
                 panic!("cannot calculate alignment of '{self}' type")
             }
@@ -463,7 +491,8 @@ impl Type {
             | Self::IncompleteArray { .. }
             | Self::Function(_)
             | Self::Void
-            | Self::Struct { .. } => None,
+            | Self::Struct { .. }
+            | Self::StructTag { .. } => None,
         }
     }
 
@@ -495,7 +524,10 @@ impl Type {
     pub const fn is_object_type(&self) -> bool {
         !matches!(
             self,
-            Self::Void | Self::Function(_) | Self::IncompleteArray { .. }
+            Self::Void
+                | Self::Function(_)
+                | Self::IncompleteArray { .. }
+                | Self::StructTag { fields: None, .. }
         )
     }
 
@@ -504,30 +536,40 @@ impl Type {
         matches!(
             (self, other),
             (Self::Pointer(left), Self::Pointer(right))
-                if (left.as_ref() == &Self::Void && right.as_ref().is_object_type())
-                || (right.as_ref() == &Self::Void && left.as_ref().is_object_type())
+                if (left.as_ref() == &Self::Void && right.as_ref().is_void_pointer_pointee())
+                || (right.as_ref() == &Self::Void && left.as_ref().is_void_pointer_pointee())
         )
     }
 
     #[must_use]
+    pub const fn is_void_pointer_pointee(&self) -> bool {
+        self.is_object_type() || matches!(self, Self::StructTag { fields: None, .. })
+    }
+
+    #[must_use]
     pub fn field_info(&self, name: &str) -> Option<(Self, usize)> {
-        let Self::Struct { fields } = self else {
-            return None;
-        };
+        match self {
+            Self::Struct { fields }
+            | Self::StructTag {
+                fields: Some(fields),
+                ..
+            } => {
+                let mut offset = 0;
 
-        let mut offset = 0;
+                for field in fields {
+                    offset = align_to(offset, field.ty.align());
 
-        for field in fields {
-            offset = align_to(offset, field.ty.align());
+                    if field.name == name {
+                        return Some((field.ty.clone(), offset));
+                    }
 
-            if field.name == name {
-                return Some((field.ty.clone(), offset));
+                    offset += field.ty.size();
+                }
+
+                None
             }
-
-            offset += field.ty.size();
+            _ => None,
         }
-
-        None
     }
 
     #[must_use]
@@ -576,6 +618,9 @@ impl std::fmt::Display for Type {
                     write!(f, "{} {};", field.ty, field.name)?;
                 }
                 write!(f, " }}")
+            }
+            Self::StructTag { name, .. } => {
+                write!(f, "struct {name}")
             }
         }
     }

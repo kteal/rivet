@@ -96,9 +96,10 @@ pub fn functions(program: &Program) -> Vec<&FunctionDef> {
         .iter()
         .filter_map(|decl| match decl {
             ExternalDecl::FunctionDef(function) => Some(function),
-            ExternalDecl::Typedef(_) | ExternalDecl::FunctionDecl(_) | ExternalDecl::Global(_) => {
-                None
-            }
+            ExternalDecl::Typedef(_)
+            | ExternalDecl::FunctionDecl(_)
+            | ExternalDecl::Global(_)
+            | ExternalDecl::TypeDecl { .. } => None,
         })
         .collect()
 }

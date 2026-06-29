@@ -65,6 +65,11 @@ fn qemu_inih_harness_returns_success() {
 }
 
 #[test]
+fn qemu_inih_file_harness_returns_success() {
+    run_qemu_libc_file("tests/programs/inih/file_harness.c", 0);
+}
+
+#[test]
 fn qemu_return_and_arithmetic_programs_return_expected_values() {
     run_qemu_case("return-42", "int main() {\n    return 42;\n}\n", 42);
     run_qemu_case("precedence", "int main() {\n    return 1 + 2 * 3;\n}\n", 7);
@@ -322,6 +327,21 @@ fn qemu_struct_member_programs_return_expected_values() {
         "inih-shaped-struct-pointer-fields",
         "typedef struct { char *ptr; unsigned long num_left; } Ctx;\n\nint main() {\n    Ctx ctx;\n    Ctx *p = &ctx;\n    p->ptr = \"abc\";\n    p->num_left = 3;\n    return p->ptr[1] + p->num_left;\n}\n",
         101,
+    );
+    run_qemu_case(
+        "tagged-struct-local-member-read-write",
+        "int main() {\n    struct Point { int x; char y; } p;\n    p.x = 7;\n    p.y = 3;\n    return p.x + p.y;\n}\n",
+        10,
+    );
+    run_qemu_case(
+        "tagged-struct-reused-global-and-local",
+        "struct Point { int x; char y; } global;\n\nint main() {\n    struct Point local;\n    local.x = 5;\n    local.y = 2;\n    global.x = local.x;\n    global.y = local.y;\n    return global.x + global.y;\n}\n",
+        7,
+    );
+    run_qemu_case(
+        "tagged-struct-pointer-member-read-write",
+        "struct Item { int x; char y; };\n\nint main() {\n    struct Item item;\n    struct Item *p = &item;\n    p->x = 30;\n    p->y = 12;\n    return p->x + p->y;\n}\n",
+        42,
     );
 }
 

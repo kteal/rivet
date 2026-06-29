@@ -3,7 +3,7 @@
 
 #include <stddef.h>
 
-typedef void FILE;
+typedef struct FILE FILE;
 
 FILE* fopen(const char* filename, const char* mode);
 int fclose(FILE* stream);

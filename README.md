@@ -8,25 +8,8 @@
 
 The current subset covers integer and character types, `void`, pointers, arrays, anonymous structs, globals, functions, typedefs, string literals, `sizeof`, common control flow, and C-like expression precedence. It emits RV32IM assembly and reports lexer, parser, and semantic errors with source-map-backed file, line, and column locations.
 
-The current language subset supports programs shaped like:
-
-```c
-int sum3(char *p) {
-    int sum = 0;
-
-    for (int i = 0; i < 3; i++) {
-        sum += *p;
-        p++;
-    }
-
-    return sum;
-}
-
-int main() {
-    char buf[3] = {'a', 'b', 'c'};
-    return sum3(buf);
-}
-```
+The compiler can run the Adler-32 compatibility fixture and hosted `inih`
+string-backed and file-backed harnesses under RV32 QEMU.
 
 ## Development Environment
 
@@ -171,6 +154,9 @@ separate from hosted runtime integration.
 
 ## Status
 
+<details>
+<summary>Supported feature checklist</summary>
+
 Lexing and preprocessing:
 
 - [x] integer literals
@@ -264,7 +250,7 @@ Types and semantic analysis:
 - [x] `signed`, `signed int`, `signed long`, and `signed long int`
 - [x] `void` as a non-object type and `void *` as a generic object pointer
 - [x] basic pointer types such as `char *` and `int *`
-- [x] `void *` compatibility with object pointers in assignments, calls, returns, and comparisons
+- [x] `void *` compatibility with object pointers, including opaque tagged struct pointers, in assignments, calls, returns, and comparisons
 - [x] pointer dereference type checking
 - [x] pointer arithmetic with integer offsets
 - [x] explicit pointer/integer casts while keeping implicit pointer/integer assignments restricted
@@ -320,9 +306,10 @@ Objects, aggregate types, and declarators:
 - [x] inferred-size local and global character arrays from string literals: `char buf[] = "abc"`
 - [x] adjacent string literal concatenation: `"foo" "bar"`
 - [x] anonymous struct object types: `struct { int x; char y; }`
+- [x] tagged structs, standalone tag declarations/definitions, and incomplete opaque tags: `struct FILE;`
 - [x] direct and pointer member access: `obj.field` and `ptr->field`
 - [ ] full C declarator grammar
-- [ ] tagged structs, unions, forward declarations, and incomplete aggregate types
+- [ ] unions, forward declarations beyond struct tags, and complete C incomplete-type behavior
 - [ ] struct assignment, struct-by-value parameters/returns, and aggregate initializers
 - [ ] compound literals
 
@@ -333,9 +320,9 @@ Toolchain and library compatibility:
 - [x] RV32 dynamic-libc QEMU runner using the Nix-provided cross GCC/glibc toolchain
 - [x] reduced standard header fixtures for hosted C compatibility tests
 - [x] hosted QEMU coverage for the current `inih` string-parsing harness
+- [x] hosted QEMU coverage for file-backed `inih` parsing through `ini_parse`, `fopen`, `fgets`, and `fclose`
 - [ ] macro expansion provenance in diagnostics
 - [ ] standard header strategy
-- [ ] file-backed `inih` parsing through `ini_parse`, `fopen`, `fgets`, and `fclose`
 - [ ] broader hosted C runtime integration
 - [ ] standard library calls through external symbols
 - [ ] warnings vs errors
@@ -349,3 +336,5 @@ Backend and portability:
 - [ ] register allocation
 - [ ] intermediate representation
 - [ ] basic optimization passes
+
+</details>
