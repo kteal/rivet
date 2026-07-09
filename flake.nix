@@ -50,7 +50,7 @@
           ];
 
           preCheck = ''
-            patchShebangs scripts/run-rv32.sh
+            patchShebangs scripts
           '';
         };
 
