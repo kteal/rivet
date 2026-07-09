@@ -6,7 +6,7 @@
 
 `rivet` is a C compiler written in Rust that targets RV32IM assembly. It is working toward C23 by growing a small, tested C subset.
 
-The current subset covers integer and character types, `void`, pointers, arrays, anonymous structs, globals, functions, typedefs, string literals, `sizeof`, common control flow, and C-like expression precedence. It emits RV32IM assembly and reports lexer, parser, and semantic errors with source-map-backed file, line, and column locations.
+The current subset covers integer and character types, `void`, pointers, arrays, anonymous structs, enum types, globals, functions, typedefs, string literals, `sizeof`, common control flow, and C-like expression precedence. It emits RV32IM assembly and reports lexer, parser, and semantic errors with source-map-backed file, line, and column locations.
 
 The compiler can run the Adler-32 compatibility fixture and hosted `inih`
 string-backed and file-backed harnesses under RV32 QEMU.
@@ -260,7 +260,7 @@ Types and semantic analysis:
 - [x] project-local typedef compatibility for integer aliases
 - [ ] standard-library and fixed-width typedef compatibility
 - [ ] `bool`, `true`, `false`
-- [ ] enum types and enumerators
+- [x] enum types and enumerators
 
 Control flow:
 
@@ -308,6 +308,7 @@ Objects, aggregate types, and declarators:
 - [x] anonymous struct object types: `struct { int x; char y; }`
 - [x] tagged structs, standalone tag declarations/definitions, and incomplete opaque tags: `struct FILE;`
 - [x] direct and pointer member access: `obj.field` and `ptr->field`
+- [x] anonymous and tagged enum types, standalone enum tag definitions, enumerator constants, and enum object codegen
 - [ ] full C declarator grammar
 - [ ] unions, forward declarations beyond struct tags, and complete C incomplete-type behavior
 - [ ] struct assignment, struct-by-value parameters/returns, and aggregate initializers

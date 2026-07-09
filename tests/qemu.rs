@@ -1790,3 +1790,54 @@ fn qemu_void_pointer_programs_return_expected_values() {
         1,
     );
 }
+
+#[test]
+fn qemu_enum_programs_return_expected_values() {
+    run_qemu_case(
+        "enum-implicit-and-explicit-values",
+        "int main() {\n    enum { A, B = 4, C } value;\n    return A + B + C;\n}\n",
+        9,
+    );
+
+    run_qemu_case(
+        "named-enum-object-initialized-from-enumerator",
+        "int main() {\n    enum Mode { Auto, Always = 3 } mode = Always;\n    return mode;\n}\n",
+        3,
+    );
+
+    run_qemu_case(
+        "enum-constant-expression-uses-prior-enumerator",
+        "int main() {\n    enum { Read = 1, Write = 2, Both = Read | Write } flags;\n    return Both;\n}\n",
+        3,
+    );
+
+    run_qemu_case(
+        "global-enum-object-initialized-from-enumerator",
+        "enum { A = 7 } g = A;\nint main() {\n    return g;\n}\n",
+        7,
+    );
+
+    run_qemu_case(
+        "standalone-enum-tag-used-by-local-object",
+        "enum Mode { Auto = 2, Always = 5 };\nint main() {\n    enum Mode mode = Always;\n    return mode;\n}\n",
+        5,
+    );
+
+    run_qemu_case(
+        "enum-parameter-and-return-value",
+        "enum Mode { Auto = 2, Always = 5 };\nenum Mode choose(int flag) {\n    if (flag) {\n        return Always;\n    }\n    return Auto;\n}\nint bump(enum Mode mode) {\n    return mode + 1;\n}\nint main() {\n    return bump(choose(1));\n}\n",
+        6,
+    );
+
+    run_qemu_case(
+        "enum-array-values",
+        "enum Mode { Auto = 2, Always = 5 };\nint main() {\n    enum Mode modes[2] = { Auto, Always };\n    return modes[0] + modes[1];\n}\n",
+        7,
+    );
+
+    run_qemu_case(
+        "enum-comparison-and-branching",
+        "enum Mode { Auto = 2, Always = 5 };\nint main() {\n    enum Mode mode = Auto;\n    if (mode < Always) {\n        return 11;\n    }\n    return 3;\n}\n",
+        11,
+    );
+}

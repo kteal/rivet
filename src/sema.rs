@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use crate::ast::{
-    BinaryOp, Expr, ExternalDecl, FunctionDef, FunctionType, GlobalDecl, Initializer,
+    BinaryOp, Enumerator, Expr, ExternalDecl, FunctionDef, FunctionType, GlobalDecl, Initializer,
     IntLiteralBase, IntLiteralSuffix, Linkage, MemberAccessKind, Program, Statement, StructField,
     Type, UnaryOp, format_type_list,
 };
@@ -54,11 +54,13 @@ enum ObjectSymbol {
 enum GlobalOrdinarySymbol {
     GlobalObject(GlobalSymbol),
     Function(FunctionInfo),
+    EnumConstant(i64),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum LocalOrdinarySymbol {
     Object(LocalSymbol),
+    EnumConstant(i64),
 }
 
 impl ObjectSymbol {
@@ -82,6 +84,17 @@ struct StructTag {
     fields: Option<Vec<StructField>>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ResolvedEnumerator {
+    name: String,
+    value: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct EnumTag {
+    enumerators: Option<Vec<ResolvedEnumerator>>,
+}
+
 struct Checker {
     scopes: Vec<HashMap<String, LocalOrdinarySymbol>>,
     next_local_id: usize,
@@ -90,6 +103,7 @@ struct Checker {
     current_function_return_type: Option<Type>,
     global_symbols: HashMap<String, GlobalOrdinarySymbol>,
     struct_tags: HashMap<String, StructTag>,
+    enum_tags: HashMap<String, EnumTag>,
 }
 
 impl Checker {
@@ -102,6 +116,7 @@ impl Checker {
             current_function_return_type: None,
             global_symbols: HashMap::new(),
             struct_tags: HashMap::new(),
+            enum_tags: HashMap::new(),
         }
     }
 
@@ -201,7 +216,8 @@ impl Checker {
             Some(GlobalOrdinarySymbol::GlobalObject(global)) => {
                 Ok(ObjectSymbol::Global(global.clone()))
             }
-            Some(GlobalOrdinarySymbol::Function(_)) | None => Err(SemanticError {
+            Some(GlobalOrdinarySymbol::Function(_) | GlobalOrdinarySymbol::EnumConstant(_))
+            | None => Err(SemanticError {
                 message: format!("undeclared variable '{name}'"),
                 span,
             }),
@@ -211,7 +227,8 @@ impl Checker {
     fn resolve_global_object(&self, name: &str, span: Span) -> Result<GlobalSymbol, SemanticError> {
         match self.global_symbols.get(name) {
             Some(GlobalOrdinarySymbol::GlobalObject(global)) => Ok(global.clone()),
-            Some(GlobalOrdinarySymbol::Function(_)) | None => Err(SemanticError {
+            Some(GlobalOrdinarySymbol::Function(_) | GlobalOrdinarySymbol::EnumConstant(_))
+            | None => Err(SemanticError {
                 message: format!("undeclared global variable '{name}'"),
                 span,
             }),
@@ -221,13 +238,132 @@ impl Checker {
     fn resolve_function(&self, name: &str, span: Span) -> Result<&FunctionInfo, SemanticError> {
         match self.global_symbols.get(name) {
             Some(GlobalOrdinarySymbol::Function(function)) => Ok(function),
-            Some(GlobalOrdinarySymbol::GlobalObject(_)) | None => Err(SemanticError {
+            Some(GlobalOrdinarySymbol::GlobalObject(_) | GlobalOrdinarySymbol::EnumConstant(_))
+            | None => Err(SemanticError {
                 message: format!("undeclared function '{name}'"),
                 span,
             }),
         }
     }
 
+    fn resolve_enum_constant(&self, name: &str) -> Option<i64> {
+        for scope in self.scopes.iter().rev() {
+            if let Some(LocalOrdinarySymbol::EnumConstant(value)) = scope.get(name) {
+                return Some(*value);
+            }
+        }
+        if let Some(GlobalOrdinarySymbol::EnumConstant(value)) = self.global_symbols.get(name) {
+            return Some(*value);
+        }
+        None
+    }
+
+    fn eval_integer_constant_expr(&self, expr: &Expr) -> Result<i64, SemanticError> {
+        match expr {
+            Expr::IntLiteral { value, span, .. } => {
+                i64::try_from(*value).map_err(|_| SemanticError {
+                    message: "integer constant is too large".to_string(),
+                    span: *span,
+                })
+            }
+            Expr::Variable { name, span } => {
+                self.resolve_enum_constant(name)
+                    .ok_or_else(|| SemanticError {
+                        message: format!("'{name}' is not an integer constant expression"),
+                        span: *span,
+                    })
+            }
+            Expr::Unary {
+                op: UnaryOp::Negate,
+                expr,
+                ..
+            } => Ok(-self.eval_integer_constant_expr(expr)?),
+            Expr::Binary {
+                op,
+                left,
+                right,
+                op_span,
+            } => {
+                let left = self.eval_integer_constant_expr(left)?;
+                let right = self.eval_integer_constant_expr(right)?;
+
+                match op {
+                    BinaryOp::Add => Ok(left + right),
+                    BinaryOp::Subtract => Ok(left - right),
+                    BinaryOp::Multiply => Ok(left * right),
+                    BinaryOp::Divide => {
+                        if right == 0 {
+                            Err(SemanticError {
+                                message: "division by zero in integer constant
+                              expression"
+                                    .to_string(),
+                                span: *op_span,
+                            })
+                        } else {
+                            Ok(left / right)
+                        }
+                    }
+                    BinaryOp::Remainder => {
+                        if right == 0 {
+                            Err(SemanticError {
+                                message: "remainder by zero in integer constant
+                              expression"
+                                    .to_string(),
+                                span: *op_span,
+                            })
+                        } else {
+                            Ok(left % right)
+                        }
+                    }
+                    BinaryOp::BitAnd => Ok(left & right),
+                    BinaryOp::BitOr => Ok(left | right),
+                    BinaryOp::BitXor => Ok(left ^ right),
+                    BinaryOp::ShiftLeft if (0..32).contains(&right) => Ok(left << right),
+                    BinaryOp::ShiftRight if (0..32).contains(&right) => Ok(left >> right),
+                    _ => Err(SemanticError {
+                        message: "unsupported integer constant expression".to_string(),
+                        span: *op_span,
+                    }),
+                }
+            }
+            _ => Err(SemanticError {
+                message: "expected integer constant expression".to_string(),
+                span: expr.diagnostic_span(),
+            }),
+        }
+    }
+
+    fn resolve_enumerators(
+        &mut self,
+        enumerators: &[Enumerator],
+    ) -> Result<Vec<ResolvedEnumerator>, SemanticError> {
+        let mut resolved = Vec::new();
+        let mut next_value = 0;
+
+        for enumerator in enumerators {
+            let value = if let Some(expr) = &enumerator.value {
+                self.eval_integer_constant_expr(expr)?
+            } else {
+                next_value
+            };
+            let value = i32::try_from(value).map_err(|_| SemanticError {
+                message: format!(
+                    "enum constant '{}' is outside range of int",
+                    enumerator.name
+                ),
+                span: enumerator.name_span,
+            })?;
+            self.declare_enum_constant(&enumerator.name, enumerator.name_span, value.into())?;
+            resolved.push(ResolvedEnumerator {
+                name: enumerator.name.clone(),
+                value: value.into(),
+            });
+            next_value = i64::from(value) + 1;
+        }
+        Ok(resolved)
+    }
+
+    #[allow(clippy::too_many_lines)]
     fn resolve_type_tags(&mut self, ty: &Type, span: Span) -> Result<Type, SemanticError> {
         match ty {
             Type::StructTag { name, fields: None } => match self.struct_tags.get(name) {
@@ -244,7 +380,6 @@ impl Checker {
                     Ok(ty.clone())
                 }
             },
-
             Type::StructTag {
                 name,
                 fields: Some(fields),
@@ -278,20 +413,63 @@ impl Checker {
                     })
                 }
             }
+            Type::Enum {
+                name: Some(name),
+                enumerators: None,
+            } => {
+                if self.enum_tags.contains_key(name) {
+                    Ok(ty.clone())
+                } else {
+                    Err(SemanticError {
+                        message: format!("unknown enum tag '{name}'"),
+                        span,
+                    })
+                }
+            }
+            Type::Enum {
+                name,
+                enumerators: Some(enumerators),
+            } => {
+                let resolved = self.resolve_enumerators(enumerators)?;
 
+                if let Some(name) = name {
+                    if self.enum_tags.contains_key(name) {
+                        return Err(SemanticError {
+                            message: format!("redefinition of enum '{name}'"),
+                            span,
+                        });
+                    }
+
+                    self.enum_tags.insert(
+                        name.clone(),
+                        EnumTag {
+                            enumerators: Some(resolved),
+                        },
+                    );
+                }
+
+                Ok(Type::Enum {
+                    name: name.clone(),
+                    enumerators: None,
+                })
+            }
+            Type::Enum {
+                name: None,
+                enumerators: None,
+            } => Err(SemanticError {
+                message: "anonymous enum must define enumerators".to_string(),
+                span,
+            }),
             Type::Pointer(inner) => Ok(Type::Pointer(Box::new(
                 self.resolve_type_tags(inner, span)?,
             ))),
-
             Type::Array { element, len } => Ok(Type::Array {
                 element: Box::new(self.resolve_type_tags(element, span)?),
                 len: *len,
             }),
-
             Type::IncompleteArray { element } => Ok(Type::IncompleteArray {
                 element: Box::new(self.resolve_type_tags(element, span)?),
             }),
-
             Type::Function(function) => Ok(Type::Function(Box::new(FunctionType {
                 return_type: Box::new(self.resolve_type_tags(&function.return_type, span)?),
                 params: function
@@ -300,7 +478,6 @@ impl Checker {
                     .map(|param| self.resolve_type_tags(param, span))
                     .collect::<Result<Vec<_>, _>>()?,
             }))),
-
             Type::Struct { fields } => {
                 let fields = fields
                     .iter()
@@ -315,7 +492,6 @@ impl Checker {
 
                 Ok(Type::Struct { fields })
             }
-
             _ => Ok(ty.clone()),
         }
     }
@@ -380,6 +556,12 @@ impl Checker {
                     function.defined = true;
                 }
             }
+            Some(GlobalOrdinarySymbol::EnumConstant(_)) => {
+                return Err(SemanticError {
+                    message: format!("function '{name}' conflicts with existing enum constant"),
+                    span: name_span,
+                });
+            }
             None => {
                 // For now, limit to 8 args (no stack-passed arguments)
                 if param_types.len() > 8 {
@@ -430,6 +612,14 @@ impl Checker {
                     span,
                 });
             }
+            Some(GlobalOrdinarySymbol::EnumConstant(_)) => {
+                return Err(SemanticError {
+                    message: format!(
+                        "global variable '{name}' conflicts with existing enum constant"
+                    ),
+                    span,
+                });
+            }
             None => {
                 let id = self.new_global_id();
                 self.global_symbols.insert(
@@ -437,6 +627,34 @@ impl Checker {
                     GlobalOrdinarySymbol::GlobalObject(GlobalSymbol { id, ty, linkage }),
                 );
             }
+        }
+        Ok(())
+    }
+
+    fn declare_enum_constant(
+        &mut self,
+        name: &str,
+        span: Span,
+        value: i64,
+    ) -> Result<(), SemanticError> {
+        if self.current_function_return_type.is_some() {
+            if self.current_scope().contains_key(name) {
+                return Err(SemanticError {
+                    message: format!("duplicate enum '{name}'"),
+                    span,
+                });
+            }
+            self.current_scope_mut()
+                .insert(name.to_string(), LocalOrdinarySymbol::EnumConstant(value));
+        } else {
+            if self.global_symbols.contains_key(name) {
+                return Err(SemanticError {
+                    message: format!("duplicate ordinary identifier '{name}'"),
+                    span,
+                });
+            }
+            self.global_symbols
+                .insert(name.to_string(), GlobalOrdinarySymbol::EnumConstant(value));
         }
         Ok(())
     }
@@ -793,6 +1011,15 @@ impl Checker {
                     span,
                 },
                 ty: symbol.ty().clone(),
+            });
+        }
+        if let Some(value) = self.resolve_enum_constant(name) {
+            return Ok(TypedExpr {
+                kind: TypedExprKind::IntLiteral {
+                    value: value.cast_unsigned(),
+                    span,
+                },
+                ty: Type::Int,
             });
         }
         if let Ok(symbol) = self.resolve_function(name, span) {
@@ -1417,7 +1644,8 @@ impl Checker {
                 | Type::UnsignedInt
                 | Type::Pointer(_)
                 | Type::Long
-                | Type::UnsignedLong,
+                | Type::UnsignedLong
+                | Type::Enum { .. },
                 Initializer::Expr(init_expr),
             ) => {
                 // Scalars must be initialized with an Expr
@@ -1446,7 +1674,8 @@ impl Checker {
                 | Type::UnsignedInt
                 | Type::Pointer(_)
                 | Type::Long
-                | Type::UnsignedLong,
+                | Type::UnsignedLong
+                | Type::Enum { .. },
                 Initializer::List(_),
             ) => Err(SemanticError {
                 message: format!("cannot initialize scalar type '{target_ty}' with list"),
@@ -1769,7 +1998,8 @@ impl Checker {
     fn check_main_function(&self, span: Span) -> Result<(), SemanticError> {
         match self.global_symbols.get("main") {
             Some(GlobalOrdinarySymbol::Function(_)) => Ok(()),
-            Some(GlobalOrdinarySymbol::GlobalObject(_)) | None => Err(SemanticError {
+            Some(GlobalOrdinarySymbol::GlobalObject(_) | GlobalOrdinarySymbol::EnumConstant(_))
+            | None => Err(SemanticError {
                 message: "no 'main' function found".to_string(),
                 span,
             }),

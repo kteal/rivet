@@ -5219,3 +5219,124 @@ fn rejects_unknown_struct_member_name() {
     assert!(err.message.starts_with("type 'struct"));
     assert!(err.message.ends_with("has no field named 'y'"));
 }
+
+#[test]
+fn resolves_file_scope_enum_constants() {
+    let typed_program =
+        check_source("enum { A, B = 4, C } value; int main() { return A + B + C; }");
+    let expr = typed_return_expr(&first_typed_function(&typed_program).body[0]);
+
+    assert_eq!(expr.ty, Type::Int);
+}
+
+#[test]
+fn enum_constant_expression_can_reference_prior_enumerator() {
+    let typed_program = check_source("enum { A = 1, B = A + 2 } value; int main() { return B; }");
+    let expr = typed_return_expr(&first_typed_function(&typed_program).body[0]);
+
+    assert!(matches!(
+        expr.kind,
+        TypedExprKind::IntLiteral { value: 3, .. }
+    ));
+}
+
+#[test]
+fn enum_constant_expression_supports_bitwise_ops() {
+    let typed_program = check_source(
+        "enum { Read = 1, Write = 2, Both = Read | Write, Mask = Both ^ Read, Shifted = Mask << 1 } value; int main() { return Shifted; }",
+    );
+    let expr = typed_return_expr(&first_typed_function(&typed_program).body[0]);
+
+    assert!(matches!(
+        expr.kind,
+        TypedExprKind::IntLiteral { value: 4, .. }
+    ));
+}
+
+#[test]
+fn enum_constant_can_be_negative() {
+    let typed_program =
+        check_source("enum { Negative = -1 } value; int main() { return Negative; }");
+    let expr = typed_return_expr(&first_typed_function(&typed_program).body[0]);
+
+    assert!(matches!(
+        expr.kind,
+        TypedExprKind::IntLiteral {
+            value: u64::MAX,
+            ..
+        }
+    ));
+}
+
+#[test]
+fn rejects_enum_constant_outside_int_range() {
+    let err = check_source_err("enum { Big = 2147483648 } value; int main() { return 0; }");
+
+    assert_eq!(err.message, "enum constant 'Big' is outside range of int");
+}
+
+#[test]
+fn resolves_named_enum_object_type_and_initializer() {
+    let typed_program = check_source(
+        "enum Mode { Auto, Always = 3 } global; int main() { enum Mode mode = Always; return mode; }",
+    );
+    let function = first_typed_function(&typed_program);
+
+    let TypedStatement::Decl(decls) = &function.body[0] else {
+        panic!("expected declaration statement");
+    };
+    assert_eq!(
+        decls[0].ty,
+        Type::Enum {
+            name: Some("Mode".to_string()),
+            enumerators: None,
+        }
+    );
+    assert!(matches!(decls[0].init, Some(TypedInitializer::Expr(_))));
+}
+
+#[test]
+fn resolves_standalone_enum_definition_before_use() {
+    let typed_program = check_source(
+        "enum Mode { Auto, Always = 3 }; int main() { enum Mode mode = Always; return mode; }",
+    );
+    let function = first_typed_function(&typed_program);
+
+    let TypedStatement::Decl(decls) = &function.body[0] else {
+        panic!("expected declaration statement");
+    };
+    assert_eq!(
+        decls[0].ty,
+        Type::Enum {
+            name: Some("Mode".to_string()),
+            enumerators: None,
+        }
+    );
+    assert!(matches!(decls[0].init, Some(TypedInitializer::Expr(_))));
+}
+
+#[test]
+fn local_enum_constant_shadows_file_scope_enum_constant() {
+    let typed_program =
+        check_source("enum { A = 1 } global; int main() { enum { A = 2 } local; return A; }");
+    let expr = typed_return_expr(&first_typed_function(&typed_program).body[1]);
+
+    assert!(matches!(
+        expr.kind,
+        TypedExprKind::IntLiteral { value: 2, .. }
+    ));
+}
+
+#[test]
+fn rejects_unknown_enum_tag_reference() {
+    let err = check_source_err("enum Mode value; int main() { return 0; }");
+
+    assert_eq!(err.message, "unknown enum tag 'Mode'");
+}
+
+#[test]
+fn rejects_duplicate_enum_constant_in_same_scope() {
+    let err = check_source_err("enum { A, A } value; int main() { return 0; }");
+
+    assert_eq!(err.message, "duplicate ordinary identifier 'A'");
+}

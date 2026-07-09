@@ -1727,3 +1727,104 @@ fn rejects_duplicate_typedef_names() {
 
     assert_eq!(err.message, "duplicate typedef with name 'uLong'");
 }
+
+#[test]
+fn parses_anonymous_enum_object() {
+    let program = parse_source("enum { A, B = 4, C, } value;\nint main() { return 0; }");
+
+    let ExternalDecl::Global(global) = &program.declarations[0] else {
+        panic!("expected global declaration");
+    };
+    assert_eq!(global.name, "value");
+
+    let Type::Enum {
+        name: None,
+        enumerators: Some(enumerators),
+    } = &global.ty
+    else {
+        panic!("expected anonymous enum type");
+    };
+
+    assert_eq!(enumerators.len(), 3);
+    assert_eq!(enumerators[0].name, "A");
+    assert!(enumerators[0].value.is_none());
+    assert_eq!(enumerators[1].name, "B");
+    assert!(matches!(
+        enumerators[1].value,
+        Some(Expr::IntLiteral { value: 4, .. })
+    ));
+    assert_eq!(enumerators[2].name, "C");
+    assert!(enumerators[2].value.is_none());
+}
+
+#[test]
+fn parses_named_enum_definition_and_reference() {
+    let program = parse_source(
+        "enum Mode { Auto, Always = 3 } first;\nenum Mode second;\nint main() { return 0; }",
+    );
+
+    let ExternalDecl::Global(first) = &program.declarations[0] else {
+        panic!("expected first global declaration");
+    };
+    let Type::Enum {
+        name: Some(name),
+        enumerators: Some(enumerators),
+    } = &first.ty
+    else {
+        panic!("expected complete named enum type");
+    };
+    assert_eq!(name, "Mode");
+    assert_eq!(enumerators.len(), 2);
+    assert_eq!(enumerators[0].name, "Auto");
+    assert_eq!(enumerators[1].name, "Always");
+
+    let ExternalDecl::Global(second) = &program.declarations[1] else {
+        panic!("expected second global declaration");
+    };
+    assert_eq!(
+        second.ty,
+        Type::Enum {
+            name: Some("Mode".to_string()),
+            enumerators: None,
+        }
+    );
+}
+
+#[test]
+fn parses_standalone_enum_definition() {
+    let program =
+        parse_source("enum Mode { Auto, Always = 3 };\nenum Mode value;\nint main() { return 0; }");
+
+    let ExternalDecl::TypeDecl { ty, .. } = &program.declarations[0] else {
+        panic!("expected standalone enum type declaration");
+    };
+    let Type::Enum {
+        name: Some(name),
+        enumerators: Some(enumerators),
+    } = ty
+    else {
+        panic!("expected complete named enum type");
+    };
+    assert_eq!(name, "Mode");
+    assert_eq!(enumerators.len(), 2);
+    assert_eq!(enumerators[0].name, "Auto");
+    assert_eq!(enumerators[1].name, "Always");
+
+    let ExternalDecl::Global(global) = &program.declarations[1] else {
+        panic!("expected global declaration using enum tag");
+    };
+    assert_eq!(
+        global.ty,
+        Type::Enum {
+            name: Some("Mode".to_string()),
+            enumerators: None,
+        }
+    );
+}
+
+#[test]
+fn rejects_empty_enum_definition() {
+    let err = parse_source_err("enum {} value;\nint main() { return 0; }");
+
+    assert_eq!(err.message, "enum must have at least one enumerator");
+}

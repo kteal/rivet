@@ -1,9 +1,9 @@
 use std::collections::HashMap;
 
 use crate::ast::{
-    BinaryOp, Expr, ExternalDecl, FunctionDecl, FunctionDef, FunctionType, GlobalDecl, Initializer,
-    IntLiteralBase, IntLiteralSuffix, Linkage, LocalDecl, MemberAccessKind, Param, ParamDecl,
-    Program, Statement, StructField, Type, Typedef, UnaryOp,
+    BinaryOp, Enumerator, Expr, ExternalDecl, FunctionDecl, FunctionDef, FunctionType, GlobalDecl,
+    Initializer, IntLiteralBase, IntLiteralSuffix, Linkage, LocalDecl, MemberAccessKind, Param,
+    ParamDecl, Program, Statement, StructField, Type, Typedef, UnaryOp,
 };
 use crate::lexer::{Token, TokenKind};
 use crate::source::Span;
@@ -84,6 +84,7 @@ enum TypeSpecifier {
     TypedefName { name: String, span: Span },
     Void,
     Struct(Type),
+    Enum(Type),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -566,7 +567,8 @@ impl Parser {
             | TokenKind::KwVoid
             | TokenKind::KwStatic
             | TokenKind::KwExtern
-            | TokenKind::KwStruct => true,
+            | TokenKind::KwStruct
+            | TokenKind::KwEnum => true,
             TokenKind::Ident(name) => self.is_typedef_name(name),
             _ => false,
         }
@@ -575,7 +577,10 @@ impl Parser {
     fn allows_empty_declarators(spec: &DeclSpec) -> bool {
         spec.storage_class.is_none()
             && spec.type_specifiers.len() == 1
-            && matches!(spec.type_specifiers[0], TypeSpecifier::Struct(_))
+            && matches!(
+                spec.type_specifiers[0],
+                TypeSpecifier::Struct(_) | TypeSpecifier::Enum(_)
+            )
     }
 
     fn parse_specifier_type(&mut self) -> Result<Type, ParseError> {
@@ -679,6 +684,78 @@ impl Parser {
                 span: token.span,
             }),
         }
+    }
+
+    fn parse_enumerators_after_lbrace(&mut self) -> Result<Vec<Enumerator>, ParseError> {
+        let mut enumerators = vec![];
+
+        if self.peek_kind() == &TokenKind::RBrace {
+            let token = self.peek();
+            return Err(ParseError {
+                message: "enum must have at least one enumerator".to_string(),
+                span: token.span,
+            });
+        }
+
+        loop {
+            let (name, name_span) = self.expect_ident()?;
+
+            let value = if self.peek_kind() == &TokenKind::Equal {
+                self.expect(&TokenKind::Equal)?;
+                Some(self.parse_expr()?)
+            } else {
+                None
+            };
+
+            enumerators.push(Enumerator {
+                name,
+                name_span,
+                value,
+            });
+
+            if self.peek_kind() != &TokenKind::Comma {
+                break;
+            }
+            self.expect(&TokenKind::Comma)?;
+
+            // Trailing comma allowed
+            if self.peek_kind() == &TokenKind::RBrace {
+                break;
+            }
+        }
+
+        self.expect(&TokenKind::RBrace)?;
+        Ok(enumerators)
+    }
+
+    fn parse_enum_specifier(&mut self) -> Result<TypeSpecifier, ParseError> {
+        self.expect(&TokenKind::KwEnum)?;
+        let name = if matches!(self.peek_kind(), TokenKind::Ident(_)) {
+            Some(self.expect_ident()?)
+        } else {
+            None
+        };
+        if self.peek_kind() == &TokenKind::LBrace {
+            self.expect(&TokenKind::LBrace)?;
+            let enumerators = self.parse_enumerators_after_lbrace()?;
+            return Ok(TypeSpecifier::Enum(Type::Enum {
+                name: name.map(|(name, _)| name),
+                enumerators: Some(enumerators),
+            }));
+        }
+
+        if let Some((name, _)) = name {
+            return Ok(TypeSpecifier::Enum(Type::Enum {
+                name: Some(name),
+                enumerators: None,
+            }));
+        }
+
+        let token = self.peek();
+        Err(ParseError {
+            message: "expected enum tag name or '{' after 'enum'".to_string(),
+            span: token.span,
+        })
     }
 
     #[allow(clippy::too_many_lines)]
@@ -793,6 +870,19 @@ impl Parser {
                     saw_any = true;
                     saw_type = true;
                 }
+                TokenKind::KwEnum => {
+                    if saw_type {
+                        return Err(ParseError {
+                            message: "cannot combine enum with other type specifiers".to_string(),
+                            span: self.peek().span,
+                        });
+                    }
+
+                    let enum_spec = self.parse_enum_specifier()?;
+                    spec.type_specifiers.push(enum_spec);
+                    saw_any = true;
+                    saw_type = true;
+                }
 
                 TokenKind::Ident(name) if !saw_type && self.is_typedef_name(name) => {
                     let name = name.clone();
@@ -822,6 +912,7 @@ impl Parser {
         let mut typedef_name = None;
         let mut type_spec = TypeSpec::default();
         let mut struct_ty = None;
+        let mut enum_ty = None;
 
         for type_specifier in &spec.type_specifiers {
             match type_specifier {
@@ -850,6 +941,15 @@ impl Parser {
                     }
                     struct_ty = Some(ty.clone());
                 }
+                TypeSpecifier::Enum(ty) => {
+                    if enum_ty.is_some() {
+                        return Err(ParseError {
+                            message: "multiple enum specifiers".to_string(),
+                            span,
+                        });
+                    }
+                    enum_ty = Some(ty.clone());
+                }
             }
         }
 
@@ -863,6 +963,15 @@ impl Parser {
             if saw_builtin || typedef_name.is_some() {
                 return Err(ParseError {
                     message: "cannot combine struct with other type specifiers".to_string(),
+                    span,
+                });
+            }
+            return Ok(ty);
+        }
+        if let Some(ty) = enum_ty {
+            if saw_builtin || typedef_name.is_some() {
+                return Err(ParseError {
+                    message: "cannot combine enum with other type specifiers".to_string(),
                     span,
                 });
             }

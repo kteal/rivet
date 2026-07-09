@@ -242,7 +242,7 @@ impl Codegen {
 
     fn emit_global_scalar_value(&mut self, ty: &Type, value: u64) {
         match ty {
-            Type::Int | Type::UnsignedInt => {
+            Type::Int | Type::UnsignedInt | Type::Enum { .. } => {
                 self.emit_line(format_args!("  .word {value}"));
             }
             Type::Char | Type::UnsignedChar => {
@@ -280,7 +280,7 @@ impl Codegen {
         self.emit_line(format_args!("{}:", global.name));
 
         match &global.ty {
-            Type::Int | Type::UnsignedInt | Type::Char | Type::UnsignedChar => {
+            Type::Int | Type::UnsignedInt | Type::Char | Type::UnsignedChar | Type::Enum { .. } => {
                 let value = global_init_int_value(global.init.as_ref());
                 self.emit_global_scalar_value(&global.ty, value);
             }
@@ -325,7 +325,12 @@ impl Codegen {
 
     fn emit_narrow_to_type(&mut self, ty: &Type) {
         match ty {
-            Type::Int | Type::UnsignedInt | Type::Pointer(_) | Type::Long | Type::UnsignedLong => {
+            Type::Int
+            | Type::UnsignedInt
+            | Type::Pointer(_)
+            | Type::Long
+            | Type::UnsignedLong
+            | Type::Enum { .. } => {
                 #[allow(clippy::no_effect)]
                 ();
             }
@@ -349,7 +354,12 @@ impl Codegen {
 
     fn emit_store_param(&mut self, reg: usize, local: &FrameSlot) {
         match local.ty {
-            Type::Int | Type::UnsignedInt | Type::Pointer(_) | Type::Long | Type::UnsignedLong => {
+            Type::Int
+            | Type::UnsignedInt
+            | Type::Pointer(_)
+            | Type::Long
+            | Type::UnsignedLong
+            | Type::Enum { .. } => {
                 self.emit_line(format_args!("sw a{reg}, {}(s0)", local.offset));
             }
             Type::Char | Type::UnsignedChar | Type::SignedChar => {
@@ -448,7 +458,12 @@ impl Codegen {
         match ty {
             Type::Char | Type::UnsignedChar => self.emit_line(format_args!("lbu a0, 0(a0)")),
             Type::SignedChar => self.emit_line(format_args!("lb a0, 0(a0)")),
-            Type::Int | Type::UnsignedInt | Type::Pointer(_) | Type::Long | Type::UnsignedLong => {
+            Type::Int
+            | Type::UnsignedInt
+            | Type::Pointer(_)
+            | Type::Long
+            | Type::UnsignedLong
+            | Type::Enum { .. } => {
                 self.emit_line(format_args!("lw a0, 0(a0)"));
             }
             Type::Array { .. } => unreachable!("array rvalues should have decayed before codegen"),
@@ -472,7 +487,12 @@ impl Codegen {
                 self.emit_narrow_to_type(ty);
                 self.emit_line(format_args!("sb a0, {offset}({base})"));
             }
-            Type::Int | Type::UnsignedInt | Type::Pointer(_) | Type::Long | Type::UnsignedLong => {
+            Type::Int
+            | Type::UnsignedInt
+            | Type::Pointer(_)
+            | Type::Long
+            | Type::UnsignedLong
+            | Type::Enum { .. } => {
                 self.emit_line(format_args!("sw a0, {offset}({base})"));
             }
             Type::Array { .. } => unreachable!("array rvalues should have decayed before codegen"),
@@ -527,7 +547,7 @@ impl Codegen {
             BinaryOp::Subtract => self.emit_line(format_args!("sub a0, t0, a0")),
             BinaryOp::Multiply => self.emit_line(format_args!("mul a0, t0, a0")),
             BinaryOp::Divide => match ty {
-                Type::Int | Type::Char | Type::Long | Type::SignedChar => {
+                Type::Int | Type::Char | Type::Long | Type::SignedChar | Type::Enum { .. } => {
                     self.emit_line(format_args!("div a0, t0, a0"));
                 }
                 Type::UnsignedInt | Type::UnsignedLong | Type::UnsignedChar => {
@@ -550,7 +570,7 @@ impl Codegen {
                 }
             },
             BinaryOp::Remainder => match ty {
-                Type::Int | Type::Char | Type::Long | Type::SignedChar => {
+                Type::Int | Type::Char | Type::Long | Type::SignedChar | Type::Enum { .. } => {
                     self.emit_line(format_args!("rem a0, t0, a0"));
                 }
                 Type::UnsignedInt | Type::UnsignedLong | Type::UnsignedChar => {
@@ -581,7 +601,7 @@ impl Codegen {
                 self.emit_line(format_args!("snez a0, a0"));
             }
             BinaryOp::Less => match ty {
-                Type::Int | Type::Char | Type::Long | Type::SignedChar => {
+                Type::Int | Type::Char | Type::Long | Type::SignedChar | Type::Enum { .. } => {
                     self.emit_line(format_args!("slt a0, t0, a0"));
                 }
                 Type::UnsignedInt | Type::UnsignedLong | Type::UnsignedChar | Type::Pointer(_) => {
@@ -601,7 +621,7 @@ impl Codegen {
                 }
             },
             BinaryOp::LessEqual => match ty {
-                Type::Int | Type::Char | Type::Long | Type::SignedChar => {
+                Type::Int | Type::Char | Type::Long | Type::SignedChar | Type::Enum { .. } => {
                     self.emit_line(format_args!("slt a0, a0, t0"));
                     self.emit_line(format_args!("xori a0, a0, 1"));
                 }
@@ -623,7 +643,7 @@ impl Codegen {
                 }
             },
             BinaryOp::Greater => match ty {
-                Type::Int | Type::Char | Type::Long | Type::SignedChar => {
+                Type::Int | Type::Char | Type::Long | Type::SignedChar | Type::Enum { .. } => {
                     self.emit_line(format_args!("slt a0, a0, t0"));
                 }
                 Type::UnsignedInt | Type::UnsignedLong | Type::UnsignedChar | Type::Pointer(_) => {
@@ -643,7 +663,7 @@ impl Codegen {
                 }
             },
             BinaryOp::GreaterEqual => match ty {
-                Type::Int | Type::Char | Type::Long | Type::SignedChar => {
+                Type::Int | Type::Char | Type::Long | Type::SignedChar | Type::Enum { .. } => {
                     self.emit_line(format_args!("slt a0, t0, a0"));
                     self.emit_line(format_args!("xori a0, a0, 1"));
                 }
@@ -669,7 +689,7 @@ impl Codegen {
             BinaryOp::BitOr => self.emit_line(format_args!("or a0, a0, t0")),
             BinaryOp::ShiftLeft => self.emit_line(format_args!("sll a0, t0, a0")),
             BinaryOp::ShiftRight => match ty {
-                Type::Int | Type::Char | Type::Long | Type::SignedChar => {
+                Type::Int | Type::Char | Type::Long | Type::SignedChar | Type::Enum { .. } => {
                     self.emit_line(format_args!("sra a0, t0, a0"));
                 }
                 Type::UnsignedInt | Type::UnsignedLong | Type::UnsignedChar => {

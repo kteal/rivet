@@ -85,6 +85,13 @@ pub struct LocalDecl {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Enumerator {
+    pub name: String,
+    pub name_span: Span,
+    pub value: Option<Expr>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Statement {
     Decl(Vec<LocalDecl>),
     Return {
@@ -373,6 +380,10 @@ pub enum Type {
         name: String,
         fields: Option<Vec<StructField>>,
     },
+    Enum {
+        name: Option<String>,
+        enumerators: Option<Vec<Enumerator>>,
+    },
 }
 
 impl Type {
@@ -387,6 +398,7 @@ impl Type {
                 | Self::UnsignedInt
                 | Self::Long
                 | Self::UnsignedLong
+                | Self::Enum { .. }
         )
     }
 
@@ -430,7 +442,12 @@ impl Type {
     pub fn size(&self) -> usize {
         match self {
             Self::Char | Self::SignedChar | Self::UnsignedChar => 1,
-            Self::Int | Self::UnsignedInt | Self::Pointer(_) | Self::Long | Self::UnsignedLong => 4,
+            Self::Int
+            | Self::UnsignedInt
+            | Self::Pointer(_)
+            | Self::Long
+            | Self::UnsignedLong
+            | Self::Enum { .. } => 4,
             Self::Array { element, len } => element.size() * len,
             Self::Struct { fields } => Self::struct_size(fields),
             Self::StructTag { fields, .. } => fields.as_ref().map_or_else(
@@ -459,7 +476,8 @@ impl Type {
             | Self::UnsignedInt
             | Self::Pointer(_)
             | Self::Long
-            | Self::UnsignedLong => self.size(),
+            | Self::UnsignedLong
+            | Self::Enum { .. } => self.size(),
             Self::Array { element, .. } => element.align(),
             Self::Struct { fields } => Self::struct_align(fields),
             Self::StructTag { fields, .. } => fields.as_ref().map_or_else(
@@ -482,7 +500,9 @@ impl Type {
     #[must_use]
     pub const fn promoted(&self) -> Option<Self> {
         match self {
-            Self::Char | Self::UnsignedChar | Self::SignedChar | Self::Int => Some(Self::Int),
+            Self::Char | Self::UnsignedChar | Self::SignedChar | Self::Int | Self::Enum { .. } => {
+                Some(Self::Int)
+            }
             Self::UnsignedInt => Some(Self::UnsignedInt),
             Self::Long => Some(Self::Long),
             Self::UnsignedLong => Some(Self::UnsignedLong),
@@ -621,6 +641,9 @@ impl std::fmt::Display for Type {
             }
             Self::StructTag { name, .. } => {
                 write!(f, "struct {name}")
+            }
+            Self::Enum { name, .. } => {
+                write!(f, "enum {}", name.as_deref().unwrap_or("<anonymous>"))
             }
         }
     }

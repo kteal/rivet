@@ -1044,3 +1044,21 @@ fn lexes_single_bitwise_operators_after_logical_operator_support() {
         ]
     );
 }
+
+#[test]
+fn lexes_enum_keyword() {
+    let tokens = lex_with_struct("enum Mode { Auto };").expect("lexing should succeed");
+
+    assert_eq!(
+        token_kinds(&tokens),
+        vec![
+            TokenKind::KwEnum,
+            TokenKind::Ident("Mode".to_string()),
+            TokenKind::LBrace,
+            TokenKind::Ident("Auto".to_string()),
+            TokenKind::RBrace,
+            TokenKind::Semicolon,
+            TokenKind::Eof,
+        ]
+    );
+}

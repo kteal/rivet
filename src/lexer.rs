@@ -25,6 +25,7 @@ pub enum TokenKind {
     KwStatic,
     KwExtern,
     KwStruct,
+    KwEnum,
     Ident(String),
     IntLiteral {
         value: u64,
@@ -446,6 +447,7 @@ impl<'a> Lexer<'a> {
             "static" => TokenKind::KwStatic,
             "extern" => TokenKind::KwExtern,
             "struct" => TokenKind::KwStruct,
+            "enum" => TokenKind::KwEnum,
             _ => TokenKind::Ident(text),
         };
 
