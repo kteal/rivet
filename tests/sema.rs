@@ -4463,6 +4463,139 @@ fn accepts_break_and_continue_inside_loop() {
 }
 
 #[test]
+fn resolves_switch_condition_and_folds_case_value() {
+    let typed_program =
+        check_source("int main() { switch (2) { case 1 + 2 * 3: return 7; default: return 0; } }");
+    let function = first_typed_function(&typed_program);
+    let TypedStatement::Switch { cond, body, .. } = &function.body[0] else {
+        panic!("expected typed switch statement");
+    };
+
+    assert_eq!(cond.ty, Type::Int);
+
+    let TypedStatement::Block(statements) = body.as_ref() else {
+        panic!("expected typed switch block");
+    };
+    let TypedStatement::Case { value, body, .. } = &statements[0] else {
+        panic!("expected typed case label");
+    };
+
+    assert_eq!(*value, 7);
+    assert!(matches!(body.as_ref(), TypedStatement::Return(_)));
+    assert!(matches!(statements[1], TypedStatement::Default { .. }));
+}
+
+#[test]
+fn rejects_duplicate_case_values_after_constant_evaluation() {
+    let err =
+        check_source_err("int main() { switch (0) { case 3: return 1; case 1 + 2: return 2; } }");
+
+    assert_eq!(err.message, "duplicate case value '3'");
+}
+
+#[test]
+fn rejects_duplicate_default_labels() {
+    let err =
+        check_source_err("int main() { switch (0) { default: return 1; default: return 2; } }");
+
+    assert_eq!(err.message, "duplicate default label");
+}
+
+#[test]
+fn accepts_break_inside_switch() {
+    check_source("int main() { switch (0) { default: break; } return 0; }");
+}
+
+#[test]
+fn rejects_switch_with_non_integer_condition() {
+    let source = "int main() { int value = 0; switch (&value) { default: return 0; } }";
+    let err = check_source_err(source);
+    let condition_start = source
+        .find("&value")
+        .expect("source should contain switch condition");
+
+    assert_eq!(
+        err.message,
+        "switch condition must be integer type, found 'int *'"
+    );
+    assert_eq!(err.span.file_id, DUMMY_FILE_ID);
+    assert_eq!(err.span.start, condition_start);
+    assert_eq!(err.span.end, condition_start + 1);
+}
+
+#[test]
+fn rejects_case_label_outside_switch() {
+    let err = check_source_err("int main() { case 1: return 0; }");
+
+    assert_eq!(
+        err.message,
+        "cannot declare 'case' outside of 'switch' context"
+    );
+}
+
+#[test]
+fn rejects_default_label_outside_switch() {
+    let err = check_source_err("int main() { default: return 0; }");
+
+    assert_eq!(
+        err.message,
+        "cannot declare 'default' outside of 'switch' context"
+    );
+}
+
+#[test]
+fn rejects_non_constant_case_value() {
+    let err =
+        check_source_err("int main() { int value = 1; switch (value) { case value: return 0; } }");
+
+    assert_eq!(err.message, "'value' is not an integer constant expression");
+}
+
+#[test]
+fn nested_switches_have_independent_labels() {
+    check_source(
+        "int main() { switch (0) { case 1: switch (0) { case 1: return 1; default: return 2; } default: return 0; } }",
+    );
+}
+
+#[test]
+fn accepts_case_label_inside_nested_statement_of_switch() {
+    check_source("int main() { switch (0) { { case 1: return 1; } default: return 0; } }");
+}
+
+#[test]
+fn accepts_enum_and_negative_case_values() {
+    check_source(
+        "enum Sign { Negative = -1 }; int main() { enum Sign sign = Negative; switch (sign) { case Negative: return 1; case -2: return 2; default: return 0; } }",
+    );
+}
+
+#[test]
+fn rejects_continue_inside_switch_without_loop() {
+    let err = check_source_err("int main() { switch (0) { default: continue; } }");
+
+    assert_eq!(err.message, "cannot use 'continue' outside of a loop");
+}
+
+#[test]
+fn accepts_continue_inside_switch_nested_in_loop() {
+    check_source("int main() { while (1) { switch (0) { default: continue; } } return 0; }");
+}
+
+#[test]
+fn rejects_case_values_equal_after_controlling_type_conversion() {
+    let err = check_source_err(
+        "int main() { unsigned int value = 0; switch (value) { case -1: return 1; case 4294967295U: return 2; } }",
+    );
+
+    assert!(
+        err.message.contains("duplicate case value"),
+        "unexpected error: {}",
+        err.message
+    );
+}
+
+#[test]
 fn accepts_break_and_continue_inside_do_while_loop() {
     let program = main_program(vec![
         Statement::DoWhile {
@@ -4526,7 +4659,10 @@ fn rejects_break_outside_loop() {
 
     let err = check(&program).expect_err("semantic check should fail");
 
-    assert_eq!(err.message, "cannot use 'break' outside of a loop");
+    assert_eq!(
+        err.message,
+        "cannot use 'break' outside of a loop or switch"
+    );
 }
 
 #[test]

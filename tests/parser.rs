@@ -788,6 +788,40 @@ fn parses_bare_return_statement() {
 }
 
 #[test]
+fn parses_switch_with_case_and_default_labels() {
+    parse_source("int main() { int x = 1; switch (x) { case 0: return 10; default: return 20; } }");
+}
+
+#[test]
+fn parses_stacked_case_labels_as_nested_statements() {
+    let statement = only_statement("int main() { switch (x) { case 1: case 2: return 10; } }");
+    let Statement::Switch { body, .. } = statement else {
+        panic!("expected switch statement");
+    };
+    let Statement::Block(statements) = body.as_ref() else {
+        panic!("expected switch block");
+    };
+    let Statement::Case { body, .. } = &statements[0] else {
+        panic!("expected first case label");
+    };
+    let Statement::Case { body, .. } = body.as_ref() else {
+        panic!("expected stacked case label");
+    };
+
+    assert!(matches!(body.as_ref(), Statement::Return { .. }));
+}
+
+#[test]
+fn parses_switch_body_as_a_general_statement() {
+    let statement = only_statement("int main() { switch (x) case 1: return 10; }");
+    let Statement::Switch { body, .. } = statement else {
+        panic!("expected switch statement");
+    };
+
+    assert!(matches!(body.as_ref(), Statement::Case { .. }));
+}
+
+#[test]
 fn parses_for_loop_clause_shapes() {
     let body = main_body(
         "int main() { for (;;) ; for (i = 0; i < 10; i = i + 1) ; for (int i = 0; i < 10; i = i + 1) ; for (; i < 10;) ; return 0; }",

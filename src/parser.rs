@@ -1909,6 +1909,41 @@ impl Parser {
         })
     }
 
+    fn parse_switch_statement(&mut self) -> Result<Statement, ParseError> {
+        let switch_token = self.expect(&TokenKind::KwSwitch)?;
+        self.expect(&TokenKind::LParen)?;
+        let cond = self.parse_expr()?;
+        self.expect(&TokenKind::RParen)?;
+        let body = self.parse_statement()?;
+        Ok(Statement::Switch {
+            cond,
+            body: Box::new(body),
+            span: switch_token.span,
+        })
+    }
+
+    fn parse_case_statement(&mut self) -> Result<Statement, ParseError> {
+        let case_token = self.expect(&TokenKind::KwCase)?;
+        let value = self.parse_expr()?;
+        self.expect(&TokenKind::Colon)?;
+        let body = self.parse_statement()?;
+        Ok(Statement::Case {
+            value,
+            body: Box::new(body),
+            span: case_token.span,
+        })
+    }
+
+    fn parse_default_statement(&mut self) -> Result<Statement, ParseError> {
+        let default_token = self.expect(&TokenKind::KwDefault)?;
+        self.expect(&TokenKind::Colon)?;
+        let body = self.parse_statement()?;
+        Ok(Statement::Default {
+            body: Box::new(body),
+            span: default_token.span,
+        })
+    }
+
     const fn is_expr_start(token_kind: &TokenKind) -> bool {
         matches!(
             token_kind,
@@ -1972,6 +2007,10 @@ impl Parser {
                 self.expect(&TokenKind::Semicolon)?;
                 Ok(Statement::Empty)
             }
+            // Switch
+            TokenKind::KwSwitch => self.parse_switch_statement(),
+            TokenKind::KwCase => self.parse_case_statement(),
+            TokenKind::KwDefault => self.parse_default_statement(),
             // Expression-start tokens
             token_kind if Self::is_expr_start(token_kind) => self.parse_expr_statement(),
             found => Err(ParseError {

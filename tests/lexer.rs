@@ -787,6 +787,24 @@ fn lexes_break_and_continue_keywords() {
 }
 
 #[test]
+fn lexes_switch_case_and_default_keywords() {
+    let tokens = lex_with_struct("switch case: default:")
+        .expect("lexing switch keywords and label punctuation should succeed");
+
+    assert_eq!(
+        token_kinds(&tokens),
+        vec![
+            TokenKind::KwSwitch,
+            TokenKind::KwCase,
+            TokenKind::Colon,
+            TokenKind::KwDefault,
+            TokenKind::Colon,
+            TokenKind::Eof,
+        ]
+    );
+}
+
+#[test]
 fn lexes_division_after_comment_handling() {
     let tokens = lex_with_struct("return 6 / 2;").expect("lexing should succeed");
 

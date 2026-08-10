@@ -269,7 +269,7 @@ Control flow:
 - [x] `break` and `continue`
 - [x] `for`
 - [x] `do` / `while`
-- [ ] `switch`, `case`, and `default`
+- [x] `switch`, `case`, and `default`
 - [ ] `goto` and labels
 
 Functions:

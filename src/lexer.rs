@@ -26,6 +26,9 @@ pub enum TokenKind {
     KwExtern,
     KwStruct,
     KwEnum,
+    KwSwitch,
+    KwCase,
+    KwDefault,
     Ident(String),
     IntLiteral {
         value: u64,
@@ -80,6 +83,7 @@ pub enum TokenKind {
     Newline,
     Dot,
     Arrow,
+    Colon,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -214,6 +218,7 @@ impl<'a> Lexer<'a> {
                     self.push_token(token);
                 }
                 '.' => self.advance_and_push(TokenKind::Dot),
+                ':' => self.advance_and_push(TokenKind::Colon),
                 _ => {
                     let start = self.offset;
                     let ch = self.advance().unwrap();
@@ -448,6 +453,9 @@ impl<'a> Lexer<'a> {
             "extern" => TokenKind::KwExtern,
             "struct" => TokenKind::KwStruct,
             "enum" => TokenKind::KwEnum,
+            "switch" => TokenKind::KwSwitch,
+            "case" => TokenKind::KwCase,
+            "default" => TokenKind::KwDefault,
             _ => TokenKind::Ident(text),
         };
 

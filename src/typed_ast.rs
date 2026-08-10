@@ -81,6 +81,20 @@ pub enum TypedStatement {
         post: Option<TypedExpr>,
         body: Box<Self>,
     },
+    Switch {
+        cond: TypedExpr,
+        body: Box<Self>,
+        span: Span,
+    },
+    Case {
+        value: i64,
+        body: Box<Self>,
+        span: Span,
+    },
+    Default {
+        body: Box<Self>,
+        span: Span,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

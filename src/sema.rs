@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use crate::ast::{
     BinaryOp, Enumerator, Expr, ExternalDecl, FunctionDef, FunctionType, GlobalDecl, Initializer,
@@ -95,6 +95,13 @@ struct EnumTag {
     enumerators: Option<Vec<ResolvedEnumerator>>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct SwitchContext {
+    cases: HashSet<i64>,
+    has_default: bool,
+    condition_type: Type,
+}
+
 struct Checker {
     scopes: Vec<HashMap<String, LocalOrdinarySymbol>>,
     next_local_id: usize,
@@ -104,6 +111,7 @@ struct Checker {
     global_symbols: HashMap<String, GlobalOrdinarySymbol>,
     struct_tags: HashMap<String, StructTag>,
     enum_tags: HashMap<String, EnumTag>,
+    switch_stack: Vec<SwitchContext>,
 }
 
 impl Checker {
@@ -117,6 +125,7 @@ impl Checker {
             global_symbols: HashMap::new(),
             struct_tags: HashMap::new(),
             enum_tags: HashMap::new(),
+            switch_stack: vec![],
         }
     }
 
@@ -163,6 +172,51 @@ impl Checker {
         self.scopes
             .last_mut()
             .expect("semantic checker should have an active scope")
+    }
+
+    fn enter_switch(&mut self, ty: Type) {
+        self.switch_stack.push(SwitchContext {
+            cases: HashSet::new(),
+            has_default: false,
+            condition_type: ty,
+        });
+    }
+
+    fn exit_switch(&mut self) {
+        self.switch_stack.pop();
+    }
+
+    fn add_case_to_switch(&mut self, case: i64) -> bool {
+        self.switch_stack
+            .last_mut()
+            .expect("cannot add case to empty switch stack")
+            .cases
+            .insert(case)
+    }
+
+    fn add_default_to_switch(&mut self) -> bool {
+        let switch_context = self
+            .switch_stack
+            .last_mut()
+            .expect("cannot add default to empty switch stack");
+        if switch_context.has_default {
+            false
+        } else {
+            switch_context.has_default = true;
+            true
+        }
+    }
+
+    fn switch_condition_type(&self) -> &Type {
+        &self
+            .switch_stack
+            .last()
+            .expect("cannot get type of empty switch stack")
+            .condition_type
+    }
+
+    const fn in_switch(&self) -> bool {
+        !self.switch_stack.is_empty()
     }
 
     fn validate_object_type(ty: &Type, span: Span) -> Result<(), SemanticError> {
@@ -1727,6 +1781,98 @@ impl Checker {
         }
     }
 
+    fn check_switch_statement(
+        &mut self,
+        cond: &Expr,
+        body: &Statement,
+        span: Span,
+    ) -> Result<TypedStatement, SemanticError> {
+        let typed_cond = self.check_expr(cond)?;
+        if !typed_cond.ty.is_integer() {
+            return Err(SemanticError {
+                message: format!(
+                    "switch condition must be integer type, found '{}'",
+                    typed_cond.ty
+                ),
+                span: typed_cond.diagnostic_span(),
+            });
+        }
+        let promoted_type = typed_cond
+            .ty
+            .promoted()
+            .expect("cannot use unpromotable type");
+        self.enter_switch(promoted_type);
+        let res = self.check_statement(body);
+        self.exit_switch();
+        let typed_body = res?;
+        Ok(TypedStatement::Switch {
+            cond: typed_cond,
+            body: Box::new(typed_body),
+            span,
+        })
+    }
+
+    fn check_case_statement(
+        &mut self,
+        value: &Expr,
+        body: &Statement,
+        span: Span,
+    ) -> Result<TypedStatement, SemanticError> {
+        if self.switch_stack.is_empty() {
+            return Err(SemanticError {
+                message: "cannot declare 'case' outside of 'switch' context".to_string(),
+                span,
+            });
+        }
+
+        let const_value = self.eval_integer_constant_expr(value)?;
+        let promoted_value = match self.switch_condition_type() {
+            #[allow(clippy::cast_possible_truncation)]
+            Type::Int | Type::Long => i64::from(const_value as i32),
+            #[allow(clippy::cast_possible_truncation)]
+            #[allow(clippy::cast_sign_loss)]
+            Type::UnsignedInt | Type::UnsignedLong => i64::from(const_value as u32),
+            _ => unreachable!(),
+        };
+        if !self.add_case_to_switch(promoted_value) {
+            return Err(SemanticError {
+                message: format!("duplicate case value '{promoted_value}'"),
+                span,
+            });
+        }
+
+        let typed_body = self.check_statement(body)?;
+        Ok(TypedStatement::Case {
+            value: promoted_value,
+            body: Box::new(typed_body),
+            span,
+        })
+    }
+
+    fn check_default_statement(
+        &mut self,
+        body: &Statement,
+        span: Span,
+    ) -> Result<TypedStatement, SemanticError> {
+        if self.switch_stack.is_empty() {
+            return Err(SemanticError {
+                message: "cannot declare 'default' outside of 'switch' context".to_string(),
+                span,
+            });
+        }
+        if !self.add_default_to_switch() {
+            return Err(SemanticError {
+                message: "duplicate default label".to_string(),
+                span,
+            });
+        }
+        let typed_body = self.check_statement(body)?;
+        Ok(TypedStatement::Default {
+            body: Box::new(typed_body),
+            span,
+        })
+    }
+
     #[allow(clippy::too_many_lines)]
     fn check_statement(&mut self, statement: &Statement) -> Result<TypedStatement, SemanticError> {
         match statement {
@@ -1900,9 +2046,9 @@ impl Checker {
                 Ok(TypedStatement::ExprStatement(self.check_expr(expr)?))
             }
             Statement::Break { span } => {
-                if !self.in_loop() {
+                if !self.in_loop() && !self.in_switch() {
                     return Err(SemanticError {
-                        message: "cannot use 'break' outside of a loop".to_string(),
+                        message: "cannot use 'break' outside of a loop or switch".to_string(),
                         span: *span,
                     });
                 }
@@ -1917,6 +2063,11 @@ impl Checker {
                 }
                 Ok(TypedStatement::Continue { span: *span })
             }
+            Statement::Switch { cond, body, span } => {
+                self.check_switch_statement(cond, body, *span)
+            }
+            Statement::Case { value, body, span } => self.check_case_statement(value, body, *span),
+            Statement::Default { body, span } => self.check_default_statement(body, *span),
         }
     }
 

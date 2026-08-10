@@ -1841,3 +1841,117 @@ fn qemu_enum_programs_return_expected_values() {
         11,
     );
 }
+
+#[test]
+fn qemu_switch_programs_select_expected_path() {
+    run_qemu_case(
+        "switch-matching-case",
+        "int main() {\n    int value = 2;\n    switch (value) {\n    case 1: return 10;\n    case 2: return 20;\n    default: return 30;\n    }\n}\n",
+        20,
+    );
+
+    run_qemu_case(
+        "switch-default-case",
+        "int main() {\n    int value = 9;\n    switch (value) {\n    case 1: return 10;\n    case 2: return 20;\n    default: return 30;\n    }\n}\n",
+        30,
+    );
+
+    run_qemu_case(
+        "switch-case-fallthrough",
+        "int main() {\n    int result = 0;\n    switch (1) {\n    case 1: result += 2;\n    case 2: result += 3; break;\n    default: result = 100;\n    }\n    return result;\n}\n",
+        5,
+    );
+
+    run_qemu_case(
+        "switch-case-local-declaration",
+        "int main() {\n    switch (1) {\n    case 1: {\n        int result = 42;\n        return result;\n    }\n    default: return 0;\n    }\n}\n",
+        42,
+    );
+
+    run_qemu_case(
+        "nested-switch-restores-outer-plan-and-break-target",
+        "int main() {\n    int result = 0;\n    switch (1) {\n    case 1:\n        result += 1;\n        switch (2) {\n        case 2: result += 2; break;\n        default: result = 100;\n        }\n        result += 4;\n        break;\n    case 3:\n        result += 8;\n        break;\n    default:\n        result = 100;\n    }\n    return result;\n}\n",
+        7,
+    );
+}
+
+#[test]
+fn qemu_switch_dispatch_edge_cases_return_expected_values() {
+    run_qemu_case(
+        "switch-unmatched-without-default",
+        "int main() {\n    int result = 7;\n    switch (99) {\n    case 1: result = 1; break;\n    case 2: result = 2; break;\n    }\n    return result;\n}\n",
+        7,
+    );
+
+    run_qemu_case(
+        "switch-default-in-middle-falls-through",
+        "int main() {\n    int result = 0;\n    switch (99) {\n    case 1: result = 1; break;\n    default: result = 4;\n    case 2: result += 3; break;\n    }\n    return result;\n}\n",
+        7,
+    );
+
+    run_qemu_case(
+        "switch-stacked-case-labels",
+        "int main() {\n    switch (2) {\n    case 1:\n    case 2:\n    case 3:\n        return 23;\n    default:\n        return 0;\n    }\n}\n",
+        23,
+    );
+
+    run_qemu_case(
+        "switch-body-is-general-statement",
+        "int main() {\n    switch (4)\n    case 4:\n        return 44;\n    return 0;\n}\n",
+        44,
+    );
+
+    run_qemu_case(
+        "switch-jumps-over-statements-before-first-label",
+        "int main() {\n    int result = 0;\n    switch (2) {\n        result = 99;\n    case 2:\n        result += 5;\n        break;\n    }\n    return result;\n}\n",
+        5,
+    );
+
+    run_qemu_case(
+        "switch-without-labels-skips-body",
+        "int main() {\n    int result = 7;\n    switch (1) {\n        result = 99;\n    }\n    return result;\n}\n",
+        7,
+    );
+}
+
+#[test]
+fn qemu_switch_integer_cases_return_expected_values() {
+    run_qemu_case(
+        "switch-condition-evaluated-once",
+        "int main() {\n    int value = 1;\n    switch (value++) {\n    case 1: break;\n    default: return 99;\n    }\n    return value;\n}\n",
+        2,
+    );
+
+    run_qemu_case(
+        "switch-negative-enum-case",
+        "enum Mode { Negative = -2, Positive = 3 };\nint main() {\n    enum Mode mode = Negative;\n    switch (mode) {\n    case Negative: return 22;\n    case Positive: return 33;\n    default: return 1;\n    }\n}\n",
+        22,
+    );
+
+    run_qemu_case(
+        "switch-case-converted-to-unsigned-condition-type",
+        "int main() {\n    unsigned int value = 4294967295U;\n    switch (value) {\n    case -1: return 31;\n    default: return 1;\n    }\n}\n",
+        31,
+    );
+}
+
+#[test]
+fn qemu_switch_interacts_with_enclosing_control_flow() {
+    run_qemu_case(
+        "continue-inside-switch-targets-enclosing-loop",
+        "int main() {\n    int i = 0;\n    int result = 0;\n    while (i < 4) {\n        i++;\n        switch (i) {\n        case 2: continue;\n        default: result += i;\n        }\n        result += 10;\n    }\n    return result;\n}\n",
+        38,
+    );
+
+    run_qemu_case(
+        "case-label-inside-if-statement",
+        "int main() {\n    int result = 0;\n    switch (2) {\n        if (0) {\n        case 2:\n            result = 42;\n            break;\n        }\n    default:\n        result = 1;\n    }\n    return result;\n}\n",
+        42,
+    );
+
+    run_qemu_case(
+        "case-label-inside-loop-statement",
+        "int main() {\n    switch (3) {\n        while (0) {\n        case 3:\n            return 33;\n        }\n    default:\n        return 1;\n    }\n}\n",
+        33,
+    );
+}

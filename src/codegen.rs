@@ -18,9 +18,14 @@ struct StringData {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-struct LoopLabels {
-    continue_label: String,
-    break_label: String,
+struct ContinueLabel(String);
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct BreakLabel(String);
+
+struct SwitchPlan {
+    cases: Vec<(i64, String)>,
+    default: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -106,7 +111,11 @@ impl FrameLayout {
                     self.add_statement_slot(else_branch, local_bytes);
                 }
             }
-            TypedStatement::While { body, .. } | TypedStatement::DoWhile { body, .. } => {
+            TypedStatement::While { body, .. }
+            | TypedStatement::DoWhile { body, .. }
+            | TypedStatement::Switch { body, .. }
+            | TypedStatement::Case { body, .. }
+            | TypedStatement::Default { body, .. } => {
                 self.add_statement_slot(body, local_bytes);
             }
             TypedStatement::For { init, body, .. } => {
@@ -135,7 +144,9 @@ struct Codegen {
     frame: FrameLayout,
     label_counter: usize,
     return_label: Option<String>,
-    loop_stack: Vec<LoopLabels>,
+    continue_stack: Vec<ContinueLabel>,
+    break_stack: Vec<BreakLabel>,
+    switch_stack: Vec<SwitchPlan>,
     current_function_return_type: Option<Type>,
     globals: HashMap<GlobalId, GlobalSlot>,
     strings: Vec<StringData>,
@@ -150,7 +161,9 @@ impl Codegen {
             frame: FrameLayout::default(),
             label_counter: 0,
             return_label: None,
-            loop_stack: vec![],
+            continue_stack: vec![],
+            break_stack: vec![],
+            switch_stack: vec![],
             current_function_return_type: None,
             globals: HashMap::new(),
             strings: vec![],
@@ -170,26 +183,22 @@ impl Codegen {
     }
 
     fn push_loop_labels(&mut self, continue_label: &str, break_label: &str) {
-        self.loop_stack.push(LoopLabels {
-            continue_label: continue_label.to_string(),
-            break_label: break_label.to_string(),
-        });
+        self.continue_stack
+            .push(ContinueLabel(continue_label.to_string()));
+        self.break_stack.push(BreakLabel(break_label.to_string()));
     }
 
     fn pop_loop_labels(&mut self) {
-        self.loop_stack.pop();
+        self.continue_stack.pop();
+        self.break_stack.pop();
     }
 
-    fn current_break_label(&self) -> Option<String> {
-        self.loop_stack
-            .last()
-            .map(|labels| labels.break_label.clone())
+    fn current_break_label(&self) -> Option<BreakLabel> {
+        self.break_stack.last().cloned()
     }
 
-    fn current_continue_label(&self) -> Option<String> {
-        self.loop_stack
-            .last()
-            .map(|labels| labels.continue_label.clone())
+    fn current_continue_label(&self) -> Option<ContinueLabel> {
+        self.continue_stack.last().cloned()
     }
 
     fn resolve_local(&self, id: LocalId) -> &FrameSlot {
@@ -1056,6 +1065,79 @@ impl Codegen {
         self.pop_loop_labels();
     }
 
+    fn collect_switch_into(&mut self, body: &TypedStatement, plan: &mut SwitchPlan) {
+        match body {
+            TypedStatement::Case { value, body, .. } => {
+                plan.cases.push((*value, self.new_label("case")));
+                self.collect_switch_into(body, plan);
+            }
+            TypedStatement::Default { body, .. } => {
+                plan.default = Some(self.new_label("default"));
+                self.collect_switch_into(body, plan);
+            }
+            TypedStatement::Block(statements) => {
+                for statement in statements {
+                    self.collect_switch_into(statement, plan);
+                }
+            }
+            TypedStatement::If {
+                then_branch,
+                else_branch,
+                ..
+            } => {
+                self.collect_switch_into(then_branch, plan);
+                if let Some(else_branch) = else_branch {
+                    self.collect_switch_into(else_branch, plan);
+                }
+            }
+            TypedStatement::While { body, .. }
+            | TypedStatement::DoWhile { body, .. }
+            | TypedStatement::For { body, .. } => {
+                self.collect_switch_into(body, plan);
+            }
+            _ => (),
+        }
+    }
+
+    fn switch_collector(&mut self, body: &TypedStatement) -> SwitchPlan {
+        let mut plan = SwitchPlan {
+            cases: vec![],
+            default: None,
+        };
+        self.collect_switch_into(body, &mut plan);
+        plan
+    }
+
+    fn emit_switch_statement(&mut self, cond: &TypedExpr, body: &TypedStatement) {
+        let plan = self.switch_collector(body);
+        let end_label = self.new_label("switch_end");
+        self.emit_expr(cond);
+        self.push_a0();
+        self.pop_t0();
+
+        for case in &plan.cases {
+            self.emit_line(format_args!("li t1, {}", case.0));
+            self.emit_line(format_args!("beq t0, t1, {}", case.1));
+        }
+
+        if let Some(default_label) = &plan.default {
+            self.emit_line(format_args!("j {default_label}"));
+        } else {
+            self.emit_line(format_args!("j {end_label}"));
+        }
+
+        self.switch_stack.push(plan);
+        self.break_stack.push(BreakLabel(end_label.clone()));
+
+        self.emit_statement(body);
+
+        self.break_stack.pop();
+        self.switch_stack.pop();
+
+        self.emit_label(&end_label);
+    }
+
+    #[allow(clippy::too_many_lines)]
     fn emit_statement(&mut self, statement: &TypedStatement) {
         match statement {
             TypedStatement::Return(expr) => {
@@ -1136,12 +1218,12 @@ impl Codegen {
             TypedStatement::ExprStatement(expr) => self.emit_expr(expr),
             TypedStatement::Break { .. } => {
                 if let Some(label) = self.current_break_label() {
-                    self.emit_line(format_args!("j {label}"));
+                    self.emit_line(format_args!("j {}", label.0));
                 }
             }
             TypedStatement::Continue { .. } => {
                 if let Some(label) = self.current_continue_label() {
-                    self.emit_line(format_args!("j {label}"));
+                    self.emit_line(format_args!("j {}", label.0));
                 }
             }
             TypedStatement::For {
@@ -1150,6 +1232,32 @@ impl Codegen {
                 post,
                 body,
             } => self.emit_for_statement(init.as_deref(), cond.as_ref(), post.as_ref(), body),
+            TypedStatement::Switch { cond, body, .. } => self.emit_switch_statement(cond, body),
+            TypedStatement::Case { value, body, .. } => {
+                let label = self
+                    .switch_stack
+                    .last()
+                    .expect("cannot use case outside of a switch statement")
+                    .cases
+                    .iter()
+                    .find(|c| c.0 == *value)
+                    .expect("must have case with value")
+                    .1
+                    .clone();
+                self.emit_label(&label);
+                self.emit_statement(body);
+            }
+            TypedStatement::Default { body, .. } => {
+                let label = self
+                    .switch_stack
+                    .last()
+                    .expect("cannot use case outside of a switch statement")
+                    .default
+                    .clone()
+                    .expect("must have a default value");
+                self.emit_label(&label);
+                self.emit_statement(body);
+            }
         }
     }
 

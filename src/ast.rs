@@ -126,6 +126,20 @@ pub enum Statement {
         post: Option<Expr>,
         body: Box<Self>,
     },
+    Switch {
+        cond: Expr,
+        body: Box<Self>,
+        span: Span,
+    },
+    Case {
+        value: Expr,
+        body: Box<Self>,
+        span: Span,
+    },
+    Default {
+        body: Box<Self>,
+        span: Span,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
